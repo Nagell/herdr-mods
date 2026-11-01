@@ -31,6 +31,18 @@ The sidebar reads repository status on a timer and uses local folder watches. Re
 
 ## Development
 
+### Code map
+
+- `mods/better-changes/main.js` — the native Herdr view, organized into lifecycle/synchronization, repository status, file selection, diff loading, Git mutations, and rendering sections. The sidebar and diff tab are separate instances of the same view; namespaced shared state connects them.
+- `mods/better-changes/model.js` — pure transformations for Git status/numstat parsing, file trees, line numbering, and side-by-side row pairing.
+- `mods/better-changes/typography.js` — sizing and font helpers that follow Herdr's live settings.
+- `tests/changes.test.cjs` — a lightweight Herdr/GPUI stand-in plus behavior tests, including real Git operations in temporary repositories.
+- `tests/packaging.test.cjs` — standalone packaging and asset checks.
+
+Start with `model.js` for the data shapes, then follow `init()` → `refresh()` → `render()` in `main.js`. Clicking a file calls `pick()` in the sidebar; the diff tab observes that selection through `syncSelection()` and loads its preview with `loadDiff()`. Comments explain repository pinning, async request invalidation, and index-only Git mutations.
+
+### Checks
+
 ```sh
 node --test tests/*.test.cjs
 herdr-app check "$HOME/.config/herdr-app/mods/better-changes"
