@@ -1,0 +1,10 @@
+Herdr Mods — Better Changes
+Copyright 2026 Tawsif Aqib
+
+Better Changes was developed from the Changes feature in munza/herdr-workflow,
+with behavior and code adapted from Herdr Desktop's shipped Changes mod.
+Herdr Desktop is available at https://github.com/herdrdev/herdr-app and is
+licensed under the Apache License, Version 2.0.
+
+This distribution adds tree/flat file lists, staging controls, reusable diff
+tabs, inline/split views, configurable typography, documentation, and tests.
