@@ -15,7 +15,11 @@ A focused Git changes sidebar and diff viewer for Herdr Desktop.
 
 ## Install only this mod
 
-Ask your agent to install this folder, following [RECIPE.md](RECIPE.md). It reads the source, copies `mods/better-changes/` into your Herdr app configuration, validates it, and fits its sidebar into your existing layout. No bundled layout replaces your setup.
+Copy this prompt into your Herdr agent:
+
+> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
+
+The package's [RECIPE.md](RECIPE.md) guides installation: read the source, copy only `mods/better-changes/` into your Herdr app configuration, validate it, and fit its sidebar into your existing layout. No bundled layout replaces your setup.
 
 Requires a Herdr version supporting mod tabs (`tab.new { mod, props }`) and Git on each machine you use. The default manifest docks the sidebar on the right at 368px when Herdr first discovers it. If your layout already provides a Changes slot, your agent can put `better-changes` there with `{ "mode": "sidebar" }` instead of creating another panel.
 
