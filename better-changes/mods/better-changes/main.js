@@ -417,8 +417,11 @@ export default class Changes extends View {
             lines = [`@@ -0,0 +1,${all.length} @@`, ...all.map((line) => `+${line}`)];
           }
         } else {
+          // `--` separates paths from options, but still allows Git patterns.
+          // Treat the selected filename literally, just like index mutations.
           const result = await this.git(
             [
+              "--literal-pathspecs",
               "diff",
               ...(scope === "staged"
                 ? ["--cached"]

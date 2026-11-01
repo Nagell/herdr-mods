@@ -3,7 +3,8 @@
 
 /** Parse `git diff --numstat -z` without losing tabs inside filenames. */
 function parseNumstat(text) {
-  const stats = {};
+  // Filenames such as "constructor" and "__proto__" must be ordinary keys.
+  const stats = Object.create(null);
   for (const entry of text.split("\0")) {
     const [added, deleted, ...pathParts] = entry.split("\t");
     if (!pathParts.length) continue;

@@ -175,6 +175,32 @@ test("porcelain and numstat preserve special filenames, conflicts, deletions and
   assert.equal(parsed.find((f) => f.path === "deleted").status, "D");
   assert.equal(parsed.find((f) => f.path === "image.png").binary, true);
 });
+test("statistics treat object-property filenames as ordinary paths", () => {
+  const h = harness();
+  const names = ["constructor", "toString", "__proto__"];
+  h.context.status = names.map((name) => `?? ${name}\0`).join("");
+  h.context.stats = ["", ""];
+  let parsed = vm.runInContext("changedFiles(status, stats)", h.context);
+  for (const file of parsed) {
+    assert.equal(file.add, 0, file.path);
+    assert.equal(file.del, 0, file.path);
+  }
+
+  // Exercise both missing-key fallback and stored statistics for these names.
+  h.context.status = names.map((name) => `MM ${name}\0`).join("");
+  h.context.stats = [
+    names.map((name) => `2\t3\t${name}\0`).join(""),
+    names.map((name) => `4\t5\t${name}\0`).join(""),
+  ];
+  parsed = vm.runInContext("changedFiles(status, stats)", h.context);
+  for (const file of parsed) {
+    assert.equal(file.stagedStats.add, 2, file.path);
+    assert.equal(file.unstagedStats.del, 5, file.path);
+    assert.equal(file.add, 6, file.path);
+    assert.equal(file.del, 8, file.path);
+  }
+});
+
 test("tree groups directories and collapsed folders hide descendants", () => {
   const h = harness();
   h.context.files = files;
@@ -391,6 +417,57 @@ test("staged and unstaged entries render separately and select the correct diff 
   assert.ok(!d.calls[1].args.includes("--cached"));
   assert.ok(!d.calls[1].args.includes("HEAD"));
 });
+test("diff previews use literal filenames for every scope in real Git", async () => {
+  const os = require("node:os");
+  const path = require("node:path");
+  const cp = require("node:child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "herdr-literal-diff-"));
+  const git = (args) => cp.execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+  const selected = "[sample].txt";
+  const unrelated = "s.txt"; // Matches the selected name if treated as a pattern.
+  try {
+    git(["init", "-q"]);
+    for (const name of [selected, unrelated]) fs.writeFileSync(path.join(dir, name), "before\n");
+    git(["add", "."]);
+    git([
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-qm",
+      "baseline",
+    ]);
+    fs.writeFileSync(path.join(dir, selected), "selected staged\n");
+    fs.writeFileSync(path.join(dir, unrelated), "unrelated staged\n");
+    git(["add", "."]);
+    fs.writeFileSync(path.join(dir, selected), "selected working\n");
+    fs.writeFileSync(path.join(dir, unrelated), "unrelated working\n");
+
+    const h = harness("diff");
+    h.live.spaces[0].folder = dir;
+    h.live.panes[0].cwd = dir;
+    h.mod.context = JSON.stringify({ cwd: dir, on: null });
+    h.mod.root = dir;
+    h.mod.path = selected;
+    h.mod.files = [{ path: selected, status: "M", staged: true, unstaged: true }];
+    h.context.exec = async (_cmd, args) => ({ code: 0, stdout: git(args) });
+    for (const scope of ["staged", "unstaged", "all"]) {
+      h.mod.scope = scope;
+      h.mod.loadDiff(h.cx);
+      await h.flush();
+      assert.equal(h.mod.note, null, scope);
+      assert.ok(
+        h.mod.rows.some((row) => row.text.startsWith("selected")),
+        scope,
+      );
+      assert.ok(!h.mod.rows.some((row) => row.text.includes("unrelated")), scope);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("initial staging and unstaging preserve working files and literal filenames in real Git", async () => {
   const os = require("node:os"),
     path = require("node:path"),
