@@ -21,7 +21,7 @@ Copy this prompt into your Herdr agent:
 
 The package's [RECIPE.md](RECIPE.md) guides installation: read the source, copy only `mods/better-changes/` into your Herdr app configuration, validate it, and fit its sidebar into your existing layout. No bundled layout replaces your setup.
 
-Requires a Herdr version supporting mod tabs (`tab.new { mod, props }`) and Git on each machine you use. The default manifest docks the sidebar on the right at 368px when Herdr first discovers it. If your layout already provides a Changes slot, your agent can put `better-changes` there with `{ "mode": "sidebar" }` instead of creating another panel.
+Requires a Herdr version supporting mod tabs (`tab.new { mod, props }`) and Git on each machine you use. The default manifest docks the sidebar on the right at 368px when Herdr first discovers it, but Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and points its Changes slot at `better-changes` with `{ "mode": "sidebar" }`; if you already have your own layout, it asks whether to add the mod there or create a new layout.
 
 A name clash must be resolved before copying: retain the existing mod, rename this package's folder, and update its mod names and asset prefixes consistently. Do not overwrite an unrelated installation.
 

@@ -34,7 +34,7 @@ The helper is installed at `mods/github-pr/bin/herdr-pr`, not a Workflow-owned g
 
 ### Place the sidebar
 
-Clone shipped layouts before changing structure. Replace an existing PR/sidebar block's content, preserving its ID and dimensions:
+Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or create a new layout. Replace an existing PR/sidebar block's content, preserving its ID and dimensions:
 
 ```json
 { "mod": "github-pr", "props": { "mode": "branch" } }
