@@ -4,11 +4,14 @@ A standalone native tab bar and extensible action toolbar for [Herdr Desktop](ht
 
 ![Better Tabs](preview.png)
 
-- Select, drag-reorder, double-click rename, right-click, and close tabs.
+- Select, drag-reorder, double-click rename, right-click, and close tabs. A pointer-following drag preview and insertion marker show exactly where a tab will land.
+- The new-tab **+** sits immediately after the last tab.
 - Program icons, native working spinners, and blocked/done indicators.
 - Configurable buttons for panels, app/mod commands, overlays, stack toggles, shared state, or custom local JavaScript hooks.
 - Button groups, ordering, tooltips, icon-only display, shared-state badges, visibility/enabled predicates, and active highlighting.
-- Responsive overflow menu, with a configurable maximum number of visible toolbar buttons.
+- An always-visible vertical **⋮** menu for toolbar actions. Drag actions onto it to hide them, then drag them back out or use the **Show in toolbar** pin icon. Hidden actions are listed alphabetically.
+- A sidebar-toggle icon immediately after **⋮** hides or reopens the right sidebar without changing its selected panel.
+- Responsive overflow, with a configurable maximum number of visible toolbar buttons and a saved arrangement per layout.
 - Optional panel memory per space; window controls where the OS requires them.
 - No dependency on a workflow, Better Spaces, Better Changes, or any other custom mod.
 
@@ -78,7 +81,7 @@ Panel targets are **layout node IDs**, not mod names. A `changes` node can conta
 | `shared` | `key`, `value`, or `toggle: true` | Set or toggle a shared state value. |
 | `hook` | `name`, optional `args` | Call a trusted handler exported by this mod's `hooks.js`. |
 
-`herdr-app do better-tabs.button:changes` invokes a visible configured button by ID, respecting visibility/enabled conditions. `herdr-app do better-tabs.toggle-browser` invokes the example command alias above. `herdr-app do better-tabs.overflow` opens a menu of all currently available actions. Bind those same command strings in `keys.json`; the package installs no bindings itself.
+`herdr-app do better-tabs.button:changes` invokes a visible configured button by ID, respecting visibility/enabled conditions. `herdr-app do better-tabs.toggle-browser` invokes the example command alias above. `herdr-app do better-tabs.overflow` opens the hidden/overflow action menu. Bind those same command strings in `keys.json`; the package installs no bindings itself.
 
 Herdr delivers mod commands only to **shown copies**. Do not use a command hook to depend on a hidden or unmounted mod. A sequence dispatches in order but is not a transaction and does not roll back earlier commands on error.
 
@@ -87,7 +90,7 @@ Herdr delivers mod commands only to **shown copies**. Do not use a command hook 
 - Required: unique `id`, `action`. `label` defaults to the ID.
 - `icon`: bundled name (`file`, `changes`, `close`, `spinner`), or SVG path relative to the Herdr app home, e.g. `mods/my-panel/icon.svg`.
 - `tooltip`, `iconOnly`, `group` (a separator when the group changes), numeric `order` (ascending, stable ties).
-- `overflow: true` always puts an entry in the overflow menu.
+- `overflow: true` starts an entry in the overflow menu; a saved user arrangement can restore it to the toolbar.
 - `disabled: true` or `enabledWhen` prevents action dispatch.
 - `when` controls visibility. `activeWhen` overrides inferred active state.
 - A condition is `{ "shared": "my-mod.ready" }`, `{ "shared": "my-mod.mode", "equals": "review" }`, `{ "node": "panel" }` (exists and not hidden), or `{ "node": "stack", "child": "review" }`.
@@ -95,9 +98,29 @@ Herdr delivers mod commands only to **shown copies**. Do not use a command hook 
 
 ### Tab and toolbar preferences
 
-`maxButtons` limits visible buttons; the responsive width budget may show fewer. Remaining buttons go to overflow. The menu snapshots its entries when opened, while badge values and active/enabled predicates remain live.
+### Dragging tabs and arranging the toolbar
+
+Drag a tab along the bar to reorder it. Its original slot dims, a preview follows the pointer, and a colored insertion line indicates before/after placement. Reordering happens only when you release; small pointer movements remain ordinary clicks. Leaving the bar cancels the drag. The **+** scrolls with the tabs and remains directly after the last tab.
+
+The right-hand Files/Changes/custom controls are **toolbar actions**, separate from the terminal/mod tabs:
+
+- Drag an action onto **⋮** and release to hide it in the menu.
+- Click **⋮** to see hidden and automatically overflowed actions in alphabetical order. Clicking an entry performs its normal action.
+- Drag a menu entry out toward the toolbar; the menu closes so you can drop it before or after a visible action. A preview and insertion marker show its destination.
+- Alternatively, click an entry's **Show in toolbar** pin icon to restore it at the front without activating it.
+- Drag visible toolbar actions before/after one another to change their order.
+
+The arrangement is saved in Herdr shared preferences by layout and `toolbarId` (default `"main"`). Give multiple independent toolbars in one layout distinct `toolbarId` values. Menu copies share the originating toolbar's preferences. Stable action IDs preserve choices when configuration changes; this does not edit your layout file.
+
+`maxButtons` limits visible buttons; the responsive width budget may show fewer. Remaining buttons go to overflow. Restoring a menu entry puts it within the visible order, displacing another action into overflow if the limit is reached. Very narrow bars or `maxButtons: 0` can still leave every action in the menu. The compact menu uses Herdr's popover colors and standard menu-sized rows, anchors below the dots button, and shows only a short “No hidden actions” line when empty. Dragging/pinning instructions live in tooltips rather than a header. The menu snapshots its entries when opened, while badge values and active/enabled predicates remain live.
 
 `tabMaxWidth` defaults to 170 logical px. `closeButtons` accepts `"active"` (default), `"all"`, or `"none"`. Set `programIcons`, `statusIndicators`, `newButton`, or `scrollNavigation` to false to disable them. `sidebar` overrides the sidebar node ID used for macOS traffic-light spacing. Keep layout titlebar and traffic-light settings intact.
+
+### Sidebar visibility
+
+The panel icon immediately after **⋮** toggles the right sidebar without changing its selected panel. Its tooltip changes between **Hide sidebar** and **Show sidebar**. It stays outside the hideable action list.
+
+By default it targets `rememberPanels.container`, or the `panel` layout node. Set `"panelToggle": "my-sidebar"` to target a different node, or `"panelToggle": false` to omit it. The control is omitted if the target does not exist.
 
 ### Other mods contributing buttons
 
@@ -139,8 +162,8 @@ node --test tests/*.test.cjs
 herdr-app check "$PWD/mods/better-tabs"
 ```
 
-`main.js` renders the tabs/toolbar and synchronizes panel memory outside render. `actions.js` resolves conditions, contributions, and declarative actions. `hooks.js` is the optional local extension point. Assets are bundled, with shipped Herdr `menu` and `new-menu` used for native menus.
+`main.js` renders the tabs/toolbar, handles pointer gestures, and synchronizes panel memory outside render. `toolbar.js` contains pure action-arrangement and tab insertion-boundary helpers. `actions.js` resolves conditions, contributions, and declarative actions. `hooks.js` is the optional local extension point. Assets are bundled, with shipped Herdr `menu` and `new-menu` used for native menus.
 
-Tests cover action dispatch, missing targets, recursion limits, hooks, contributions, command aliases, per-space memory, tab actions, overflow, and standalone packaging. Native checks do not replace testing deferred menu rendering in the running app.
+Tests cover action dispatch, missing targets, recursion limits, hooks, contributions, command aliases, per-space memory, tab actions, drag thresholds/previews, insertion boundaries, drop-to-hide, drag/pin restoration, alphabetical overflow, preference isolation, and standalone packaging. Native checks do not replace testing deferred menu rendering in the running app.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.
