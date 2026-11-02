@@ -57,4 +57,4 @@ Split replacements are paired positionally inside each contiguous block, without
 - A partially staged file has distinct staged and unstaged previews. Commit staged leaves unstaged working edits intact; unstage before the first commit preserves working files.
 - Repeated file clicks reuse one tab per space, rename it correctly, preserve the repository, close through tab.close, and recreate after closing.
 - Both diff layouts show correct old/new line numbers; uneven replacements and multiple hunks align without losing lines.
-- The mod installs independently into the person's existing layout and has no dependency on herdr-workflow, factory-tabs, or pull-requests.
+- The mod installs independently into the person's existing layout and has no dependency on other custom mods.
