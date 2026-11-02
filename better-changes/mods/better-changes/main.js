@@ -692,10 +692,9 @@ export default class Changes extends View {
       .items_center()
       .justify_center()
       .rounded(5)
-      .border_1()
-      .border_color(active ? t.accent : t.border)
-      .bg(active ? t.selected : t.raised)
-      .text_color(disabled ? t.dim : active ? t.accent : t.muted)
+      // Stage/unstage buttons keep a resting fill so they read as actions; the rest fill on hover only.
+      .when(active || asset === "stage" || asset === "unstage", (el) => el.bg(t.selected))
+      .text_color(disabled ? t.dim : active ? t.foreground : t.muted)
       .tooltip(label)
       .accessibility_label(label)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -709,6 +708,14 @@ export default class Changes extends View {
       .child(svg(`mods/better-changes/${asset}.svg`).size(size <= 22 ? 12 : 14));
   }
 
+  // One 12px slot per ancestor level, each with a faint guide line under its chevron.
+  guides(depth, height, t) {
+    const slots = [];
+    for (let level = 0; level < depth; level++)
+      slots.push(div().w(12).h(height).flex_none().child(div().w(1).h_full().ml(5).bg(t.border)));
+    return slots;
+  }
+
   fileRow(file, depth, t, scope = "all") {
     const flat = this.view === "flat";
     const parts = file.path.split("/");
@@ -718,7 +725,7 @@ export default class Changes extends View {
       .id(`change-${scope}-${file.path}`)
       .h(30)
       .flex_none()
-      .pl(8 + depth * 14)
+      .pl(8)
       .pr(8)
       .gap(7)
       .items_center()
@@ -733,6 +740,7 @@ export default class Changes extends View {
       .hover((s) => s.bg(t.hover))
       .tooltip(file.path)
       .on_click((_e, cx) => this.pick(file, cx, scope))
+      .children(this.guides(depth, 30, t))
       .child(svg("mods/better-changes/file.svg").size(13).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().child(name))
       .when(flat && parts.length > 0, (el) =>
@@ -792,8 +800,7 @@ export default class Changes extends View {
       .flex_none()
       .rounded(7)
       .border_1()
-      .border_color(t.border)
-      .bg(t.raised);
+      .border_color(t.selected);
     for (const [style, label] of [
       ["inline", "Inline diff"],
       ["split", "Side-by-side diff"],
@@ -807,8 +814,8 @@ export default class Changes extends View {
           .items_center()
           .justify_center()
           .rounded(5)
-          .bg(active ? t.selected : t.raised)
-          .text_color(active ? t.accent : t.muted)
+          .when(active, (el) => el.bg(t.selected))
+          .text_color(active ? t.foreground : t.muted)
           .cursor_pointer()
           .tooltip(label)
           .accessibility_label(label)
@@ -869,8 +876,7 @@ export default class Changes extends View {
       .flex_none()
       .rounded(7)
       .border_1()
-      .border_color(t.border)
-      .bg(t.raised);
+      .border_color(t.selected);
     for (const view of ["tree", "flat"]) {
       const active = this.view === view;
       const label = view === "tree" ? "Tree view" : "Flat view";
@@ -882,8 +888,8 @@ export default class Changes extends View {
           .items_center()
           .justify_center()
           .rounded(5)
-          .bg(active ? t.selected : t.raised)
-          .text_color(active ? t.accent : t.muted)
+          .when(active, (el) => el.bg(t.selected))
+          .text_color(active ? t.foreground : t.muted)
           .cursor_pointer()
           .tooltip(label)
           .accessibility_label(label)
@@ -920,6 +926,7 @@ export default class Changes extends View {
           status: (isStaged ? file.stagedStatus : file.unstagedStatus) || file.status,
           ...(isStaged ? file.stagedStats : file.unstagedStats),
         }));
+      if (!isStaged) list.child(div().h(1).w_full().flex_none().my(4).bg(t.border));
       list.child(
         h_flex()
           .id(`changes-section-${scope}`)
@@ -994,7 +1001,7 @@ export default class Changes extends View {
     return h_flex()
       .id(`changes-folder-${scope}-${row.path}`)
       .h(28)
-      .pl(8 + row.depth * 14)
+      .pl(8)
       .gap(6)
       .flex_none()
       .items_center()
@@ -1006,8 +1013,8 @@ export default class Changes extends View {
         else this.closed.add(closedKey);
         cx.notify();
       })
-      .child(svg(`mods/better-changes/${chevron}.svg`).size(10).text_color(t.dim))
-      .child(svg("mods/better-changes/folder.svg").size(13).text_color(t.muted))
+      .children(this.guides(row.depth, 28, t))
+      .child(svg(`mods/better-changes/${chevron}.svg`).size(11).text_color(t.muted))
       .child(div().min_w(0).truncate().child(row.name));
   }
 
