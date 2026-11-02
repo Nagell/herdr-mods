@@ -499,6 +499,41 @@ export default class Spaces extends View {
   checkoutPRs(w) {
     return this.checkoutStatus(w)?.prs ?? [];
   }
+  // Keep ordinary clicks available to the enclosing space row. Modified link
+  // presses must stop both mouse events: the row selects on mouse-up, not click.
+  isPRLinkClick(event) {
+    return window().platform === "macos"
+      ? Boolean(event.modifiers?.platform)
+      : Boolean(event.modifiers?.control || event.modifiers?.platform);
+  }
+
+  prNumber(w, pr, status) {
+    const url = pr.url || `https://github.com/${pr.repository}/pull/${pr.number}`;
+    const shortcut = window().platform === "macos" ? "Cmd" : "Ctrl";
+    return div()
+      .id(`space-pr-link-${w.id}-${pr.repository}-${pr.number}`)
+      .text_size(em(0.85))
+      .cursor_pointer()
+      .tooltip(
+        `${pr.repository}#${pr.number} · ${status.label}\n${pr.title}\n${url}\n${shortcut}-click to open`,
+      )
+      .on_mouse_down("left", (event, cx) => {
+        if (!this.isPRLinkClick(event)) return;
+        cx.stop_propagation();
+        this.pressed = null;
+        this.over = null;
+      })
+      .on_mouse_up("left", (event, cx) => {
+        if (this.isPRLinkClick(event)) cx.stop_propagation();
+      })
+      .on_click((event, cx) => {
+        if (!this.isPRLinkClick(event)) return;
+        cx.stop_propagation();
+        cx.open_url(url);
+      })
+      .child(`#${pr.number}`);
+  }
+
   prBadge(w, t, compact = false) {
     const prs = this.checkoutPRs(w);
     if (!prs.length) return null;
@@ -515,7 +550,11 @@ export default class Spaces extends View {
           .tooltip(`${pr.repository}#${pr.number} · ${status.label}\n${pr.title}`)
           .child(svg(`mods/better-spaces/${status.icon}.svg`).size(13).flex_none())
           .when(!compact, (el) =>
-            el.child(div().text_size(em(0.85)).child(`#${pr.number} · ${status.label}`)),
+            el
+              .child(this.prNumber(w, pr, status))
+              .when(status.label !== "Draft", (row) =>
+                row.child(div().text_size(em(0.85)).child(`· ${status.label}`)),
+              ),
           ),
       );
     }

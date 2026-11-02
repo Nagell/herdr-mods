@@ -1,4 +1,4 @@
-Herdr Mods — Better Changes and Better Spaces
+Herdr Mods — Better Changes, Better Spaces, and Better Tabs
 Copyright 2026 Tawsif Aqib
 
 Better Changes adapts behavior and code from Herdr Desktop's shipped Changes mod.
@@ -8,6 +8,11 @@ licensed under the Apache License, Version 2.0.
 Better Spaces adapts code from Herdr Desktop's shipped spaces mod.
 Its bundled navigation and pull-request SVG icons are also adapted from
 Herdr Desktop.
+
+Better Tabs adapts Herdr Desktop's shipped tabs mod through the former Factory
+Tabs clone. Its bundled close, spinner, file, changes, and window-control SVG
+icons are adapted from Herdr Desktop as well. It adds configurable toolbar
+actions, trusted local hooks, an opt-in shared button registry, and overflow.
 
 This distribution adds tree/flat file lists, staging controls, reusable diff
 tabs, inline/split views, configurable typography, right-aligned space branches,

@@ -2,10 +2,14 @@
 
 A standalone spaces sidebar for Herdr Desktop: right-aligned Git branches, nested worktrees, and color-coded pull-request status from the GitHub CLI.
 
+![Better Spaces](preview.png)
+
+The screenshot shows a nested worktree with its branch aligned right and a gray draft PR badge beneath it. Cmd-click the PR number to open it on GitHub.
+
 - The current branch stays on the **same row as the space name, aligned right**, including `main`, `master`, and branches already used as the space's name.
 - Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status.
-- A PR line below the space/worktree shows an icon, number, and status: **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. Colors follow the current theme.
-- Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
+- A PR line below the space/worktree shows an icon and number: **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. Drafts omit the visible status label; their icon, color, and tooltip convey the state. Colors follow the current theme.
+- **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, colored avatars, ahead/behind counts, machine groups, and the compact sidebar rail.
 
 ## Install
@@ -38,7 +42,7 @@ An existing `branch.<branch>.herdr-pr` Git setting such as `owner/repo#42` overr
 
 PR results refresh at most once a minute per checkout, with immediate lookups when Herdr reports a branch change. Successful identical GitHub queries are cached for one minute. Local Git changes also trigger refreshes through Git-directory watches; remote/external changes have a 15-second foreground fallback. An API or authentication failure preserves last-good PRs **only for the same branch**, marks them stale, and exposes the error on hover. Without a previous result, the line reads `PR unavailable`. New branch selections never inherit an old branch's PR.
 
-The PR badge is informational; selecting its row selects the space. Space menus continue to use Herdr's shipped `menu` mod. Worktree grouping is for **open spaces**, not every checkout on disk. A worktree without an open main-checkout space remains a top-level row.
+The PR badge has no merge or review controls. Selecting its row selects the space; Cmd-clicking the number opens the PR in your default browser. Space menus continue to use Herdr's shipped `menu` mod. Worktree grouping is for **open spaces**, not every checkout on disk. A worktree without an open main-checkout space remains a top-level row.
 
 ## Development
 

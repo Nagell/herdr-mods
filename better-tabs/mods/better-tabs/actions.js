@@ -1,0 +1,101 @@
+// Declarative action engine. No eval, shell execution, or mod-source imports.
+import { layout, run, openOverlay, shared, setShared } from "herdr";
+import { hooks } from "./hooks.js";
+
+export function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const result = find(child, id);
+    if (result) return result;
+  }
+  return null;
+}
+
+export function matches(condition, root = layout()) {
+  if (!condition) return true;
+  if (condition.shared) {
+    const value = shared(condition.shared);
+    return Object.prototype.hasOwnProperty.call(condition, "equals")
+      ? value === condition.equals : Boolean(value);
+  }
+  if (condition.node) {
+    const node = find(root, condition.node);
+    return Boolean(node) && (condition.child ? node.active === condition.child : !node.hidden);
+  }
+  return false;
+}
+
+export function isActive(action, root = layout()) {
+  if (action?.type === "panel") {
+    const panel = find(root, action.container), stack = find(root, action.stack);
+    return Boolean(panel && !panel.hidden && stack?.active === action.target);
+  }
+  if (action?.type === "toggle-stack") return find(root, action.stack)?.active === action.child;
+  return false;
+}
+
+// Contributions are opt-in and declarative. Layout entries win ID collisions.
+// A publisher must remove its entries explicitly; shared state survives restarts.
+export function buttons(config, contributions = {}) {
+  const own = Array.isArray(config.buttons) ? config.buttons : [];
+  const extra = config.contributions
+    ? Object.entries(contributions ?? {}).sort(([a], [b]) => a.localeCompare(b))
+        .flatMap(([, entries]) => Array.isArray(entries) ? entries : []) : [];
+  const ids = new Set();
+  return [...own, ...extra].filter(button => {
+    if (!button || typeof button.id !== "string" || !button.id || ids.has(button.id)) return false;
+    ids.add(button.id);
+    return matches(button.when);
+  }).sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+}
+
+export function execute(action, context = {}, depth = 0) {
+  if (!action || depth > 12) throw Error("Invalid or excessively nested Better Tabs action");
+  const root = layout();
+  switch (action.type) {
+    case "command":
+      if (typeof action.name !== "string" || !action.name) throw Error("Command name is required");
+      return run(action.name, action.args ?? {});
+    case "panel": {
+      const panel = find(root, action.container), stack = find(root, action.stack);
+      if (!panel || !stack?.children?.some(child => child.id === action.target))
+        throw Error("Panel action references a missing container, stack, or child");
+      if (isActive(action, root)) return run("layout.hide", { id: action.container });
+      run("layout.select", { stack: action.stack, child: action.target });
+      return run("layout.show", { id: action.container });
+    }
+    case "toggle-stack": {
+      const stack = find(root, action.stack);
+      const child = stack?.active === action.child ? action.fallback : action.child;
+      if (!stack?.children?.some(node => node.id === child)) throw Error("Missing stack or child");
+      return run("layout.select", { stack: action.stack, child });
+    }
+    case "overlay":
+      if (typeof action.mod !== "string") throw Error("Overlay mod is required");
+      return openOverlay({ mod: action.mod, kind: action.kind ?? "popup", props: action.props ?? {},
+        ...(action.width ? { width: action.width } : {}), ...(action.height ? { height: action.height } : {}) });
+    case "sequence": {
+      if (!Array.isArray(action.actions)) throw Error("Sequence actions must be an array");
+      // Herdr run() queues commands; this preserves dispatch order, not async completion.
+      // Observe hook rejections even inside sequences, without awaiting each step.
+      const pending = [];
+      for (const step of action.actions) {
+        const result = execute(step, context, depth + 1);
+        if (result?.then) {
+          // Attach a rejection observer immediately if a later step throws.
+          pending.push(result.catch(error => { context.onError?.(error); }));
+        }
+      }
+      return pending.length ? Promise.all(pending) : undefined;
+    }
+    case "shared":
+      if (typeof action.key !== "string" || !action.key) throw Error("Shared key is required");
+      return setShared(action.key, action.toggle ? !shared(action.key) : action.value);
+    case "hook": {
+      const handler = Object.prototype.hasOwnProperty.call(hooks, action.name) && hooks[action.name];
+      if (typeof handler !== "function") throw Error(`Unknown Better Tabs hook: ${action.name}`);
+      return handler(action.args ?? {}, context);
+    }
+    default: throw Error(`Unknown Better Tabs action type: ${action.type}`);
+  }
+}

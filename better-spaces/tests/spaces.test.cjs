@@ -338,6 +338,67 @@ test("space rows align branches right and show their own PR underneath", () => {
   assert.equal(h.mod.checkoutPRs(space).length, 0);
 });
 
+test("PR numbers open their URL only on a modified click without selecting the space", () => {
+  const h = harness();
+  h.context.window = () => ({ active: true, platform: "macos" });
+  const pr = {
+    number: 42,
+    repository: "owner/repo",
+    title: "Example",
+    state: "OPEN",
+    url: "https://github.com/owner/repo/pull/42",
+  };
+  h.mod.checkoutPRs = () => [pr];
+  const number = find(h.mod.prBadge({ id: "s" }, h.colors), "space-pr-link-s-owner/repo-42");
+  const opened = [];
+  let stopped = 0;
+  h.cx.open_url = (url) => opened.push(url);
+  h.cx.stop_propagation = () => stopped++;
+
+  const plain = { modifiers: { platform: false, control: false } };
+  number.handlers.mouse_down_left(plain, h.cx);
+  number.handlers.mouse_up_left(plain, h.cx);
+  number.handlers.click(plain, h.cx);
+  assert.equal(opened.length, 0);
+  assert.equal(stopped, 0);
+
+  const cmd = { modifiers: { platform: true } };
+  h.mod.pressed = 1;
+  number.handlers.mouse_down_left(cmd, h.cx);
+  number.handlers.mouse_up_left(cmd, h.cx);
+  number.handlers.click(cmd, h.cx);
+  assert.deepEqual(opened, [pr.url]);
+  assert.equal(stopped, 3);
+  assert.equal(h.mod.pressed, null);
+  assert.equal(h.commands.length, 0);
+
+  h.context.window = () => ({ active: true, platform: "linux" });
+  number.handlers.click({ modifiers: { control: true } }, h.cx);
+  assert.equal(opened.length, 2);
+});
+
+test("draft PRs show only their number, keeping draft color, icon, and tooltip", () => {
+  const h = harness();
+  const pr = {
+    number: 43,
+    repository: "owner/repo",
+    title: "In progress",
+    state: "OPEN",
+    isDraft: true,
+  };
+  h.mod.checkoutPRs = () => [pr];
+  const badge = h.mod.prBadge({ id: "s" }, h.colors);
+  assert.equal(text(badge).trim(), "#43");
+  const row = find(badge, "space-pr-s-owner/repo-43");
+  assert.equal(row.attributes.text_color[0], h.colors.dim);
+  assert.match(row.attributes.tooltip[0], /Draft/);
+  const number = find(badge, "space-pr-link-s-owner/repo-43");
+  const opened = [];
+  h.cx.open_url = (url) => opened.push(url);
+  number.handlers.click({ modifiers: { platform: true } }, h.cx);
+  assert.deepEqual(opened, ["https://github.com/owner/repo/pull/43"]);
+});
+
 test("render is read-only and compact mode works without a named sidebar block", () => {
   const h = harness();
   h.live.spaces = [{ id: "s", name: "repo", folder: "/repo", tabs: [] }];
