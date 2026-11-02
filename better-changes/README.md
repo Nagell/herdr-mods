@@ -12,6 +12,7 @@ A focused Git changes sidebar and diff viewer for Herdr Desktop.
 - Herdr's configured fonts, green additions, red removals, and old/new line numbers.
 - A multiline commit-message editor and an icon-labelled **Commit / Amend** split button. Both operations use only the staged index; unstaged edits stay untouched. Unstaging also preserves working files before the first commit.
 - Local and remote spaces: Git and file reads run on the space's machine.
+- A **Commits** tab beside **Changes** lists history 50 commits at a time with a **Load more** row. Opening a commit shows its subject, author, date, body, and changed files; clicking a file opens that commit's diff in the same centre tab.
 
 ## Install only this mod
 
@@ -33,6 +34,10 @@ Write a title and optional body in the multiline **Commit message** field. **Ent
 - **Amend** rewrites the latest commit with the staged changes and your message. It can also change just the message when nothing is staged. Selecting it loads the latest commit's message into an empty editor, but never replaces an existing draft or text typed while loading. Amend is unavailable before the first commit.
 - Amend shows a history-rewrite warning and rechecks the latest commit before executing. If another tool advanced `HEAD`, select **Amend** again before retrying. Be careful with commits already shared with others; this mod never pushes or force-pushes.
 - Both operations are disabled while loading/busy or when conflicts remain. Failures preserve your message. A successful amend returns the button to **Commit** mode.
+
+## Commits
+
+The **Changes / Commits** pill in the header switches the sidebar between uncommitted changes and history. The list shows each commit's subject, author, relative age, and short hash, newest first, and loads 50 at a time. Click a commit for its full message and the files it touched, with the same Tree / Flat toggle; click **Commits** at the top to go back. When `origin` points at GitHub, Cmd-click (Ctrl-click elsewhere) the short hash to open the commit on GitHub. Clicking a file opens its diff for that commit in the reusable diff tab. Merge commits are shown against their first parent. The commit footer is hidden on this tab.
 
 ## Limits
 

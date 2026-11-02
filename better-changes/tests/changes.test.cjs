@@ -867,3 +867,103 @@ test("ordinary layouts open the diff tab without requiring a Factory center stac
   assert.equal(h.commands.filter((c) => c.cmd === "tab.new").length, 1);
   assert.equal(h.commands.filter((c) => c.cmd === "layout.select").length, 0);
 });
+test("log records, commit file lists and relative times parse Git output", () => {
+  const h = harness();
+  h.context.log =
+    "aaa\0a1\0Ann\0ann@x\x00100\0First\0Body line\n\n\x1e\nbbb\0b2\0Bob\0bob@x\x00200\0Second\0\x1e\n";
+  const commits = vm.runInContext("parseLog(log)", h.context);
+  assert.equal(commits.length, 2);
+  assert.deepEqual(
+    { ...commits[0] },
+    { hash: "aaa", short: "a1", author: "Ann", email: "ann@x", at: 100, subject: "First", body: "Body line" },
+  );
+  assert.equal(commits[1].body, "");
+  h.context.numstat = "2\t1\tsrc/app.js\0-\t-\timg.png\0";
+  h.context.names = "M\0src/app.js\0A\0img.png\0";
+  const files = vm.runInContext("commitFiles(numstat, names)", h.context);
+  assert.deepEqual({ ...files[0] }, { path: "src/app.js", add: 2, del: 1, binary: false, status: "M" });
+  assert.deepEqual({ ...files[1] }, { path: "img.png", add: 0, del: 0, binary: true, status: "A" });
+  assert.equal(vm.runInContext("timeAgo(0, 90)", h.context), "1m ago");
+  assert.equal(vm.runInContext("timeAgo(0, 3 * 86400)", h.context), "3d ago");
+  assert.equal(vm.runInContext("timeAgo(50, 55)", h.context), "just now");
+  for (const remote of [
+    "https://github.com/munza/herdr-mods.git",
+    "git@github.com:munza/herdr-mods.git",
+    "ssh://git@github.com/munza/herdr-mods",
+  ]) {
+    h.context.remote = remote;
+    assert.equal(vm.runInContext("githubRepo(remote)", h.context), "munza/herdr-mods");
+  }
+  h.context.remote = "https://gitlab.com/munza/herdr-mods.git";
+  assert.equal(vm.runInContext("githubRepo(remote)", h.context), null);
+});
+test("commits tab pages history, opens a commit's files, and diffs a file against its first parent", async () => {
+  const h = harness();
+  const record = (i) => `h${i}\0s${i}\0Ann\0a@x\x00${i}\0Subject ${i}\0\x1e\n`;
+  h.context.exec = async (cmd, args, options) => {
+    h.calls.push({ cmd, args, options });
+    if (args.includes("log")) {
+      const n = Number(args[args.indexOf("-n") + 1]);
+      const skip = Number(args[args.indexOf("--skip") + 1]);
+      const count = skip ? 3 : n;
+      return { code: 0, stdout: Array.from({ length: count }, (_, i) => record(skip + i)).join("") };
+    }
+    if (args.includes("--numstat")) return { code: 0, stdout: "1\t0\tsrc/app.js\0" };
+    if (args.includes("--name-status")) return { code: 0, stdout: "M\0src/app.js\0" };
+    return { code: 0, stdout: "@@ -1 +1 @@\n-a\n+b\n" };
+  };
+  let rendered = h.mod.render(h.cx);
+  assert.ok(find(rendered, "changes-list"));
+  find(rendered, "changes-tab-commits").handlers.click({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.commits.length, 50);
+  assert.equal(h.mod.commitsDone, false);
+  rendered = h.mod.render(h.cx);
+  assert.equal(find(rendered, "changes-list"), undefined);
+  find(rendered, "commit-more").handlers.click({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.commits.length, 53);
+  assert.equal(h.mod.commitsDone, true);
+  assert.equal(h.calls.at(-1).args[h.calls.at(-1).args.indexOf("--skip") + 1], "50");
+  rendered = h.mod.render(h.cx);
+  assert.equal(find(rendered, "commit-more"), undefined);
+  find(rendered, "commit-h7").handlers.click({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.selectedCommit.subject, "Subject 7");
+  assert.equal(h.mod.commitFiles.map((f) => f.path).join(), "src/app.js");
+  rendered = h.mod.render(h.cx);
+  assert.equal(find(rendered, "commit-link").handlers.click, undefined);
+  h.mod.repo = "munza/herdr-mods";
+  const opened = [];
+  rendered = h.mod.render(h.cx);
+  const link = find(rendered, "commit-link").handlers.click;
+  link({ modifiers: {} }, { ...h.cx, open_url: (u) => opened.push(u) });
+  assert.equal(opened.length, 0);
+  link({ modifiers: { platform: true } }, { ...h.cx, open_url: (u) => opened.push(u) });
+  assert.deepEqual(opened, ["https://github.com/munza/herdr-mods/commit/h7"]);
+  const shows = h.calls.filter((c) => c.args.includes("show"));
+  assert.equal(shows.length, 2);
+  assert.ok(shows.every((c) => c.args.includes("--diff-merges=first-parent") && c.args.includes("h7")));
+  rendered = h.mod.render(h.cx);
+  assert.equal(find(rendered, "changes-stage-src/app.js"), undefined);
+  find(rendered, "change-commit-src/app.js").handlers.click({}, h.cx);
+  const selected = h.values["better-changes.selection"];
+  assert.equal(selected.scope, "commit");
+  assert.equal(selected.commit.hash, "h7");
+  assert.equal(selected.file.add, 1);
+  assert.equal(h.commands.filter((c) => c.cmd === "tab.new").length, 1);
+  find(rendered, "commit-back").handlers.click({}, h.cx);
+  assert.equal(h.mod.selectedCommit, null);
+
+  const d = harness("diff");
+  d.context.exec = h.context.exec;
+  d.values["better-changes.selection"] = selected;
+  d.mod.syncSelection(d.cx);
+  await d.flush();
+  const diff = h.calls.at(-1).args; // the shared exec stub records into h.calls
+  assert.ok(diff.includes("show") && diff.includes("h7") && !diff.includes("diff"));
+  assert.equal(diff.at(-1), "src/app.js");
+  assert.equal(d.mod.rows.length, 3);
+  rendered = d.mod.render(d.cx);
+  assert.ok(JSON.stringify(rendered).includes("Commit s7 · Subject 7"));
+});

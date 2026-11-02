@@ -153,3 +153,60 @@ export function splitDiffRows(rows) {
   flushReplacement();
   return paired;
 }
+
+// `git log` records separated by \x1e; fields by \0: hash, short hash, author,
+// email, unix time, subject, body. Git adds a newline after each record.
+export function parseLog(text) {
+  return text
+    .split("\x1e")
+    .filter((record) => record.includes("\0"))
+    .map((record) => {
+      const [hash, short, author, email, at, subject, body = ""] = record.replace(/^\n/, "").split("\0");
+      return { hash, short, author, email, at: Number(at), subject, body: body.trim() };
+    });
+}
+
+// Combine `show --numstat -z` and `show --name-status -z` output for one commit.
+// Binary files report "-" counts. Status falls back to M when a path is missing.
+export function commitFiles(numstat, nameStatus) {
+  const status = new Map();
+  const fields = nameStatus.split("\0");
+  for (let i = 0; i + 1 < fields.length; i += 2) status.set(fields[i + 1], fields[i][0]);
+  return numstat
+    .split("\0")
+    .filter(Boolean)
+    .map((line) => {
+      const [add, del, path] = line.split("\t");
+      const binary = add === "-";
+      return {
+        path,
+        add: binary ? 0 : Number(add),
+        del: binary ? 0 : Number(del),
+        binary,
+        status: status.get(path) ?? "M",
+      };
+    });
+}
+
+export function timeAgo(at, now = Date.now() / 1000) {
+  const seconds = Math.max(0, now - at);
+  for (const [unit, size] of [
+    ["y", 31536000],
+    ["mo", 2592000],
+    ["w", 604800],
+    ["d", 86400],
+    ["h", 3600],
+    ["m", 60],
+  ])
+    if (seconds >= size) return `${Math.floor(seconds / size)}${unit} ago`;
+  return "just now";
+}
+
+// "owner/repo" for a GitHub remote URL (https, git@, or ssh), else null.
+export function githubRepo(remote) {
+  const match =
+    /^(?:(?:https?|git):\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com(?::[0-9]+)?\/)([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(
+      (remote ?? "").trim(),
+    );
+  return match && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(match[1]) ? match[1] : null;
+}

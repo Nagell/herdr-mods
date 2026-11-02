@@ -1,7 +1,7 @@
 // Sidebar status/commit controls and a reusable diff-tab view share this class.
 // Pure Git-output parsing and diff-row transformations live in model.js.
 import { em, codeFont } from "./typography.js";
-import { changedFiles, fileTree, diffRows, splitDiffRows } from "./model.js";
+import { changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo } from "./model.js";
 import { View, div, svg } from "gpui-kit";
 import {
   v_flex,
@@ -43,6 +43,8 @@ const MAX_LINE_LENGTH = 4000;
 const CONTEXT_POLL_MS = 300;
 const STATUS_POLL_MS = 10000;
 const TAB_OPEN_TIMEOUT_MS = 1500;
+const COMMIT_PAGE = 50;
+const LOG_FORMAT = "--format=%H%x00%h%x00%an%x00%ae%x00%at%x00%s%x00%b%x1e";
 
 // Follow the active terminal unless the active tab is our diff viewer. Mod panes
 // have no terminal cwd, so that case must use the repository saved for the tab.
@@ -75,6 +77,8 @@ export default class Changes extends View {
     this.source = props()?.source ?? _props?.source;
     this.restoreDiffSelection(_props);
     this.view = localStorage.getItem("better-changes.view") === "flat" ? "flat" : "tree";
+    this.tab = localStorage.getItem("better-changes.tab") === "commits" ? "commits" : "changes";
+    this.resetCommits();
     this.diffLayout =
       shared("better-changes.diff-layout") ??
       (localStorage.getItem("better-changes.diff-layout") === "split" ? "split" : "inline");
@@ -238,6 +242,8 @@ export default class Changes extends View {
       this.amendToken++;
       this.amendLoading = false;
       this.amendHead = null;
+      this.resetCommits();
+      this.repo = null;
     }
     if (!cwd) return;
     this.loading = true;
@@ -272,7 +278,10 @@ export default class Changes extends View {
         ];
         for (const stat of stats)
           if (stat.code !== 0) throw Error(stat.stderr || "Cannot read change statistics");
+        // Only the sidebar links commits to GitHub; a missing or foreign remote is fine.
+        const origin = this.mode === "sidebar" ? await git(["remote", "get-url", "origin"]) : null;
         if (context !== this.contextKey()) return;
+        this.repo = origin?.code === 0 ? githubRepo(origin.stdout) : null;
         const files = changedFiles(
           status.stdout,
           stats.map((r) => r.stdout),
@@ -287,6 +296,7 @@ export default class Changes extends View {
         this.files = files.slice(0, MAX_FILES);
         this.error = null;
         this.watch(root, cx);
+        if (this.mode === "sidebar" && this.tab === "commits") this.loadCommits(cx);
         if (this.mode === "diff") {
           this.syncSelection(cx);
           if (this.path && !this.diffLoading) this.loadDiff(cx);
@@ -327,6 +337,12 @@ export default class Changes extends View {
       scope,
       at: Date.now(),
     };
+    if (scope === "commit") {
+      // The diff tab has no commit list, so the pick carries what it needs.
+      const { hash, short, subject } = this.selectedCommit;
+      selected.commit = { hash, short, subject };
+      selected.file = file;
+    }
     const entries = shared("better-changes.diff-tabs") ?? {};
     const old = entries[space.id];
     const tab = this.diffTab(space.id);
@@ -397,6 +413,8 @@ export default class Changes extends View {
     this.selection = id;
     this.path = selected.path;
     this.scope = selected.scope || "all";
+    this.commitRef = selected.commit ?? null;
+    this.commitFile = selected.file ?? null;
     this.rows = [];
     this.note = null;
     this.diffToken++;
@@ -413,7 +431,8 @@ export default class Changes extends View {
     const on = this.on;
     const hasHead = this.hasHead;
     const scope = this.scope || "all";
-    const file = this.files.find((f) => f.path === path);
+    const commit = this.commitRef;
+    const file = scope === "commit" ? this.commitFile : this.files.find((f) => f.path === path);
     const token = ++this.diffToken;
     this.note = null;
     if (!file) {
@@ -454,14 +473,18 @@ export default class Changes extends View {
           const result = await this.git(
             [
               "--literal-pathspecs",
-              "diff",
-              ...(scope === "staged"
-                ? ["--cached"]
-                : scope === "unstaged"
-                  ? []
-                  : hasHead
-                    ? ["HEAD"]
-                    : []),
+              ...(scope === "commit"
+                ? ["show", "--diff-merges=first-parent", "--format=", commit.hash]
+                : [
+                    "diff",
+                    ...(scope === "staged"
+                      ? ["--cached"]
+                      : scope === "unstaged"
+                        ? []
+                        : hasHead
+                          ? ["HEAD"]
+                          : []),
+                  ]),
               "--no-ext-diff",
               "--no-textconv",
               "--no-color",
@@ -681,6 +704,116 @@ export default class Changes extends View {
       }
     });
   }
+  // ── Commit history (sidebar only) ─────────────────────────────────────────
+
+  resetCommits() {
+    this.commits = [];
+    this.commitsDone = false;
+    this.commitsLoading = false;
+    this.commitsError = null;
+    this.selectedCommit = null;
+    this.commitFiles = [];
+    this.commitFilesLoading = false;
+    this.commitFilesError = null;
+    this.commitToken = (this.commitToken ?? 0) + 1;
+  }
+
+  setTab(tab, cx) {
+    this.tab = tab;
+    localStorage.setItem("better-changes.tab", tab);
+    if (tab === "commits" && !this.commits.length) this.loadCommits(cx);
+    cx.notify();
+  }
+
+  // Reload keeps the pages already shown; `more` appends the next page.
+  loadCommits(cx, more = false) {
+    if (this.commitsLoading || !this.root) return;
+    if (!this.hasHead) {
+      this.commits = [];
+      this.commitsDone = true;
+      return;
+    }
+    const context = this.context;
+    const token = ++this.commitToken;
+    const count = more ? COMMIT_PAGE : Math.max(COMMIT_PAGE, this.commits.length);
+    const skip = more ? this.commits.length : 0;
+    this.commitsLoading = true;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const result = await this.git([
+          "log",
+          "--no-color",
+          LOG_FORMAT,
+          "-n",
+          String(count),
+          "--skip",
+          String(skip),
+        ]);
+        if (token !== this.commitToken || context !== this.contextKey()) return;
+        if (result.code !== 0) throw Error(result.stderr || "Cannot read history");
+        const page = parseLog(result.stdout);
+        this.commits = more ? [...this.commits, ...page] : page;
+        this.commitsDone = page.length < count;
+        this.commitsError = null;
+      } catch (error) {
+        if (token === this.commitToken) this.commitsError = error.message;
+      } finally {
+        if (token === this.commitToken) {
+          this.commitsLoading = false;
+          cx.notify();
+        }
+      }
+    });
+  }
+
+  openCommit(commit, cx) {
+    const context = this.context;
+    const token = ++this.commitToken;
+    this.selectedCommit = commit;
+    this.commitFiles = [];
+    this.commitFilesError = null;
+    this.commitFilesLoading = true;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        // `--numstat --name-status` together print only the last one, so ask twice.
+        const show = (flag) =>
+          this.git([
+            "show",
+            "--diff-merges=first-parent",
+            "--format=",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            flag,
+            "-z",
+            commit.hash,
+          ]);
+        const numstat = await show("--numstat");
+        const names = await show("--name-status");
+        if (token !== this.commitToken || context !== this.contextKey()) return;
+        if (numstat.code !== 0 || names.code !== 0)
+          throw Error(numstat.stderr || names.stderr || "Cannot read commit");
+        this.commitFiles = commitFiles(numstat.stdout, names.stdout);
+      } catch (error) {
+        if (token === this.commitToken) this.commitFilesError = error.message;
+      } finally {
+        if (token === this.commitToken) {
+          this.commitFilesLoading = false;
+          cx.notify();
+        }
+      }
+    });
+  }
+
+  closeCommit(cx) {
+    this.selectedCommit = null;
+    this.commitFiles = [];
+    this.commitToken++;
+    this.commitFilesLoading = false;
+    cx.notify();
+  }
   // ── Shared controls and file rows ─────────────────────────────────────────
 
   icon(id, asset, label, action, t, active = false, disabled = false, size = 24) {
@@ -767,7 +900,7 @@ export default class Changes extends View {
           )
           .child(file.status),
       )
-      .when(scope !== "all", (el) =>
+      .when(scope === "staged" || scope === "unstaged", (el) =>
         el.child(
           this.icon(
             `changes-${scope === "staged" ? "unstage" : "stage"}-${file.path}`,
@@ -842,6 +975,10 @@ export default class Changes extends View {
       .text_size(em(1));
     if (this.mode === "diff") return this.renderDiff(root, t);
     root.child(this.renderSidebarHeader(t));
+    if (this.tab === "commits") {
+      root.child(this.selectedCommit ? this.renderCommitDetail(t) : this.renderCommitList(t));
+      return root;
+    }
     root.child(this.renderFileList(t));
     if (this.error && this.files.length)
       root.child(div().px(12).py(6).text_color(t.ansi1).child(this.error));
@@ -858,15 +995,44 @@ export default class Changes extends View {
       .flex_none()
       .items_center()
       .border_b(1)
-      .border_color(t.border)
-      .child(div().font_semibold().child("Changes"))
-      .child(
+      .border_color(t.border);
+    const tabs = h_flex()
+      .id("changes-tabs")
+      .p(2)
+      .gap(2)
+      .items_center()
+      .flex_none()
+      .rounded(7)
+      .border_1()
+      .border_color(t.selected);
+    for (const [tab, label] of [
+      ["changes", "Changes"],
+      ["commits", "Commits"],
+    ]) {
+      const active = this.tab === tab;
+      tabs.child(
         div()
-          .text_size(em(0.8))
-          .text_color(t.dim)
-          .child(String(this.total ?? 0)),
-      )
-      .child(div().flex_1());
+          .id(`changes-tab-${tab}`)
+          .h(22)
+          .px(8)
+          .flex()
+          .items_center()
+          .rounded(5)
+          .text_size(em(0.85))
+          .when(active, (el) => el.bg(t.selected))
+          .text_color(active ? t.foreground : t.muted)
+          .cursor_pointer()
+          .hover((el) => el.bg(active ? t.selected : t.hover))
+          .gap(5)
+          .on_click((_e, cx) => this.setTab(tab, cx))
+          .child(label)
+          .when(tab === "changes", (el) =>
+            el.child(div().text_size(em(0.75)).text_color(t.dim).child(String(this.total ?? 0))),
+          ),
+      );
+    }
+    head.child(tabs);
+    head.child(div().flex_1());
     head.child(this.diffLayoutToggle(t));
     const fileViews = h_flex()
       .id("changes-file-view")
@@ -962,21 +1128,7 @@ export default class Changes extends View {
         );
         continue;
       }
-      if (this.view === "flat") list.children(group.map((file) => this.fileRow(file, 0, t, scope)));
-      else
-        for (const row of fileTree(
-          group,
-          new Set(
-            [...this.closed]
-              .filter((k) => k.startsWith(scope + ":"))
-              .map((k) => k.slice(scope.length + 1)),
-          ),
-        )) {
-          if (row.kind === "file") list.child(this.fileRow(row.file, row.depth, t, scope));
-          else {
-            list.child(this.folderRow(row, scope, t));
-          }
-        }
+      list.children(this.fileRows(group, scope, t));
     }
     if (!this.files.length)
       list.child(
@@ -992,6 +1144,136 @@ export default class Changes extends View {
                   : "No folder selected"),
           ),
       );
+    return list;
+  }
+
+  // Tree or flat rows for one group, honouring the sidebar's view toggle.
+  fileRows(group, scope, t) {
+    if (this.view === "flat") return group.map((file) => this.fileRow(file, 0, t, scope));
+    const closed = new Set(
+      [...this.closed].filter((k) => k.startsWith(scope + ":")).map((k) => k.slice(scope.length + 1)),
+    );
+    return fileTree(group, closed).map((row) =>
+      row.kind === "file"
+        ? this.fileRow(row.file, row.depth, t, scope)
+        : this.folderRow(row, scope, t),
+    );
+  }
+
+  renderCommitList(t) {
+    const list = v_flex().id("commit-list").flex_1().min_h(0).overflow_y_scrollbar().p(6);
+    for (const commit of this.commits)
+      list.child(
+        v_flex()
+          .id(`commit-${commit.hash}`)
+          .px(8)
+          .py(6)
+          .gap(2)
+          .flex_none()
+          .rounded(5)
+          .cursor_pointer()
+          .hover((el) => el.bg(t.hover))
+          .on_click((_e, cx) => this.openCommit(commit, cx))
+          .child(div().truncate().child(commit.subject || "(no message)"))
+          .child(
+            h_flex()
+              .gap(6)
+              .text_size(em(0.8))
+              .text_color(t.dim)
+              .child(div().flex_1().truncate().child(`${commit.author} · ${timeAgo(commit.at)}`))
+              .child(div().child(commit.short)),
+          ),
+      );
+    if (this.commitsError) list.child(div().p(10).text_color(t.ansi1).child(this.commitsError));
+    else if (this.commitsLoading && !this.commits.length)
+      list.child(div().p(10).text_color(t.dim).child("Loading commits…"));
+    else if (!this.commits.length)
+      list.child(div().p(10).text_color(t.dim).child(this.root ? "No commits yet" : "No folder selected"));
+    else if (!this.commitsDone)
+      list.child(
+        div()
+          .id("commit-more")
+          .h(30)
+          .flex()
+          .items_center()
+          .justify_center()
+          .rounded(5)
+          .text_size(em(0.85))
+          .text_color(t.muted)
+          .cursor_pointer()
+          .hover((el) => el.bg(t.hover))
+          .on_click((_e, cx) => this.loadCommits(cx, true))
+          .child(this.commitsLoading ? "Loading…" : "Load more"),
+      );
+    return list;
+  }
+
+  renderCommitDetail(t) {
+    const commit = this.selectedCommit;
+    const list = v_flex().id("commit-detail").flex_1().min_h(0).overflow_y_scrollbar().p(6);
+    list.child(
+      h_flex()
+        .id("commit-back")
+        .h(28)
+        .px(6)
+        .gap(6)
+        .flex_none()
+        .items_center()
+        .rounded(5)
+        .cursor_pointer()
+        .text_color(t.muted)
+        .hover((el) => el.bg(t.hover))
+        .on_click((_e, cx) => this.closeCommit(cx))
+        .child(svg("mods/better-changes/chevron-left.svg").size(11))
+        .child(div().text_size(em(0.85)).child("Commits")),
+    );
+    list.child(div().px(8).py(4).font_semibold().whitespace_normal().child(commit.subject));
+    const url = this.repo ? `https://github.com/${this.repo}/commit/${commit.hash}` : null;
+    list.child(
+      h_flex()
+        .px(8)
+        .gap(4)
+        .flex_wrap()
+        .text_size(em(0.8))
+        .text_color(t.dim)
+        .child(div().child(`${commit.author} · ${new Date(commit.at * 1000).toLocaleString()} ·`))
+        .child(
+          div()
+            .id("commit-link")
+            .child(commit.short)
+            .when(Boolean(url), (el) =>
+              el
+                .cursor_pointer()
+                .text_color(t.accent)
+                .underline()
+                .tooltip(`${url}\nCmd-click (Ctrl-click on other platforms) to open on GitHub`)
+                .hover((s) => s.text_color(t.foreground))
+                .on_click((event, cx) => {
+                  if (event.modifiers?.platform || event.modifiers?.control) {
+                    cx.stop_propagation();
+                    cx.open_url(url);
+                  }
+                }),
+            ),
+        ),
+    );
+    if (commit.body)
+      list.child(div().px(8).py(6).text_size(em(0.9)).text_color(t.muted).whitespace_normal().child(commit.body));
+    list.child(div().h(1).w_full().flex_none().my(4).bg(t.border));
+    list.child(
+      h_flex()
+        .h(34)
+        .px(8)
+        .gap(6)
+        .items_center()
+        .flex_none()
+        .child(div().font_semibold().text_size(em(0.9)).child("Files"))
+        .child(div().text_size(em(0.8)).text_color(t.dim).child(String(this.commitFiles.length))),
+    );
+    if (this.commitFilesError) list.child(div().px(8).text_color(t.ansi1).child(this.commitFilesError));
+    else if (this.commitFilesLoading && !this.commitFiles.length)
+      list.child(div().px(8).text_color(t.dim).child("Loading files…"));
+    list.children(this.fileRows(this.commitFiles, "commit", t));
     return list;
   }
 
@@ -1227,7 +1509,8 @@ export default class Changes extends View {
   // ── Diff rendering (inline and side-by-side) ───────────────────────────────
 
   renderDiff(root, t) {
-    const original = this.files.find((f) => f.path === this.path);
+    const original =
+      this.scope === "commit" ? this.commitFile : this.files.find((f) => f.path === this.path);
     const file = original
       ? {
           ...original,
@@ -1289,7 +1572,7 @@ export default class Changes extends View {
             .flex_1()
             .truncate()
             .child(
-              `${this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
+              `${this.scope === "commit" ? `Commit ${this.commitRef?.short} · ${this.commitRef?.subject}` : this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
             ),
         )
         .child(div().text_color(t.ansi2).child("+ Added"))
