@@ -1,5 +1,5 @@
 // Declarative action engine. No eval, shell execution, or mod-source imports.
-import { layout, run, openOverlay, shared, setShared } from "herdr";
+import { layout, panes, run, openOverlay, shared, setShared } from "herdr";
 import { hooks } from "./hooks.js";
 
 export function find(node, id) {
@@ -56,6 +56,24 @@ export function execute(action, context = {}, depth = 0) {
     case "command":
       if (typeof action.name !== "string" || !action.name) throw Error("Command name is required");
       return run(action.name, action.args ?? {});
+    case "mod-tab": {
+      const space = context.space;
+      if (!space || typeof action.mod !== "string") throw Error("A mod tab requires a current space and mod");
+      const ids = new Set((space.tabs ?? []).map(tab => tab.id));
+      const allPanes = panes();
+      const tab = allPanes.find(pane => pane.mod === action.mod && ids.has(pane.tab))?.tab;
+      if (tab) return run("tab.select", { id: tab });
+      const key = JSON.stringify([space.id, action.mod]);
+      const entries = shared("better-tabs.mod-tabs") ?? {};
+      if (entries[key]?.pending && Date.now() - entries[key].pending < 1500) return;
+      const activeTab = space.tabs?.find(tab => tab.active)?.id;
+      const candidates = allPanes.filter(pane => pane.tab === activeTab && pane.cwd);
+      const terminal = candidates.find(pane => pane.focused) ?? candidates[0];
+      const source = { cwd: terminal?.cwd ?? space.folder, on: space.machine ?? null };
+      setShared("better-tabs.mod-tabs", { ...entries, [key]: { source, pending: Date.now() } });
+      return run("tab.new", { space: space.id, name: action.name ?? action.mod, mod: action.mod,
+        props: { ...(action.props ?? {}), space: space.id, source } });
+    }
     case "panel": {
       const panel = find(root, action.container), stack = find(root, action.stack);
       if (!panel || !stack?.children?.some(child => child.id === action.target))

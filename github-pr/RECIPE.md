@@ -1,0 +1,63 @@
+# GitHub PR
+
+A standalone native GitHub pull-request sidebar and repository browser for a person's existing Herdr window. The sidebar shows PRs for the active checkout; All PRs opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow or Better Tabs dependency.
+
+![GitHub PR](preview.png)
+
+## What you see
+
+Use a full-height theme-background panel with a 1px theme border, 10px rounding, and a 42px header. The branch sidebar header reads PR, with a PR selector, All PRs, GitHub, and refresh. It displays details directly for the matching checkout PR. The browser heading is GitHub PR, with a right-aligned repository URL that opens on Cmd-click/Ctrl-click. A border separates the header from content. There is no browser footer or internal close button; normal tab controls close it. A layout framing lone panes should disable lone pane headers to avoid duplicated titles.
+
+The browser's one filter row contains a flexible search field, All PRs/Created/Involved dropdown, and Open/Draft/Merged/Closed/All dropdown. The scrolling list has rounded raised cards with PR number/title, author, state, head branch, and involvement reasons. Load more follows the list.
+
+Details show Back (browser only), state icon, number/title, GitHub link, branch/author metadata, and Description/Conversations/Checks tabs. Markdown descriptions, conversation cards, author/unresolved filters, timestamp/unread labels, quoted code context, reply and agent split actions, inline editors with Markdown preview, checks/workflows/jobs/steps, and failed logs fill the scrolling body. Branch view keeps a 34px status footer; browser does not. Pending/error notices remain visible above content.
+
+Open PR icons are ansi2 green, drafts dim gray, merged ansi5 purple, closed ansi1 red. Check states have distinct success/failure/pending/running/skipped icons; running animates natively. Working/blocked/done/idle agent states are not PR states. Use theme colors and configured fonts, resolving em-like sizes through ui_font_size, then font_size, then 14. Do not hardcode a dark-only look.
+
+## How it behaves
+
+Branch discovery follows the active terminal cwd and machine. Match exact branch and source-repository remotes, prefer open matches, honor an explicit branch.<branch>.herdr-pr binding, and let people select multiple matches. Detached/no-repo/no-match cases must stay navigable. A selected pinned browser retains the checkout source for the sidebar.
+
+All PRs opens one browser mod tab per space using tab.new; subsequent clicks select it with tab.select. Save source {cwd,on} and space in props. Guard rapid repeated opens; after closing via the tab controls, later opens recreate it. Own this behavior in GitHub PR, not in another mod. Optional Better Tabs integration is configuration only. No assumptions about Factory center stacks or panel node IDs.
+
+Browser repository detection prefers upstream, branch tracking remote, then origin, with a valid saved choice. Support GitHub.com HTTPS/SSH URLs. Git operations and file reads run on the source machine; GitHub requests and gh credentials stay local. Pin browser source even when other spaces are selected. Ignore stale async responses after source/selection changes.
+
+Debounce search 450ms; queries shorter than three characters clear server filtering. GitHub owns matching, including body text and qualifiers. Involved unions assignment, review-requested, reviewed, and commented queries; deduplicate and retain independent pagination cursors. Preserve server order without another literal filter. Refresh reads roughly once per minute and on explicit refresh; do not redraw or query every frame.
+
+Clicking a PR opens details. Preserve filters, selection, section, author/unresolved filters, expanded check groups, read snapshots, and reply drafts per repository/mode. Restore drafts after errors. Thread filtering keeps complete matching context. Reply and Quote reply open editors, never post until explicit Reply/Comment. Resolve/reopen obey GitHub permissions. On timeout, warn to refresh before retrying because a write might have succeeded.
+
+Checks group by workflow/run, expand jobs/steps, normalize queued/running/passed/failed/skipped/cancelled states, and fetch failed logs on demand (last 60KB) while retaining links to full output. Render unread markers against stored fingerprints and mark loaded comments read explicitly or when leaving a visited Conversations section.
+
+Create worktree in live browser details captures source machine/space/repository/PR/head, accepts independent branch/worktree names, refuses existing branches/nonempty folders, fetches the PR head including forks, creates ~/.herdr/worktrees/<owner>-<repository>/<worktree-name>, records branch association, and opens a terminal there in the captured space. A terminal-open failure retains the checkout for retry. Never discard working files.
+
+Agent Send actions have editable prompts, source-space agent selection, and explicit submission. Draft fix & reply asks for read-only analysis/proposed fix/reply in a bound JSON result, not application or posting. Retain legacy .workflow/pr-proposals/ data paths for existing drafts, but never require or invoke Workflow. Validate request/repo/PR/commit/comment bindings and refetch context before posting a reviewed draft.
+
+Commands: open-browser/toggle, refresh, back, open:<number>, checks/conversation/description, worktree, preview:<repo>#<numbers>, preview-browser:<repo>, and off variants. They reach shown copies only. Public previews use local authentication for public reads, never mutate GitHub or create worktrees, do not change Git remotes, and persist until disabled.
+
+## Built from
+
+One package with mods/github-pr/main.js, typography.js, mod.json (place:none, title:GitHub PR), SVGs, helper/go.mod/main.go/main_test.go, install.py, tests, docs, and preview. Build the dependency-free Go 1.23+ helper locally into the installed mod's bin/herdr-pr. Do not use a helper owned by another repo or ship a machine-specific compiled binary. The Python installer builds before copying, refuses unrelated collisions/symlinks, supports explicit updates, and checks the installed mod without modifying keys/layouts.
+
+Native GPUI div/svg and gpui-base flex, input/textarea, Markdown, and Popover controls. Herdr supplies spaces, panes, agents, terminals, props, shared/setShared, exec, hc, home/appHome, theme, readTextFile, nextCommand, run, timers, native URL opening, and localStorage. Commands use tab.new/select and terminals/agents; no custom mod code is imported. The bundled helper runs local gh API/GraphQL/pr/run commands with explicit repository, validated request fields, JSON bodies, independent cursors, and a 26-second timeout.
+
+## Watch out
+
+Before installation explain Git/gh/hc execution, repository/proposal file reads, GitHub access through local credentials, and explicit actions that post/resolve, create worktrees/branches/config, open terminals, and send prompts. Read every source before installing. Copy only runtime code/assets and the built helper; docs/tests/recipe do not belong in the installed mods folder. Go/Python are development/install dependencies, not native JS runtime dependencies.
+
+Clone shipped layouts first; replace only the PR slot reference and preserve node IDs, dimensions, sibling panels, and keys. GitHub PR self-opens github-pr mod tabs and uses mods/github-pr asset/helper paths; rename all consistently on an unrelated name clash. A layout node may keep its old pull-requests ID without depending on that old mod. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
+
+GitHub Enterprise and non-GitHub hosting are unsupported. Search indexing is eventually consistent. Herdr native initial checks do not cover every deferred render/async result. Conversation pagination is bounded and fails visibly rather than silently truncating; large failed logs are limited. A new mod identity may require copying old local state to retain drafts during migration; never overwrite existing personal state blindly.
+
+## Done when
+
+- Node tests, Python installer tests, Go tests/vet, and herdr-app check pass.
+- Package has no Factory/Better Tabs/Workflow helper/layout dependency.
+- Live sidebar and reusable browser tab render without errors; normal tab-close works and reopening creates one tab.
+- One browser heading has the modifier-click repository URL and bottom border, with no duplicate lone-pane heading, footer, or internal close button.
+- Local/remote source capture stays pinned through tab and space switches.
+- PR discovery handles fork heads, explicit bindings, detached/no-match states, and unavailable remotes.
+- Filters/search/pagination, saved views, thread/reply/check UI, drafts, errors, and stale-response invalidation work.
+- Preview cannot write; tests mock GitHub mutations and never post automatically.
+- Worktrees validate names/existing state and preserve completed checkouts on terminal failure.
+- Agent proposal binding rejects stale context and posting remains an explicit reviewed action.
+- Installed layouts/keys still work after removing the old bundled PR mod and helper.

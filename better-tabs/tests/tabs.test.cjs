@@ -11,6 +11,7 @@ function harness(config = {}) {
     { id: 'panel', hidden: false, children: [{ id: 'panel-body', active: 'files', children: [{ id: 'files' }, { id: 'changes' }] }] },
     { id: 'center', active: 'main', children: [{ id: 'main' }, { id: 'browser' }] },
   ] };
+  let panes = [];
   let spaces = [{ id: 'a', active: true, tabs: [{ id: 't1', name: 'One', active: true }, { id: 't2', name: 'Two' }] }];
   function element() {
     const value = { kids: [], handlers: {} };
@@ -28,7 +29,7 @@ function harness(config = {}) {
     return proxy;
   }
   const context = { View: class {}, div: element, svg: element, image: element, h_flex: element, v_flex: element,
-    em: n => n * 14, props: () => config, layout: () => tree, spaces: () => spaces, panes: () => [],
+    em: n => n * 14, props: () => config, layout: () => tree, spaces: () => spaces, panes: () => panes,
     shared: key => data[key], setShared: (key, value) => data[key] = value,
     run: (name, args) => calls.push({ name, args }), openOverlay: args => calls.push({ overlay: args }),
     closeOverlay: id => calls.push({ close: id }), notify: args => calls.push({ notify: args }),
@@ -42,7 +43,7 @@ function harness(config = {}) {
   const cx = { spawn: () => {}, notify: () => {}, stop_propagation: () => {}, timer: { every: (ms, fn) => timers.push(fn) } };
   const tabs = new context.Tabs(); tabs.init({}, cx);
   function find(el, id) { if (el?.key === id) return el; for (const child of el?.kids ?? []) { const found = find(child, id); if (found) return found; } }
-  return { ...context.api, tabs, context, calls, data, tree, config, storage, timers, cx, find, setSpaces: s => spaces = s };
+  return { ...context.api, tabs, context, calls, data, tree, config, storage, timers, cx, find, setSpaces: s => spaces = s, setPanes: p => panes = p };
 }
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -53,6 +54,19 @@ test('panel actions toggle containers and reject missing targets without dispatc
   assert.equal(h.calls.at(-1).name, 'layout.hide');
   const count = h.calls.length; assert.throws(() => h.execute({ ...action, target: 'missing' })); assert.equal(h.calls.length, count);
 });
+test('mod-tab opens once with the focused checkout, reuses, and recreates after closing', () => {
+  const h = harness(), action = { type: 'mod-tab', mod: 'example', name: 'All items', props: { mode: 'browser' } };
+  const space = { id: 'a', folder: '/main', tabs: [{ id: 'shell', active: true }] };
+  h.setPanes([{ tab: 'shell', cwd: '/worktree', focused: true }]);
+  h.execute(action, { space });
+  assert.equal(h.calls[0].name, 'tab.new'); assert.equal(h.calls[0].args.props.source.cwd, '/worktree');
+  h.execute(action, { space }); assert.equal(h.calls.length, 1);
+  space.tabs.push({ id: 'browser' }); h.setPanes([{ tab: 'browser', mod: 'example' }]);
+  h.execute(action, { space }); assert.equal(h.calls.at(-1).name, 'tab.select'); assert.equal(h.calls.at(-1).args.id, 'browser');
+  h.setPanes([]); h.data['better-tabs.mod-tabs'][JSON.stringify(['a', 'example'])].pending = 1;
+  h.execute(action, { space }); assert.equal(h.calls.at(-1).name, 'tab.new');
+});
+
 test('generic stack toggle preserves other layout children', () => {
   const h = harness(), action = { type: 'toggle-stack', stack: 'center', child: 'browser', fallback: 'main' };
   h.execute(action); assert.equal(h.calls.at(-1).args.child, 'browser');

@@ -11,6 +11,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 | [Better Changes](better-changes/README.md) | Git changes sidebar with tree/flat lists, stage/unstage controls, and a reusable inline or side-by-side diff tab. |
 | [Better Spaces](better-spaces/README.md) | Spaces and nested worktrees with right-aligned Git branches and color-coded pull-request status from `gh`. |
 | [Better Tabs](better-tabs/README.md) | Native tab bar with configurable action buttons, hooks, panel memory, and responsive overflow. |
+| [GitHub PR](github-pr/README.md) | GitHub PR sidebar and reusable browser tab with conversations, reviews, checks, worktrees, and explicit agent actions. |
 
 ### Better Changes
 
@@ -23,6 +24,10 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 ### Better Tabs
 
 ![Better Tabs](better-tabs/preview.png)
+
+### GitHub PR
+
+![GitHub PR](github-pr/preview.png)
 
 ## Quick install
 
@@ -46,9 +51,11 @@ Requires Node.js for development tests:
 (cd better-changes && node --test tests/*.test.cjs)
 (cd better-spaces && node --test tests/*.test.cjs)
 (cd better-tabs && node --test tests/*.test.cjs)
+(cd github-pr && node --test tests/*.test.cjs && python3 -m unittest discover -s tests)
+(cd github-pr/helper && go test ./... && go vet ./...)
 ```
 
-The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Spaces uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency.
+The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Spaces uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. GitHub PR uses Git, `gh`, `hc`, and a bundled local Go helper (built during installation with Go 1.23+); see its README for access and explicit write actions.
 
 ## License
 

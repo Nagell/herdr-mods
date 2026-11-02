@@ -61,6 +61,8 @@ The tabs block's `content.props` controls the toolbar. Without custom buttons it
 }
 ```
 
+To open a regular center tab, use an action such as `{ "type": "mod-tab", "mod": "my-panel", "name": "My Panel", "props": { "mode": "browser" } }`. It reuses an existing pane of that mod in the current space, guards rapid repeated opens, and lets the normal tab controls close it. The target receives `props.space` and `props.source: { cwd, on }` captured from the active terminal (falling back to the space folder); these reserved props override action-supplied values. The target mod must use those props to pin its own repository context. This is intentionally one tab per mod per space, not one per props combination.
+
 Panel targets are **layout node IDs**, not mod names. A `changes` node can contain stock Changes or Better Changes. Panel actions select the target and show its container, or hide it when already selected. `rememberPanels: false` disables panel memory. Only one container/stack pair is remembered per toolbar copy.
 
 ### Actions
@@ -69,6 +71,7 @@ Panel targets are **layout node IDs**, not mod names. A `changes` node can conta
 | --- | --- | --- |
 | `command` | `name`, optional `args` | Dispatch a built-in or shown mod's command. |
 | `panel` | `container`, `stack`, `target` | Toggle a panel and infer its active state. |
+| `mod-tab` | `mod`, optional `name`, `props` | Open/select one reusable mod tab per mod per space, with captured checkout context. |
 | `toggle-stack` | `stack`, `child`, `fallback` | Toggle between two children; infer active state. |
 | `overlay` | `mod`, optional `kind`, `props`, `width`, `height` | Open a popup (default), dialog, or window. |
 | `sequence` | `actions` | Dispatch a bounded list of actions in order; **does not wait for asynchronous completion**. |
