@@ -27,6 +27,7 @@ import {
   shared,
   setShared,
   readTextFile,
+  knownAgents,
 } from "herdr";
 
 const CONTEXT_POLL_MS = 1000;
@@ -74,6 +75,11 @@ export default class PullRequests extends View {
 
   init(_props, cx) {
     this.mode = props()?.mode ?? _props?.mode ?? "browser";
+    // Optional Better Tabs integration: lets its tab bar draw an icon on our mod tabs.
+    setShared("mod-icons", {
+      ...(shared("mod-icons") ?? {}),
+      "github-pr": "mods/github-pr/pull-request.svg",
+    });
     this.branchPRs = [];
     this.source = props()?.source ?? _props?.source;
     this.browserSpace = props()?.space ?? _props?.space;
@@ -99,6 +105,9 @@ export default class PullRequests extends View {
     this.scopeIndex = 0;
     this.stateTrigger = cx.focus_handle();
     this.stateList = cx.focus_handle();
+    this.authorTrigger = cx.focus_handle();
+    this.authorList = cx.focus_handle();
+    this.authorIndex = 0;
     this.stateIndex = 0;
     this.replyModes = {};
     this.agentChoices = {};
@@ -1251,6 +1260,7 @@ export default class PullRequests extends View {
         this.pendingPR = null;
         this.adoptPR(pr, repo);
         this.refreshed = Date.now();
+        this.loadWorktrees(cx);
       } catch (e) {
         if (token === this.detailToken) {
           this.error = e.message;
@@ -1266,20 +1276,136 @@ export default class PullRequests extends View {
   }
   // ── Worktree creation and its inline form ────────────────────────────────
 
+  worktreeKey() {
+    return `${this.repo}#${this.pr?.number}`;
+  }
+
+  // Worktrees already checked out for this PR: branches bound through
+  // `branch.<name>.herdr-pr`, joined to the paths in `git worktree list`.
+  loadWorktrees(cx) {
+    const { sp, repo, pr } = this;
+    if (this.mode !== "browser" || !sp || !pr || this.preview) return;
+    const key = this.worktreeKey();
+    cx.spawn(async (cx) => {
+      const options = { cwd: sp.folder, on: sp.machine };
+      const bound = await exec("git", ["config", "--get-regexp", "^branch\\..*\\.herdr-pr$"], options);
+      const branches = new Set();
+      for (const line of (bound.stdout ?? "").split("\n")) {
+        const match = /^branch\.(.+)\.herdr-pr (.+)$/.exec(line.trim());
+        if (match && match[2].toLowerCase() === key.toLowerCase()) branches.add(match[1]);
+      }
+      const list = [];
+      if (branches.size) {
+        const out = await exec("git", ["worktree", "list", "--porcelain"], options);
+        for (const block of (out.stdout ?? "").split("\n\n")) {
+          const path = /^worktree (.+)$/m.exec(block)?.[1];
+          const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1];
+          if (path && branch && branches.has(branch))
+            list.push({ path, branch, name: path.split(/[\\/]/).pop() });
+        }
+      }
+      if (this.pr?.number === pr.number && this.repo === repo) this.worktrees = { key, list };
+      cx.notify();
+    });
+  }
+
+  currentWorktrees() {
+    return this.worktrees?.key === this.worktreeKey() ? this.worktrees.list : [];
+  }
+
+  worktreeSpace(worktree) {
+    const machine = this.sp?.machine ?? null;
+    return spaces().find((s) => s.folder === worktree.path && (s.machine ?? null) === machine);
+  }
+
+  // Each checkout is one row: switch to its space, or open one if none exists.
+  worktreeList(t) {
+    const list = this.currentWorktrees();
+    if (!list.length) return null;
+    const card = v_flex().mx(14).mb(10).rounded(8).border_1().border_color(t.border).bg(t.surface);
+    list.forEach((worktree, i) => {
+      const space = this.worktreeSpace(worktree);
+      card.child(
+        h_flex()
+          .id(`pr-worktree-row-${i}`)
+          .h(32)
+          .px(10)
+          .gap(8)
+          .items_center()
+          .when(i > 0, (el) => el.border_t(1).border_color(t.border))
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .tooltip(space ? `Switch to ${worktree.path}` : `Open ${worktree.path} as a space`)
+          .on_click((_e, cx) => {
+            if (space) run("space.select", { id: space.id });
+            else
+              run("space.new", {
+                folder: worktree.path,
+                machine: this.sp?.machine ?? null,
+                tab: worktree.name,
+              });
+            cx.notify();
+          })
+          .child(svg("mods/github-pr/checkout.svg").size(14).flex_none().text_color(t.muted))
+          .child(div().flex_none().text_size(em(0.9)).child(worktree.name))
+          .child(svg("mods/github-pr/branch.svg").size(12).flex_none().text_color(t.dim))
+          .child(div().flex_1().min_w(0).truncate().text_size(em(0.85)).text_color(t.dim).child(worktree.branch))
+          .child(
+            div()
+              .flex_none()
+              .text_size(em(0.8))
+              .text_color(space ? t.done : t.dim)
+              .child(space ? "Open" : "Open space"),
+          ),
+      );
+    });
+    return card;
+  }
+
   showWorktree(cx) {
     if (this.mode !== "browser" || !this.pr || !this.sp) return;
-    const branch = `pr-${this.pr.number}-${this.pr.headRefName}`;
+    // Each PR may have several checkouts; the default name skips the existing ones.
+    const taken = new Set(this.currentWorktrees().map((w) => w.branch));
+    const base = `pr-${this.pr.number}-${this.pr.headRefName}`;
+    let branch = base;
+    for (let i = 2; taken.has(branch); i++) branch = `${base}-${i}`;
     const name = branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-    this.worktreeForm = {
+    const form = {
       pr: this.pr,
       repo: this.repo,
       sp: { ...this.sp },
       branch: InputState.new({ value: branch }),
       name: InputState.new({ value: name }),
+      launch: "terminal", // or an installed agent's program key
+      agents: [],
     };
-    for (const input of [this.worktreeForm.branch, this.worktreeForm.name])
-      input.on("change", (_e, cx) => cx.notify());
+    this.worktreeForm = form;
+    // The worktree name follows the branch until the person edits it themselves.
+    const slug = (text) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+    form.branch.on("change", (_e, cx) => {
+      if (!form.nameEdited) form.name.set_value(slug(form.branch.value().trim()));
+      cx.notify();
+    });
+    form.name.on("change", (_e, cx) => {
+      form.nameEdited = form.name.value() !== slug(form.branch.value().trim());
+      cx.notify();
+    });
+    form.branch.on("submit", (_e, cx) => this.createWorktree(cx));
+    form.name.on("submit", (_e, cx) => this.createWorktree(cx));
+    form.branch.focus();
+    cx.spawn(async (cx) => {
+      try {
+        const agents = await knownAgents({ on: form.sp.machine ?? null });
+        if (this.worktreeForm === form) form.agents = agents.filter((a) => a.installed);
+      } catch {}
+      cx.notify();
+    });
     cx.notify();
+  }
+
+  // Terminal plus each installed agent; the chosen one starts in the worktree's first tab.
+  launchChoices(form) {
+    return [{ key: "terminal", name: "Terminal" }, ...form.agents];
   }
 
   createWorktree(cx) {
@@ -1372,13 +1498,23 @@ export default class PullRequests extends View {
     });
   }
 
+  // A new space for the checkout: the spaces sidebar nests it under the repo at
+  // once, and its first tab (a shell or the chosen agent) takes focus.
   openWorktree(form, cx) {
+    const agent = form.agents.find((a) => a.key === form.launch);
     try {
-      run("tab.new", { space: form.sp.id, name: form.createdName, folder: form.path });
+      run("space.new", {
+        folder: form.path,
+        machine: form.sp.machine ?? null,
+        tab: form.createdName,
+        ...(agent ? { argv: agent.run } : {}),
+      });
       form.opened = true;
       form.error = null;
+      if (this.worktreeForm === form) this.worktreeForm = null;
+      this.loadWorktrees(cx);
     } catch (error) {
-      form.error = `Worktree created at ${form.path}. Could not open its terminal: ${error.message}`;
+      form.error = `Worktree created at ${form.path}. Could not open its space: ${error.message}`;
     }
     cx.notify();
   }
@@ -1390,6 +1526,13 @@ export default class PullRequests extends View {
       this.worktreeForm = null;
       cx.notify();
     };
+    const choices = this.launchChoices(form);
+    const current = choices.find((c) => c.key === form.launch) ?? choices[0];
+    const location = form.path
+      ? form.path
+      : `~/.herdr/worktrees/${form.repo.replace("/", "-")}/${form.name.value().trim()}`;
+    // A titled card: stacked labelled fields, the path they produce, then one
+    // footer with the launch choice and a single primary action.
     const box = v_flex()
       .id("pr-worktree-form")
       .mx(14)
@@ -1400,162 +1543,153 @@ export default class PullRequests extends View {
       .bg(t.surface);
     box.child(
       h_flex()
-        .px(14)
-        .py(12)
-        .gap(10)
+        .h(32)
+        .pl(12)
+        .pr(6)
         .items_center()
+        .gap(6)
         .border_b(1)
         .border_color(t.border)
+        .child(svg("mods/github-pr/checkout.svg").size(13).text_color(t.dim))
         .child(
           div()
-            .p(7)
-            .rounded(6)
-            .bg(t.selected)
-            .text_color(t.accent)
-            .child(svg("mods/github-pr/worktree.svg").size(18)),
-        )
-        .child(
-          v_flex()
             .flex_1()
-            .min_w(0)
-            .gap(3)
-            .child(
-              div()
-                .font_semibold()
-                .child(form.path ? "Worktree created" : "New worktree"),
-            )
-            .child(
-              div()
-                .text_size(em(0.85))
-                .text_color(t.muted)
-                .child(`PR #${form.pr.number} · ${form.sp.name || "Current space"}`),
-            ),
+            .truncate()
+            .text_size(em(0.85))
+            .text_color(form.path ? t.done : t.foreground)
+            .child(form.path ? "Checkout ready" : `New worktree for #${form.pr.number}`),
         )
         .child(
-          this.button("pr-worktree-dismiss", "Close", close, t, form.busy, {
+          this.button("pr-worktree-cancel", form.path ? "Done" : "Cancel", close, t, form.busy, {
             icon: "close",
             iconOnly: true,
+            plain: true,
           }),
         ),
     );
-    const content = v_flex().p(14).gap(12);
-    if (form.path) {
-      content.child(
-        h_flex()
-          .gap(8)
-          .items_center()
-          .text_color(t.done)
-          .child(svg("mods/github-pr/check-success.svg").size(16))
-          .child("Checkout ready"),
-      );
-      content.child(
-        div().whitespace_normal().text_size(em(0.9)).text_color(t.muted).child(form.path),
-      );
-    } else {
-      const fields = h_flex().gap(12).flex_wrap();
-      for (const [id, label, input, asset] of [
-        ["branch", "Branch name", form.branch, "branch"],
-        ["name", "Worktree name", form.name, "folder"],
+    const body = v_flex().p(10).gap(6);
+    const row = h_flex().gap(8).items_center().flex_wrap();
+    if (!form.path)
+      for (const [id, label, input] of [
+        ["branch", "Branch", form.branch],
+        ["name", "Worktree", form.name],
       ])
-        fields.child(
-          v_flex()
+        row.child(
+          h_flex()
             .flex_1()
             .min_w(180)
-            .gap(6)
-            .child(
-              h_flex()
-                .gap(6)
-                .items_center()
-                .text_size(em(0.85))
-                .text_color(t.muted)
-                .child(svg(`mods/github-pr/${asset}.svg`).size(14))
-                .child(label),
-            )
+            .items_center()
+            .gap(8)
+            .child(div().flex_none().text_size(em(0.85)).text_color(t.dim).child(label))
             .child(
               Input.new(input)
                 .id(`pr-worktree-${id}`)
-                .h(34)
-                .px(10)
-                .bg(t.input)
+                .flex_1()
+                .min_w(0)
+                .h(28)
+                .px(8)
+                .rounded(6)
                 .border_1()
                 .border_color(t.border)
-                .rounded(6)
-                .text_size(em(1))
+                .bg(t.input)
+                .text_size(em(0.9))
                 .text_color(t.foreground),
             ),
         );
-      content.child(fields);
-      content.child(
-        v_flex()
-          .p(10)
-          .gap(5)
-          .rounded(6)
-          .bg(t.background)
-          .child(div().text_size(em(0.8)).text_color(t.dim).child("CHECKOUT LOCATION"))
-          .child(
-            div()
-              .text_size(em(0.85))
-              .text_color(t.muted)
-              .whitespace_normal()
-              .child(
-                `~/.herdr/worktrees/${form.repo.replace("/", "-")}/${form.name.value().trim()}`,
-              ),
-          ),
-      );
-      if (this.preview)
-        content.child(
+    if (!form.opened) {
+      const menu = v_flex()
+        .id("pr-worktree-launch-menu")
+        .w(200)
+        .p(4)
+        .gap(2)
+        .rounded(7)
+        .bg(t.popover)
+        .border_1()
+        .border_color(t.border);
+      for (const choice of choices)
+        menu.child(
           div()
-            .text_size(em(0.85))
-            .text_color(t.muted)
-            .child("Preview only · Switch to your repository to create a worktree."),
+            .id(`pr-worktree-launch-${choice.key}`)
+            .px(8)
+            .py(5)
+            .rounded(4)
+            .text_size(em(0.9))
+            .text_color(t.foreground)
+            .bg(form.launch === choice.key ? t.selected : t.popover)
+            .cursor_pointer()
+            .hover((s) => s.bg(t.hover))
+            .on_click((_e, cx) => {
+              form.launch = choice.key;
+              form.launchOpen = false;
+              cx.notify();
+            })
+            .child(choice.name),
         );
-    }
-    if (form.error)
-      content.child(
-        div()
-          .p(10)
-          .rounded(6)
-          .border_1()
-          .border_color(t.blocked)
-          .bg(t.background)
-          .text_color(t.blocked)
-          .whitespace_normal()
-          .child(form.error),
+      const trigger = h_flex()
+        .id("pr-worktree-launch-trigger")
+        .h(28)
+        .px(8)
+        .gap(5)
+        .flex_none()
+        .items_center()
+        .rounded(6)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.raised)
+        .text_size(em(0.85))
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .child(div().text_color(t.dim).child("Open with"))
+        .child(div().child(current.name))
+        .child(svg("mods/github-pr/chevron-down.svg").size(11).text_color(t.dim));
+      row.child(
+        Popover.new("pr-worktree-launch")
+          .accessibility_label("Open the worktree with")
+          .open(Boolean(form.launchOpen))
+          .on_open_change((open, cx) => {
+            form.launchOpen = open;
+            cx.notify();
+          })
+          .trigger(trigger)
+          .when(Boolean(form.launchOpen), (el) => el.content(menu)),
       );
-    box.child(content);
-    const actions = h_flex()
-      .px(14)
-      .py(10)
-      .gap(8)
-      .items_center()
-      .justify_end()
-      .border_t(1)
-      .border_color(t.border)
-      .bg(t.raised)
-      .child(this.button("pr-worktree-cancel", form.path ? "Done" : "Cancel", close, t, form.busy));
+    }
     if (!form.path)
-      actions.child(
+      row.child(
         this.button(
           "pr-worktree-submit",
-          form.busy ? "Creating…" : "Create & open terminal",
+          form.busy ? "Creating…" : "Create worktree",
           (cx) => this.createWorktree(cx),
           t,
           form.busy || Boolean(this.preview),
-          { icon: form.busy ? "refresh" : "terminal", primary: true },
+          { icon: form.busy ? "refresh" : "checkout", primary: true },
         ),
       );
     else if (!form.opened)
-      actions.child(
+      row.child(
         this.button(
           "pr-worktree-open",
-          "Open terminal",
+          `Open ${current.name}`,
           (cx) => this.openWorktree(form, cx),
           t,
           false,
           { icon: "terminal", primary: true },
         ),
       );
-    box.child(actions);
+    body.child(row);
+    body.child(
+      div()
+        .text_size(em(0.8))
+        .text_color(form.error ? t.blocked : t.dim)
+        .whitespace_normal()
+        .child(
+          form.error ??
+            (this.preview && !form.path
+              ? "Preview only · switch to your repository to create a worktree."
+              : location),
+        ),
+    );
+    box.child(body);
     return box;
   }
 
@@ -1825,7 +1959,7 @@ export default class PullRequests extends View {
     this.composer = { kind, thread, context, ...options };
     this.target = options.target ?? null;
     this.editorTab = "edit";
-    this.draftKey = `pr-draft:${this.spaceKey}:${this.repo}:${this.pr.id}:${kind}:${thread ?? "general"}:${options.entry ?? ""}:${options.target ?? ""}:${options.quote ? "quote" : "reply"}`;
+    this.draftKey = `pr-draft:${this.spaceKey}:${this.repo}:${this.pr.id}:${kind}:${thread ?? "general"}:${options.entry ?? ""}:${options.target ?? ""}:${options.edit?.id ?? ""}:${options.quote ? "quote" : "reply"}`;
     const draft = localStorage.getItem(this.draftKey);
     const initial =
       kind === "agent"
@@ -2130,25 +2264,57 @@ export default class PullRequests extends View {
       );
     const disabled =
       this.mutating || !this.editor.value().trim() || (agent ? !selected : Boolean(this.preview));
-    box.child(
-      h_flex()
-        .gap(6)
-        .justify_end()
-        .child(this.button("pr-cancel", "Close", (cx) => this.closeComposer(cx), t, this.mutating))
-        .child(
-          this.button(
-            "pr-submit",
-            this.mutating ? "Sending…" : agent ? "Send" : composer.entry ? "Reply" : "Comment",
-            (cx) => (agent ? this.sendAgent(cx) : this.mutate(composer.kind, cx, composer.thread)),
-            t,
-            disabled,
-          ),
+    const edit = composer.kind === "edit";
+    const actions = h_flex()
+      .gap(6)
+      .justify_end()
+      .child(this.button("pr-cancel", "Close", (cx) => this.closeComposer(cx), t, this.mutating));
+    // Reviews can hold comments back until submitted; proposals and edits post directly.
+    if (!agent && !edit && !composer.proposal)
+      actions.child(
+        this.button(
+          "pr-pending",
+          this.pendingReview() ? "Add to review" : "Start review",
+          (cx) => this.mutate(composer.kind, cx, composer.thread, true),
+          t,
+          disabled,
         ),
+      );
+    actions.child(
+      this.button(
+        "pr-submit",
+        this.mutating
+          ? "Sending…"
+          : agent
+            ? "Send"
+            : edit
+              ? "Save"
+              : composer.entry
+                ? "Reply"
+                : "Comment",
+        (cx) => (agent ? this.sendAgent(cx) : this.mutate(composer.kind, cx, composer.thread)),
+        t,
+        disabled,
+      ),
     );
+    box.child(actions);
     return box;
   }
 
-  mutate(action, cx, thread) {
+  // The viewer's unsubmitted review, which GitHub returns only to its author.
+  pendingReview() {
+    return this.pr?.reviews?.find((r) => r.state === "PENDING" && r.viewerDidAuthor) ?? null;
+  }
+
+  pendingCount() {
+    const review = this.pendingReview();
+    const replies = (this.pr?.threads ?? []).flatMap((t) => t.comments).filter(
+      (c) => c.pullRequestReview?.state === "PENDING",
+    ).length;
+    return replies + (review?.body ? 1 : 0);
+  }
+
+  mutate(action, cx, thread, pending = false) {
     if (this.preview) {
       this.error = "Preview is read-only. Posting and resolving are disabled.";
       cx.notify();
@@ -2161,6 +2327,9 @@ export default class PullRequests extends View {
     const draft = this.draftKey;
     const body = this.editor.value();
     const proposal = this.composer?.proposal;
+    const edit = this.composer?.edit;
+    const pullRequest = this.pr.id;
+    const existing = this.pendingReview();
     this.mutating = true;
     this.error = null;
     cx.spawn(async (cx) => {
@@ -2176,7 +2345,31 @@ export default class PullRequests extends View {
               "PR or comment changed since this draft. Refresh and request a new proposal before posting.",
             );
         }
-        await this.api({ action, repo, number, thread, body });
+        if (action === "submit") {
+          await this.api({ action: "submit-review", repo, number, review: existing.id, event: "COMMENT" });
+        } else if (action === "edit") {
+          const kind = { issue: "edit-comment", "review-comment": "edit-reply", review: "update-review" }[edit.kind];
+          await this.api({ action: kind, repo, number, comment: edit.id, review: edit.id, body });
+        } else if (pending && action === "reply") {
+          let review = existing?.id;
+          if (!review) {
+            const started = await this.api({ action: "start-review", repo, number, pullRequest });
+            review = started?.data?.addPullRequestReview?.pullRequestReview?.id;
+            if (!review) throw new Error("GitHub did not return the new review");
+          }
+          await this.api({ action: "reply", repo, number, thread, body, review });
+        } else if (pending && action === "comment") {
+          // A general pending comment is the review summary; later ones append to it.
+          if (existing)
+            await this.api({
+              action: "update-review",
+              repo,
+              number,
+              review: existing.id,
+              body: existing.body ? `${existing.body}\n\n${body}` : body,
+            });
+          else await this.api({ action: "start-review", repo, number, pullRequest, body });
+        } else await this.api({ action, repo, number, thread, body });
         if (proposal) {
           const record = this.readStored(proposal.key)[proposal.entry];
           if (record?.id === proposal.id)
@@ -2188,12 +2381,16 @@ export default class PullRequests extends View {
             });
         }
         if (key !== this.spaceKey || repo !== this.repo || number !== this.pr?.number) return;
-        if (action === "comment" || action === "reply") {
+        if (action === "comment" || action === "reply" || action === "edit") {
           localStorage.removeItem(draft);
           this.composer = null;
           this.draftKey = null;
         }
-        this.notice = "Saved to GitHub.";
+        this.notice = pending
+          ? "Added to your pending review. Submit the review to publish it."
+          : action === "submit"
+            ? "Review submitted."
+            : "Saved to GitHub.";
         this.openPR(number, cx);
       } catch (e) {
         if (key === this.spaceKey)
@@ -2360,19 +2557,22 @@ export default class PullRequests extends View {
             .gap(4)
             .flex_1()
             .child(div().font_medium().child(title))
-            .child(
-              div()
-                .text_size(em(0.85))
-                .text_color(t.dim)
-                .child(
-                  Object.entries(counts)
-                    .filter(([, n]) => n)
-                    .map(
-                      ([kind, n]) =>
-                        `${n} ${{ failure: "failed", success: "successful", skipped: "skipped", running: "in progress", pending: "queued" }[kind]}`,
-                    )
-                    .join(" · "),
-                ),
+            // An empty counts line would still take a row and push the title off centre.
+            .when(checks.length > 0, (el) =>
+              el.child(
+                div()
+                  .text_size(em(0.85))
+                  .text_color(t.dim)
+                  .child(
+                    Object.entries(counts)
+                      .filter(([, n]) => n)
+                      .map(
+                        ([kind, n]) =>
+                          `${n} ${{ failure: "failed", success: "successful", skipped: "skipped", running: "in progress", pending: "queued" }[kind]}`,
+                      )
+                      .join(" · "),
+                  ),
+              ),
             ),
         ),
     );
@@ -2610,7 +2810,7 @@ export default class PullRequests extends View {
     const asset =
       options.icon ??
       {
-        "pr-create-worktree": "worktree",
+        "pr-create-worktree": "checkout",
         "pr-cancel": "close",
         "pr-add-comment": "comment",
         "pr-retry": "refresh",
@@ -2626,10 +2826,13 @@ export default class PullRequests extends View {
       .items_center()
       .justify_center()
       .rounded(6)
-      .border_1()
-      .border_color(primary && !disabled ? t.solid : t.border)
+      .when(!options.plain, (el) =>
+        el
+          .border_1()
+          .border_color(primary && !disabled ? t.solid : t.border)
+          .bg(primary && !disabled ? t.solid : t.raised),
+      )
       .text_size(em(0.85))
-      .bg(primary && !disabled ? t.solid : t.raised)
       .text_color(disabled ? t.dim : primary ? t.solid_foreground : t.foreground)
       .accessibility_label(label)
       .when(Boolean(options.iconOnly), (el) => el.tooltip(label))
@@ -3079,14 +3282,25 @@ export default class PullRequests extends View {
           this.mutating,
         ),
       );
+    // The icon buttons are 26px tall; the status icon and the title's first
+    // line share that height so all four sit on one centre line.
     detailHeader
       .child(
-        svg(`mods/github-pr/${status.icon}.svg`).size(15).flex_none().text_color(t[status.color]),
+        div()
+          .size(26)
+          .flex_none()
+          .flex()
+          .items_center()
+          .justify_center()
+          .child(svg(`mods/github-pr/${status.icon}.svg`).size(15).text_color(t[status.color])),
       )
       .child(
         div()
           .flex_1()
           .min_w(0)
+          .min_h(26)
+          .flex()
+          .items_center()
           .whitespace_normal()
           .font_semibold()
           .child(`#${pr.number} ${pr.title}`),
@@ -3097,42 +3311,36 @@ export default class PullRequests extends View {
         ),
       );
     root.child(detailHeader);
+    const worktree = this.mode === "browser" ? this.worktreeView(t) : null;
     root.child(
       h_flex()
         .px(14)
         .pb(10)
         .gap(6)
         .items_center()
-        .flex_wrap()
         .text_size(em(0.85))
         .text_color(t.dim)
         .child(
           div().px(6).py(2).rounded(4).bg(t.raised).text_color(t[status.color]).child(status.label),
         )
-        .child(div().child(who(pr)))
-        .child(div().child("·"))
+        .child(div().flex_none().child(who(pr)))
+        .child(div().flex_none().child("·"))
         .child(
           div()
+            .flex_1()
+            .min_w(0)
             .truncate()
             .tooltip(`${pr.headRefName} → ${pr.baseRefName}`)
             .child(`${pr.headRefName} → ${pr.baseRefName}`),
+        )
+        // The button sits under the GitHub icon, on the row's right edge.
+        .when(this.mode === "browser" && !worktree, (el) =>
+          el.child(button("pr-create-worktree", "New worktree", (cx) => this.showWorktree(cx))),
         ),
     );
     if (this.mode === "browser") {
-      root.child(
-        h_flex()
-          .px(14)
-          .pb(10)
-          .child(
-            button(
-              "pr-create-worktree",
-              "Create worktree",
-              (cx) => this.showWorktree(cx),
-              Boolean(this.worktreeForm?.busy),
-            ),
-          ),
-      );
-      const worktree = this.worktreeView(t);
+      const list = this.worktreeList(t);
+      if (list) root.child(list);
       if (worktree) root.child(worktree);
     }
     const conversationCount = pr.comments.length + pr.reviews.length + pr.threads.length;
@@ -3216,14 +3424,98 @@ export default class PullRequests extends View {
           [...pr.comments, ...pr.reviews, ...pr.threads.flatMap((t) => t.comments)].map(who),
         ),
       ].sort();
+      const authorChoices = ["", ...authors];
+      const chooseAuthor = (index, cx) => {
+        this.author = authorChoices[index] ?? "";
+        this.authorOpen = false;
+        this.rememberDetail();
+        this.authorTrigger.focus();
+        cx.notify();
+      };
+      const authorTrigger = h_flex()
+        .id("pr-author-trigger")
+        .track_focus(this.authorTrigger)
+        .min_h(30)
+        .px(10)
+        .gap(5)
+        .items_center()
+        .rounded(6)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.raised)
+        .text_size(em(0.85))
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .on_key_down((e, cx) => {
+          if (["enter", "space", "down", "up"].includes(e.key)) {
+            this.authorOpen = !this.authorOpen;
+            this.authorIndex = Math.max(0, authorChoices.indexOf(this.author));
+            cx.stop_propagation();
+            cx.notify();
+          }
+        })
+        .child(div().text_color(t.dim).child("Author"))
+        .child(div().child(this.author || "All authors"))
+        .child(svg("mods/github-pr/chevron-down.svg").size(11));
+      const authorMenu = v_flex()
+        .id("pr-author-menu")
+        .role("list")
+        .w(220)
+        .max_h(300)
+        .overflow_y_scrollbar()
+        .p(4)
+        .gap(2)
+        .rounded(7)
+        .bg(t.popover)
+        .border_1()
+        .border_color(t.border)
+        .track_focus(this.authorList)
+        .on_key_down((e, cx) => {
+          if (e.key === "up" || e.key === "down") {
+            this.authorIndex =
+              (this.authorIndex + (e.key === "down" ? 1 : authorChoices.length - 1)) %
+              authorChoices.length;
+            cx.stop_propagation();
+            cx.notify();
+          }
+          if (e.key === "enter") {
+            chooseAuthor(this.authorIndex, cx);
+            cx.stop_propagation();
+          }
+        });
+      for (const [i, a] of authorChoices.entries())
+        authorMenu.child(
+          div()
+            .id(`pr-author-${i}`)
+            .role("list_box_option")
+            .aria_selected(this.author === a)
+            .when(this.authorIndex === i, (el) => el.aria_active_descendant())
+            .px(8)
+            .py(5)
+            .rounded(4)
+            .text_size(em(0.95))
+            .text_color(t.foreground)
+            .bg(this.authorIndex === i ? t.selected : t.popover)
+            .cursor_pointer()
+            .hover((s) => s.bg(t.hover))
+            .on_click((_e, cx) => chooseAuthor(i, cx))
+            .child(a || "All authors"),
+        );
+      const authorDropdown = Popover.new("pr-author")
+        .accessibility_label("Filter by author")
+        .open(Boolean(this.authorOpen))
+        .track_focus(this.authorList)
+        .on_open_change((open, cx) => {
+          this.authorOpen = open;
+          this.authorIndex = Math.max(0, authorChoices.indexOf(this.author));
+          cx.notify();
+        })
+        .trigger(authorTrigger)
+        .when(Boolean(this.authorOpen), (el) => el.content(authorMenu));
+      const pendingCount = this.pendingCount();
       body.child(
         row()
-          .child(
-            button("pr-author", `Author: ${this.author || "All authors"} ▾`, (cx) => {
-              this.authorOpen = !this.authorOpen;
-              cx.notify();
-            }),
-          )
+          .child(authorDropdown)
           .child(
             button(
               "pr-unresolved",
@@ -3251,27 +3543,29 @@ export default class PullRequests extends View {
               (cx) => this.compose("comment", null, null, cx),
               this.mutating,
             ),
-          ),
-      );
-      if (this.authorOpen)
-        body.child(
-          v_flex()
-            .p(5)
-            .bg(t.raised)
-            .children(
-              ["", ...authors].map((a, i) =>
-                button(`pr-author-${i}`, a || "All authors", (cx) => {
-                  this.author = a;
-                  this.authorOpen = false;
-                  this.rememberDetail();
-                  cx.notify();
-                }),
+          )
+          .when(pendingCount > 0, (el) =>
+            el.child(
+              this.button(
+                "pr-submit-review",
+                `Submit review (${pendingCount})`,
+                (cx) => this.mutate("submit", cx),
+                t,
+                this.mutating || Boolean(this.preview),
+                { primary: true },
               ),
             ),
-        );
+          ),
+      );
       const entries = [
         ...pr.comments.map((c) => ({ ...c, kind: "Comment", at: c.createdAt })),
-        ...pr.reviews.map((c) => ({ ...c, kind: `Review · ${c.state}`, at: c.submittedAt })),
+        ...pr.reviews
+          .filter((c) => c.state !== "PENDING" || c.body)
+          .map((c) => ({
+            ...c,
+            kind: c.state === "PENDING" ? "Review · Pending (not submitted)" : `Review · ${c.state}`,
+            at: c.submittedAt ?? "~",
+          })),
         ...pr.threads.map((thread) => ({
           id: thread.id,
           thread,
@@ -3369,12 +3663,46 @@ export default class PullRequests extends View {
                         .child("New"),
                     ),
                   )
+                  .when(c.pullRequestReview?.state === "PENDING" || c.state === "PENDING", (el) =>
+                    el.child(
+                      div()
+                        .id(`pr-pending-${c.id}`)
+                        .px(5)
+                        .py(1)
+                        .rounded(4)
+                        .bg(t.selected)
+                        .text_color(t.working)
+                        .text_size(em(0.8))
+                        .child("Pending"),
+                    ),
+                  )
                   .child(div().flex_1())
                   .child(
                     div()
                       .text_size(em(0.8))
                       .text_color(t.dim)
                       .child(this.commentDate(c.createdAt ?? c.submittedAt)),
+                  )
+                  .when(Boolean(c.viewerCanUpdate && !this.preview), (el) =>
+                    el.child(
+                      div()
+                        .id(`pr-edit-${c.id}`)
+                        .px(6)
+                        .py(1)
+                        .rounded(4)
+                        .text_size(em(0.8))
+                        .text_color(t.muted)
+                        .cursor_pointer()
+                        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                        .on_click((_e, cx) =>
+                          this.compose("edit", thread?.id, null, cx, {
+                            entry: e.id,
+                            prefix: c.body ?? "",
+                            edit: { id: c.id, kind: thread ? "review-comment" : c.state ? "review" : "issue" },
+                          }),
+                        )
+                        .child("Edit"),
+                    ),
                   ),
               )
               .child(

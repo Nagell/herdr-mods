@@ -588,6 +588,12 @@ export default class Tabs extends View {
     const program =
       ps.find((p) => p.tab === tab.id && p.program?.agent)?.program ??
       ps.find((p) => p.tab === tab.id)?.program;
+    // Mod panes carry no program, so their icon comes from the layout's modIcons
+    // or the shared registry mods publish for themselves.
+    const modPane = program?.icon ? null : ps.find((p) => p.tab === tab.id && p.mod);
+    const modIcon = modPane
+      ? { ...(shared("mod-icons") ?? {}), ...(config.modIcons ?? {}) }[modPane.mod]
+      : null;
     const drag = this.tabDrag;
     return h_flex()
       .id(`tab-${tab.id}`)
@@ -624,6 +630,9 @@ export default class Tabs extends View {
             ? svg(program.icon).size(14).text_color(t.muted)
             : image(program.icon).size(14),
         ),
+      )
+      .when(config.programIcons !== false && Boolean(modIcon), (el) =>
+        el.child(svg(modIcon).size(14).text_color(t.muted)),
       )
       .child(
         div()

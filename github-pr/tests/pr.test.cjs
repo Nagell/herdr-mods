@@ -10,11 +10,11 @@ function harness(existingStorage) {
     const data = { nodes: [], handlers: {} }; let proxy;
     proxy = new Proxy(data,{get(t,k){if(k in t)return t[k];if(k==='child')return c=>{t.nodes.push(c);return proxy};if(k==='children')return cs=>{t.nodes.push(...cs);return proxy};if(k==='when')return(b,f)=>{if(b)f(proxy);return proxy};return(...a)=>{if(k==='id')t.elementId=a[0];if(k==='trigger'||k==='content')t.nodes.push(a[0]);if(k.startsWith('on_'))t.handlers[k.slice(3)]=a[0];if(k==='on_click')t.handlers.click=a[0];return proxy}}}); return proxy;
   }
-  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, on() {} });
+  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers:{}, on(event,fn) { this.handlers[event]=fn; }, focus() { this.focused=true; }, type(v,cx) { this.text=v; this.handlers.change?.({},cx); } });
   const live = { spaces: [], panes: [], agents: [], terminals: [] };
   const context = { View: class {}, div: el, svg: el, Popover:{new:(id)=>el().id(id)}, v_flex: el, h_flex: el, InputState: {new:state}, TextareaState:{new:state}, Input:{new:el}, Textarea:{new:el}, TextView:{markdown:(_id,text)=>el().child(text)},
     spaces:()=>live.spaces, panes:()=>live.panes, agents:()=>live.agents, terminals:()=>live.terminals,
-    readTextFile:async()=>null,shared:()=>null,setShared:()=>{},settings:()=>({font_size:14,ui_font_family:"Configured UI",font_family:"Configured Code"}),run:()=>{},props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),layout:()=>null,home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),
+    readTextFile:async()=>null,shared:()=>null,setShared:()=>{},settings:()=>({font_size:14,ui_font_family:"Configured UI",font_family:"Configured Code"}),run:()=>{},props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),layout:()=>null,home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),knownAgents:async()=>[{key:'claude',name:'Claude Code',run:['claude'],installed:true},{key:'codex',name:'Codex',run:['codex'],installed:false}],
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console };
   vm.createContext(context);
   const typography=fs.readFileSync('mods/github-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
@@ -316,8 +316,10 @@ function worktreeHarness() {
  h.mod.api=async()=>h.mod.pr;h.context.run=(command,args)=>opened.push({command,args});
  return{...h,calls,opened};
 }
-test('worktree form offers independent names only in All PRs details',()=>{
- const h=worktreeHarness();const tree=h.mod.render();assert.ok(findElement(tree,'pr-create-worktree'));assert.ok(findElement(tree,'pr-worktree-branch'));assert.ok(findElement(tree,'pr-worktree-name'));
+test('worktree form replaces the Create worktree button in All PRs details and submits on Enter',()=>{
+ const h=worktreeHarness();let tree=h.mod.render();assert.equal(findElement(tree,'pr-create-worktree'),undefined);assert.ok(findElement(tree,'pr-worktree-branch'));assert.ok(findElement(tree,'pr-worktree-name'));
+ assert.ok(h.mod.worktreeForm.branch.focused);assert.equal(typeof h.mod.worktreeForm.name.handlers.submit,'function');
+ h.mod.worktreeForm=null;tree=h.mod.render();assert.ok(findElement(tree,'pr-create-worktree'));assert.equal(findElement(tree,'pr-worktree-branch'),undefined);
  h.mod.mode='branch';assert.equal(findElement(h.mod.render(),'pr-create-worktree'),undefined);
 });
 test('PR worktree uses chosen names, fetched head and a terminal in the captured space',async()=>{
@@ -326,7 +328,7 @@ test('PR worktree uses chosen names, fetched head and a terminal in the captured
  h.mod.createWorktree(h.cx);h.mod.createWorktree(h.cx);await h.flush();
  const fetch=h.calls.find(c=>c.args[0]==='fetch');assert.deepEqual(Array.from(fetch.args),['fetch','--no-tags','--','https://github.com/owner/repo.git','refs/pull/2/head']);
  const add=h.calls.filter(c=>c.args[0]==='worktree');assert.equal(add.length,1);assert.deepEqual(Array.from(add[0].args),['worktree','add','-b','review/custom','--','/remote/home/.herdr/worktrees/owner-repo/my-review','a'.repeat(40)]);assert.equal(add[0].options.on,'remote');
- assert.equal(h.opened[0].command,'tab.new');assert.equal(h.opened[0].args.space,'space');assert.equal(h.opened[0].args.folder,add[0].args[5]);assert.equal(h.opened[0].args.name,'my-review');
+ assert.equal(h.opened[0].command,'space.new');assert.equal(h.opened[0].args.machine,'remote');assert.equal(h.opened[0].args.folder,add[0].args[5]);assert.equal(h.opened[0].args.tab,'my-review');assert.equal(h.opened[0].args.argv,undefined);
 });
 test('worktree creation rejects invalid paths, existing branches and unrelated repositories',async()=>{
  for(const scenario of ['path','branch','repo','head','git']){
@@ -346,5 +348,77 @@ test('public previews cannot create a worktree and terminal failures preserve th
  const h=worktreeHarness();h.mod.preview={repo:'owner/repo'};h.mod.createWorktree(h.cx);await h.flush();assert.equal(h.calls.length,0);
  h.mod.preview=null;h.context.run=()=>{throw Error('unavailable')};h.mod.createWorktree(h.cx);await h.flush();assert.ok(h.mod.worktreeForm.path);assert.match(h.mod.worktreeForm.error,/Could not open/);
  h.mod.createWorktree(h.cx);await h.flush();assert.equal(h.calls.filter(c=>c.args[0]==='worktree').length,1);
- h.context.run=(command,args)=>h.opened.push({command,args});h.mod.openWorktree(h.mod.worktreeForm,h.cx);assert.equal(h.opened[0].command,'tab.new');
+ h.context.run=(command,args)=>h.opened.push({command,args});h.mod.openWorktree(h.mod.worktreeForm,h.cx);assert.equal(h.opened[0].command,'space.new');
+});
+test('Add to review starts a pending review for replies, appends general comments to its summary, shows Pending badges, and submits',async()=>{
+ const h=harness();h.mod.pr=pr();h.mod.section='conversation';const calls=[];
+ h.mod.api=async r=>{calls.push(r);if(r.action==='start-review')return{data:{addPullRequestReview:{pullRequestReview:{id:'rev1',state:'PENDING'}}}};if(r.action==='detail')return h.mod.pr;return{}};
+ h.mod.compose('reply','thread',null,h.cx,{entry:'thread'});h.mod.editor.set_value('hold this');
+ findElement(h.mod.render(),'pr-pending').handlers.click({},h.cx);await h.flush();
+ assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review??null,c.pullRequest??null,c.body??null]),[['start-review',null,'pr',null],['reply','rev1',null,'hold this']]);
+ assert.match(h.mod.notice,/pending review/);assert.equal(h.mod.composer,null);
+ const p=pr();p.reviews=[{id:'rev1',state:'PENDING',viewerDidAuthor:true,body:'',author:{login:'me'}}];p.threads[0].comments.push({id:'pend',body:'hold this',createdAt:'2026-01-03',author:{login:'me'},pullRequestReview:{id:'rev1',state:'PENDING'}});h.mod.pr=p;calls.length=0;
+ let rendered=h.mod.render();assert.ok(findElement(rendered,'pr-pending-pend'));assert.equal(findElement(rendered,'conversation-rev1'),undefined);
+ h.mod.compose('comment',null,null,h.cx);h.mod.editor.set_value('Overall fine');
+ findElement(h.mod.render(),'pr-pending').handlers.click({},h.cx);await h.flush();
+ assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review,c.body]),[['update-review','rev1','Overall fine']]);
+ p.reviews[0].body='Overall fine';h.mod.pr=p;calls.length=0;rendered=h.mod.render();
+ assert.ok(findElement(rendered,'conversation-rev1'));assert.match(strings(findElement(rendered,'conversation-rev1')),/Pending \(not submitted\)/);
+ const submit=findElement(rendered,'pr-submit-review');assert.match(strings(submit),/Submit review \(2\)/);
+ submit.handlers.click({},h.cx);await h.flush();
+ assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review,c.event]),[['submit-review','rev1','COMMENT']]);assert.match(h.mod.notice,/submitted/);
+});
+test('own comments and review replies get an Edit control that saves through the matching mutation',async()=>{
+ const h=harness();const p=pr();p.comments[0].viewerCanUpdate=true;p.threads[0].comments[0].viewerCanUpdate=true;h.mod.pr=p;h.mod.section='conversation';const calls=[];
+ h.mod.api=async r=>{calls.push(r);return r.action==='detail'?p:{}};
+ let rendered=h.mod.render();assert.equal(findElement(rendered,'pr-edit-missing'),undefined);
+ findElement(rendered,'pr-edit-c').handlers.click({},h.cx);assert.equal(h.mod.composer.kind,'edit');assert.equal(h.mod.editor.value(),'General');
+ rendered=h.mod.render();assert.equal(findElement(rendered,'pr-pending'),undefined);assert.match(strings(findElement(rendered,'pr-submit')),/Save/);
+ h.mod.editor.set_value('General, edited');findElement(rendered,'pr-submit').handlers.click({},h.cx);await h.flush();
+ assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.comment,c.body]),[['edit-comment','c','General, edited']]);assert.equal(h.mod.composer,null);
+ calls.length=0;const first=p.threads[0].comments[0];findElement(h.mod.render(),`pr-edit-${first.id}`).handlers.click({},h.cx);h.mod.editor.set_value('fixed');
+ findElement(h.mod.render(),'pr-submit').handlers.click({},h.cx);await h.flush();
+ assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.comment]),[['edit-reply',first.id]]);
+ h.mod.preview={repo:'o/r'};assert.equal(findElement(h.mod.render(),'pr-edit-c'),undefined);
+});
+test('author filter is a native dropdown with a trigger, options and keyboard selection',()=>{
+ const h=harness();h.mod.pr=pr();h.mod.section='conversation';
+ let rendered=h.mod.render();assert.ok(findElement(rendered,'pr-author-trigger'));assert.equal(findElement(rendered,'pr-author-menu'),undefined);
+ findElement(rendered,'pr-author').handlers.open_change(true,h.cx);rendered=h.mod.render();
+ const menu=findElement(rendered,'pr-author-menu');assert.ok(menu);assert.match(strings(menu),/All authors/);assert.match(strings(menu),/alice/);
+ findElement(menu,'pr-author-2').handlers.click({},h.cx);assert.equal(h.mod.author,'bob');assert.equal(h.mod.authorOpen,false);
+ findElement(h.mod.render(),'pr-author').handlers.open_change(true,h.cx);const open=findElement(h.mod.render(),'pr-author-menu');
+ open.handlers.key_down({key:'up'},h.cx);open.handlers.key_down({key:'enter'},h.cx);assert.equal(h.mod.author,'alice');
+});
+test('worktree form lists installed agents and opens the new space with the chosen one in its first tab',async()=>{
+ const h=worktreeHarness();await h.flush();
+ let tree=h.mod.render();assert.match(strings(findElement(tree,'pr-worktree-launch-trigger')),/Terminal/);assert.equal(findElement(tree,'pr-worktree-launch-menu'),undefined);
+ findElement(tree,'pr-worktree-launch').handlers.open_change(true,h.cx);tree=h.mod.render();const menu=findElement(tree,'pr-worktree-launch-menu');
+ assert.match(strings(menu),/Claude Code/);assert.doesNotMatch(strings(menu),/Codex/);
+ findElement(menu,'pr-worktree-launch-claude').handlers.click({},h.cx);tree=h.mod.render();assert.match(strings(findElement(tree,'pr-worktree-launch-trigger')),/Claude Code/);
+ h.mod.createWorktree(h.cx);await h.flush();
+ assert.equal(h.opened[0].command,'space.new');assert.deepEqual(h.opened[0].args.argv,['claude']);assert.equal(h.opened[0].args.tab,'my-review');assert.match(h.opened[0].args.folder,/my-review$/);assert.equal(h.mod.worktreeForm,null);
+ assert.equal(findElement(h.mod.render(),'pr-worktree-launch-trigger'),undefined);
+});
+test('worktree name follows the branch until it is edited by hand',()=>{
+ const h=harness();h.mod.pr=pr();h.mod.showWorktree(h.cx);const f=h.mod.worktreeForm;
+ f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),'feature-one-two');
+ f.name.type('custom',h.cx);f.branch.type('feature/three',h.cx);assert.equal(f.name.value(),'custom');
+ f.name.type('feature-three',h.cx);f.branch.type('feature/four',h.cx);assert.equal(f.name.value(),'feature-four');
+});
+test('PR detail lists existing worktrees and a click switches to their space or opens one',async()=>{
+ const h=harness(),opened=[];h.mod.pr=pr();h.mod.mode='browser';h.context.run=(command,args)=>opened.push({command,args});
+ h.context.exec=async(cmd,args)=>{
+  if(args[0]==='config')return{code:0,stdout:'branch.pr-2-fix.herdr-pr owner/repo#2\nbranch.pr-2-fix-2.herdr-pr owner/repo#2\nbranch.other.herdr-pr owner/repo#9\n'};
+  if(args[0]==='worktree')return{code:0,stdout:'worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /wt/pr-2-fix\nHEAD bbb\nbranch refs/heads/pr-2-fix\n\nworktree /wt/two\nHEAD ccc\nbranch refs/heads/pr-2-fix-2\n\nworktree /wt/other\nHEAD ddd\nbranch refs/heads/other\n'};
+  return{code:0,stdout:''};
+ };
+ h.live.spaces=[{id:'wt',folder:'/wt/pr-2-fix',machine:null,tabs:[]}];
+ h.mod.loadWorktrees(h.cx);await h.flush();
+ assert.equal(h.mod.currentWorktrees().map(w=>w.name).join(','),'pr-2-fix,two');
+ const tree=h.mod.render();const first=findElement(tree,'pr-worktree-row-0'),second=findElement(tree,'pr-worktree-row-1');
+ assert.match(strings(first),/pr-2-fix[\s\S]*Open$/);assert.match(strings(second),/two[\s\S]*pr-2-fix-2[\s\S]*Open space/);
+ first.handlers.click({},h.cx);assert.equal(opened[0].command,'space.select');assert.equal(opened[0].args.id,'wt');
+ second.handlers.click({},h.cx);assert.equal(opened[1].command,'space.new');assert.equal(opened[1].args.folder,'/wt/two');
+ h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'pr-2-fix-3');
 });

@@ -77,6 +77,11 @@ export default class Changes extends View {
     this.source = props()?.source ?? _props?.source;
     this.restoreDiffSelection(_props);
     this.view = localStorage.getItem("better-changes.view") === "flat" ? "flat" : "tree";
+    // Optional Better Tabs integration: an icon for the diff tab.
+    setShared("mod-icons", {
+      ...(shared("mod-icons") ?? {}),
+      "better-changes": "mods/better-changes/file.svg",
+    });
     this.tab = localStorage.getItem("better-changes.tab") === "commits" ? "commits" : "changes";
     this.resetCommits();
     this.diffLayout =

@@ -114,6 +114,10 @@ The arrangement is saved in Herdr shared preferences by layout and `toolbarId` (
 
 `maxButtons` limits visible buttons; the responsive width budget may show fewer. Remaining buttons go to overflow. Restoring a menu entry puts it within the visible order, displacing another action into overflow if the limit is reached. Very narrow bars or `maxButtons: 0` can still leave every action in the menu. The compact menu uses Herdr's popover colors and standard menu-sized rows, anchors below the dots button, and shows only a short “No hidden actions” line when empty. Dragging/pinning instructions live in tooltips rather than a header. The menu snapshots its entries when opened, while badge values and active/enabled predicates remain live.
 
+### Mod tab icons
+
+Mod tabs (a GitHub PR browser, a Better Changes diff) carry no program, so they get no icon by default. Two sources fill that in, layout first: a `modIcons` map in the tabs block's props, e.g. `{ "modIcons": { "github-pr": "mods/github-pr/pull-request.svg" } }`, and the shared registry `mod-icons`, a map from mod name to a tinted SVG path that a mod may publish about itself on init. GitHub PR and Better Changes publish theirs. `programIcons: false` hides these too.
+
 `tabMaxWidth` defaults to 170 logical px. `closeButtons` accepts `"active"` (default), `"all"`, or `"none"`. Set `programIcons`, `statusIndicators`, `newButton`, or `scrollNavigation` to false to disable them. `sidebar` overrides the sidebar node ID used for macOS traffic-light spacing. Keep layout titlebar and traffic-light settings intact.
 
 ### Sidebar visibility

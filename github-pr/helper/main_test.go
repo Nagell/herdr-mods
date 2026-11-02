@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -134,6 +136,48 @@ func TestMutations(t *testing.T) {
 	}
 }
 
+func TestPendingReviewAndEditMutations(t *testing.T) {
+	cases := []struct {
+		req      Request
+		contains string
+		vars     map[string]any
+	}{
+		{Request{Action: "reply", Thread: "thread", Body: "b", Review: "rev"}, "pullRequestReviewId:$review", map[string]any{"id": "thread", "review": "rev", "body": "b"}},
+		{Request{Action: "start-review", PullRequest: "pr", Body: "summary"}, "addPullRequestReview(", map[string]any{"id": "pr", "body": "summary"}},
+		{Request{Action: "update-review", Review: "rev", Body: "new"}, "updatePullRequestReview(", map[string]any{"id": "rev", "body": "new"}},
+		{Request{Action: "submit-review", Review: "rev"}, "submitPullRequestReview(", map[string]any{"id": "rev", "event": "COMMENT"}},
+		{Request{Action: "edit-comment", Comment: "c1", Body: "x"}, "updateIssueComment(", map[string]any{"id": "c1", "body": "x"}},
+		{Request{Action: "edit-reply", Comment: "c2", Body: "y"}, "updatePullRequestReviewComment(", map[string]any{"id": "c2", "body": "y"}},
+	}
+	for _, c := range cases {
+		t.Run(c.req.Action, func(t *testing.T) {
+			mock(t, func(a []string, b []byte) ([]byte, error) {
+				p := payload(t, b)
+				if !strings.Contains(p["query"].(string), c.contains) {
+					t.Fatal(p["query"])
+				}
+				v := object(p["variables"])
+				for k, want := range c.vars {
+					if v[k] != want {
+						t.Fatalf("%s: %v != %v", k, v[k], want)
+					}
+				}
+				return []byte(`{"data":{}}`), nil
+			})
+			c.req.Repo = "owner/repo"
+			if _, e := handle(context.Background(), c.req); e != nil {
+				t.Fatal(e)
+			}
+		})
+	}
+	for _, bad := range []Request{{Action: "submit-review", Review: "rev", Event: "MERGE"}, {Action: "start-review"}, {Action: "edit-comment", Comment: "c"}} {
+		bad.Repo = "owner/repo"
+		if _, e := handle(context.Background(), bad); e == nil {
+			t.Fatalf("expected validation error for %+v", bad)
+		}
+	}
+}
+
 func TestBranchPRsMatchesExactBranchAndPaginates(t *testing.T) {
 	pages := 0
 	mock(t, func(args []string, b []byte) ([]byte, error) {
@@ -195,5 +239,18 @@ func TestStatusReadsOnlyPRMetadataAndChecks(t *testing.T) {
 	}
 	if _, err := handle(context.Background(), Request{Action: "status", Repo: "owner/repo", Number: 0}); err == nil {
 		t.Fatal("accepted invalid PR number")
+	}
+}
+
+func TestGhErrorsAreExplained(t *testing.T) {
+	notFound := &exec.Error{Name: "gh", Err: exec.ErrNotFound}
+	if e := describeGhError(notFound, ""); !strings.Contains(e.Error(), "not installed") {
+		t.Fatal(e)
+	}
+	if e := describeGhError(errors.New("exit status 4"), "To get started with GitHub CLI, please run:  gh auth login"); !strings.Contains(e.Error(), "not logged in") {
+		t.Fatal(e)
+	}
+	if e := describeGhError(errors.New("exit status 1"), "boom"); !strings.Contains(e.Error(), "boom") {
+		t.Fatal(e)
 	}
 }

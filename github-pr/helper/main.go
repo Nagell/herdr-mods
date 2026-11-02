@@ -30,6 +30,11 @@ type Request struct {
 	Run     int               `json:"run"`
 	Thread  string            `json:"thread"`
 	Body    string            `json:"body"`
+	// Pending-review and edit mutations.
+	PullRequest string `json:"pullRequest"`
+	Review      string `json:"review"`
+	Comment     string `json:"comment"`
+	Event       string `json:"event"`
 }
 
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -42,9 +47,21 @@ func runCommand(ctx context.Context, args []string, input []byte) ([]byte, error
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("GitHub: %s (%w)", strings.TrimSpace(stderr.String()), err)
+		return nil, describeGhError(err, stderr.String())
 	}
 	return out.Bytes(), nil
+}
+
+// Everything here goes through the GitHub CLI, so say plainly when it is absent or logged out.
+func describeGhError(err error, stderr string) error {
+	stderr = strings.TrimSpace(stderr)
+	if errors.Is(err, exec.ErrNotFound) {
+		return errors.New("GitHub CLI (gh) is not installed. Install it from https://cli.github.com, run `gh auth login`, then refresh.")
+	}
+	if strings.Contains(stderr, "gh auth login") || strings.Contains(stderr, "not logged in") {
+		return errors.New("GitHub CLI is not logged in. Run `gh auth login` in a terminal, then refresh.")
+	}
+	return fmt.Errorf("GitHub: %s (%w)", stderr, err)
 }
 func gh(ctx context.Context, args ...string) (any, error) {
 	b, e := runner(ctx, args, nil)
@@ -183,9 +200,9 @@ func list(ctx context.Context, r Request) (any, error) {
 }
 
 const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision
- comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt author{login}}}
- reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state author{login}}}
- reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk author{login}}}}}
+ comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt viewerCanUpdate author{login}}}
+ reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state viewerDidAuthor viewerCanUpdate author{login}}}
+ reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk viewerCanUpdate pullRequestReview{id state} author{login}}}}}
 }}}`
 
 func detail(ctx context.Context, r Request) (any, error) {
@@ -237,7 +254,7 @@ func detail(ctx context.Context, r Request) (any, error) {
 		conn := thread["comments"]
 		replies := connection(conn)
 		for c := cursor(conn); c != ""; c = cursor(conn) {
-			data, e := gql(ctx, `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){`+pageInfo+` nodes{id body url createdAt diffHunk author{login}}}}}}`, Obj{"id": thread["id"], "cursor": c})
+			data, e := gql(ctx, `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){`+pageInfo+` nodes{id body url createdAt diffHunk viewerCanUpdate pullRequestReview{id state} author{login}}}}}}`, Obj{"id": thread["id"], "cursor": c})
 			if e != nil {
 				return nil, e
 			}
@@ -353,6 +370,11 @@ func handle(ctx context.Context, r Request) (any, error) {
 			}
 			vars["body"] = r.Body
 			query = `mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}`
+			// With a review ID the reply joins that pending review instead of posting now.
+			if r.Review != "" {
+				vars["review"] = r.Review
+				query = `mutation($id:ID!,$body:String!,$review:ID!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,pullRequestReviewId:$review,body:$body}){comment{id}}}`
+			}
 		} else {
 			mutation := "resolveReviewThread"
 			if r.Action == "reopen" {
@@ -361,6 +383,37 @@ func handle(ctx context.Context, r Request) (any, error) {
 			query = `mutation($id:ID!){` + mutation + `(input:{threadId:$id}){thread{id isResolved}}}`
 		}
 		return gql(ctx, query, vars)
+	case "start-review":
+		if r.PullRequest == "" {
+			return nil, errors.New("pull request ID required")
+		}
+		return gql(ctx, `mutation($id:ID!,$body:String){addPullRequestReview(input:{pullRequestId:$id,body:$body}){pullRequestReview{id state}}}`, Obj{"id": r.PullRequest, "body": r.Body})
+	case "update-review":
+		if r.Review == "" {
+			return nil, errors.New("review ID required")
+		}
+		return gql(ctx, `mutation($id:ID!,$body:String!){updatePullRequestReview(input:{pullRequestReviewId:$id,body:$body}){pullRequestReview{id}}}`, Obj{"id": r.Review, "body": r.Body})
+	case "submit-review":
+		if r.Review == "" {
+			return nil, errors.New("review ID required")
+		}
+		event := r.Event
+		if event == "" {
+			event = "COMMENT"
+		}
+		if event != "COMMENT" && event != "APPROVE" && event != "REQUEST_CHANGES" {
+			return nil, errors.New("invalid review event")
+		}
+		return gql(ctx, `mutation($id:ID!,$event:PullRequestReviewEvent!){submitPullRequestReview(input:{pullRequestReviewId:$id,event:$event}){pullRequestReview{id state}}}`, Obj{"id": r.Review, "event": event})
+	case "edit-comment", "edit-reply":
+		if r.Comment == "" || strings.TrimSpace(r.Body) == "" {
+			return nil, errors.New("comment ID and body required")
+		}
+		query := `mutation($id:ID!,$body:String!){updateIssueComment(input:{id:$id,body:$body}){issueComment{id}}}`
+		if r.Action == "edit-reply" {
+			query = `mutation($id:ID!,$body:String!){updatePullRequestReviewComment(input:{pullRequestReviewCommentId:$id,body:$body}){pullRequestReviewComment{id}}}`
+		}
+		return gql(ctx, query, Obj{"id": r.Comment, "body": r.Body})
 	default:
 		return nil, errors.New("unknown action")
 	}

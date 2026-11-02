@@ -18,6 +18,8 @@ A standalone native GitHub pull-request sidebar and repository browser for [Herd
 
 Requirements: Herdr with native mod tabs, Python 3 for the installer, **Go 1.23+** to build the helper, Git on source machines, and a local **GitHub CLI** authenticated with `gh auth login`. Agent actions additionally use `hc` and a live agent in the source space.
 
+**This mod depends entirely on the GitHub CLI.** Every read and write goes through `gh` on this computer, using its login. There is no token setting and no other transport. If `gh` is missing or logged out, the panel shows a plain message saying so (`GitHub CLI (gh) is not installed…` or `GitHub CLI is not logged in. Run gh auth login…`) with a Retry button; nothing else works until that is fixed.
+
 Read [RECIPE.md](RECIPE.md) and the source before installation. The helper runs `gh` against GitHub using your existing credentials; the mod runs Git/`hc` and reads repository/proposal files. Explicit user actions can **post comments and replies, resolve/reopen review threads, fetch PR heads and create Git worktrees/branches, write PR-association config, open terminals, and send agent prompts**. Preview mode disables GitHub writes and worktree creation. Never test mutations against a user's repository without their instruction.
 
 From this package directory:
@@ -54,7 +56,7 @@ The browser has **one heading**, a right-aligned repository URL (Cmd-click/Ctrl-
 
 ### Optional Better Tabs integration
 
-Better Tabs is optional. A toolbar panel action points at the **layout node ID**, which need not be `github-pr`:
+Better Tabs is optional. On start the mod publishes its pull-request icon under the shared `mod-icons` map so a Better Tabs bar shows it on the All PRs tab; without Better Tabs that entry is inert. A toolbar panel action points at the **layout node ID**, which need not be `github-pr`:
 
 ```json
 {
@@ -87,7 +89,11 @@ The browser's initial repository preference is `upstream`, then the branch track
 
 Search debounces for 450ms and starts at three characters; GitHub matches titles/bodies and qualifiers such as `author:alice` or `label:bug`. Clear/shorten the query to restore unfiltered results. **Involved** combines assignment, requested reviews, submitted reviews, and comments; matches are deduplicated with reasons. **Load more** preserves independent cursors for involvement categories.
 
-PR details provide Description, Conversations, and Checks. Conversation cards show authors, timestamps, resolved state, and bounded code context. Author/unresolved filters preserve complete matching threads. **Reply / Quote reply** opens an editor with Markdown preview; no write occurs before explicit Reply/Comment. Drafts survive errors/navigation. A timeout may follow a successful server write: refresh before retrying.
+PR details provide Description, Conversations, and Checks. Conversation cards show authors, timestamps, resolved state, and bounded code context. The **Author** filter is a native dropdown with keyboard selection; author/unresolved filters preserve complete matching threads. **Reply / Quote reply** opens an editor with Markdown preview; no write occurs before explicit Reply/Comment. Drafts survive errors/navigation. A timeout may follow a successful server write: refresh before retrying.
+
+**Pending reviews.** Every composer has a second button, **Start review** or **Add to review**, that holds the comment in your unsubmitted GitHub review instead of posting it. Thread replies join the review as pending review comments; a general comment becomes the review summary, and later ones append to it. Pending items show a **Pending** badge, the summary appears as a *Review · Pending (not submitted)* card, and a **Submit review (N)** button in the filter row publishes everything at once as a comment review. Until then only you can see them, on GitHub too.
+
+**Editing.** Comments, replies and review summaries you wrote show an **Edit** control. It opens the same editor prefilled with the current text; **Save** updates the comment on GitHub. Editing is disabled in preview mode.
 
 Checks show overall status and grouped workflows, jobs, steps, and failed logs (last 60KB), with links to full GitHub output. Open/draft/merged/closed use green/gray/purple/red icons; queued/running/passed/failed/skipped/cancelled check states have distinct icons. Agent working/blocked/done/idle are separate from PR state and do not recolor it.
 
@@ -95,7 +101,7 @@ Unread markers compare saved comment fingerprints. **Mark N read**, or leaving a
 
 ## Worktrees and agent actions
 
-**Create worktree** is available in live browser details. Edit branch/worktree names independently; creation fetches the selected PR head (including forks), refuses existing branches and nonempty folders, creates a checkout under `~/.herdr/worktrees/<owner>-<repository>/<worktree-name>` on the source machine, associates its branch with the PR, and opens a terminal tab in the captured source space. If opening a terminal fails, retain the checkout and retry that step rather than recreate it. Public previews cannot create worktrees.
+**Worktrees** appear in live browser details: every checkout whose branch is associated with the PR is listed with its worktree and branch name, and clicking a row switches to that worktree's space, or opens one when none is running. A PR may have any number of worktrees; **New worktree** proposes the next free branch name. Creation Edit branch/worktree names independently; creation fetches the selected PR head (including forks), refuses existing branches and nonempty folders, creates a checkout under `~/.herdr/worktrees/<owner>-<repository>/<worktree-name>` on the source machine, associates its branch with the PR, and opens the checkout as a **new space**, which the spaces sidebar nests under the repository at once. An **Open with** dropdown on the form chooses what runs in that space's first tab: a terminal, or any installed agent from Herdr's program table; that tab takes focus. If opening the space fails, the checkout is retained and the Open button retries only that step. Public previews cannot create worktrees.
 
 **Send to agent** offers agents in the source space and an editable prompt containing the PR/comment context. Only Send delivers through `hc`. **Draft fix & reply** asks that agent for read-only analysis and a proposed fix/reply; results are stored under `.workflow/pr-proposals/` for compatibility with existing drafts. This is just a local data path: the Workflow mod/recorder is **not required** and is never invoked. Proposals bind repository, PR, commit, and comment context; stale results cannot post. Review/edit the draft before the explicit GitHub write.
 

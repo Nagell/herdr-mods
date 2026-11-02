@@ -653,3 +653,28 @@ test("errors become notifications and shipped package has no Factory dependency"
     assert.ok(fs.existsSync(path.join(root, asset + ".svg")));
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, "mod.json"))).place, "none");
 });
+test("mod tabs get an icon from the layout map, else the shared registry, else none", () => {
+  const h = harness({ buttons: [], modIcons: { "better-changes": "mods/better-changes/file.svg" } });
+  const paths = [];
+  h.context.svg = (p) => {
+    paths.push(p);
+    return h.context.div();
+  };
+  h.data["mod-icons"] = {
+    "github-pr": "mods/github-pr/pull-request.svg",
+    "better-changes": "ignored.svg",
+  };
+  h.setPanes([
+    { tab: "t1", mod: "github-pr" },
+    { tab: "t2", mod: "better-changes" },
+  ]);
+  h.tabs.render(h.cx);
+  assert.ok(paths.includes("mods/github-pr/pull-request.svg"));
+  assert.ok(paths.includes("mods/better-changes/file.svg"));
+  assert.ok(!paths.includes("ignored.svg"));
+  paths.length = 0;
+  h.setPanes([{ tab: "t1", mod: "unknown" }, { tab: "t2", program: { icon: "icons/claude.svg", tint: true } }]);
+  h.tabs.render(h.cx);
+  assert.ok(!paths.some((p) => p.includes("pull-request") || p.includes("file.svg")));
+  assert.ok(paths.includes("icons/claude.svg"));
+});

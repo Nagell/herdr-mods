@@ -1,6 +1,6 @@
 # GitHub PR
 
-A standalone native GitHub pull-request sidebar and repository browser for a person's existing Herdr window. The sidebar shows PRs for the active checkout; All PRs opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow or Better Tabs dependency.
+A standalone native GitHub pull-request sidebar and repository browser for a person's existing Herdr window. It depends entirely on the local GitHub CLI: every read and write runs `gh` with its login, and a missing or logged-out `gh` must surface as a plain panel message naming `gh auth login`, never a generic failure. The sidebar shows PRs for the active checkout; All PRs opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow or Better Tabs dependency.
 
 ![GitHub PR](preview.png)
 
@@ -18,7 +18,7 @@ Open PR icons are ansi2 green, drafts dim gray, merged ansi5 purple, closed ansi
 
 Branch discovery follows the active terminal cwd and machine. Match exact branch and source-repository remotes, prefer open matches, honor an explicit branch.<branch>.herdr-pr binding, and let people select multiple matches. Detached/no-repo/no-match cases must stay navigable. A selected pinned browser retains the checkout source for the sidebar.
 
-All PRs opens one browser mod tab per space using tab.new; subsequent clicks select it with tab.select. Save source {cwd,on} and space in props. Guard rapid repeated opens; after closing via the tab controls, later opens recreate it. Own this behavior in GitHub PR, not in another mod. Optional Better Tabs integration is configuration only. No assumptions about Factory center stacks or panel node IDs.
+All PRs opens one browser mod tab per space using tab.new; subsequent clicks select it with tab.select. Save source {cwd,on} and space in props. Guard rapid repeated opens; after closing via the tab controls, later opens recreate it. Own this behavior in GitHub PR, not in another mod. Optional Better Tabs integration is configuration only, plus one inert shared-state write on init: mod-icons["github-pr"] = the package's pull-request.svg path, so that tab bar can draw an icon on the browser tab. No assumptions about Factory center stacks or panel node IDs.
 
 Browser repository detection prefers upstream, branch tracking remote, then origin, with a valid saved choice. Support GitHub.com HTTPS/SSH URLs. Git operations and file reads run on the source machine; GitHub requests and gh credentials stay local. Pin browser source even when other spaces are selected. Ignore stale async responses after source/selection changes.
 
@@ -28,7 +28,7 @@ Clicking a PR opens details. Preserve filters, selection, section, author/unreso
 
 Checks group by workflow/run, expand jobs/steps, normalize queued/running/passed/failed/skipped/cancelled states, and fetch failed logs on demand (last 60KB) while retaining links to full output. Render unread markers against stored fingerprints and mark loaded comments read explicitly or when leaving a visited Conversations section.
 
-Create worktree in live browser details captures source machine/space/repository/PR/head, accepts independent branch/worktree names, refuses existing branches/nonempty folders, fetches the PR head including forks, creates ~/.herdr/worktrees/<owner>-<repository>/<worktree-name>, records branch association, and opens a terminal there in the captured space. A terminal-open failure retains the checkout for retry. Never discard working files.
+Live browser details list the PR's existing worktrees (branches bound by `branch.<name>.herdr-pr`, joined to `git worktree list --porcelain`), one row per checkout showing worktree and branch name; a click runs space.select for a space already on that folder, else space.new {folder, machine, tab}. New worktree proposes the next free `pr-<n>-<head>[-k]` branch. The form captures source machine/space/repository/PR/head, accepts independent branch/worktree names, refuses existing branches/nonempty folders, fetches the PR head including forks, creates ~/.herdr/worktrees/<owner>-<repository>/<worktree-name>, records branch association, and runs space.new {folder, machine, tab: <worktree name>, argv?} so the checkout appears as a nested worktree space immediately and its first tab is focused. An Open with Popover dropdown on the form lists Terminal plus knownAgents({on}) entries that are installed; a chosen agent supplies argv: agent.run. A space-open failure retains the checkout for retry. Never discard working files.
 
 Agent Send actions have editable prompts, source-space agent selection, and explicit submission. Draft fix & reply asks for read-only analysis/proposed fix/reply in a bound JSON result, not application or posting. Retain legacy .workflow/pr-proposals/ data paths for existing drafts, but never require or invoke Workflow. Validate request/repo/PR/commit/comment bindings and refetch context before posting a reviewed draft.
 
@@ -42,6 +42,8 @@ Native GPUI div/svg and gpui-base flex, input/textarea, Markdown, and Popover co
 
 ## Watch out
 
+Composer footers have Close, Start review / Add to review, and Reply / Comment (Save when editing). Add to review attaches a thread reply to the viewer's pending review via addPullRequestReviewThreadReply with pullRequestReviewId, creating the review first with addPullRequestReview when none exists; a general comment becomes the review body (addPullRequestReview with body, or updatePullRequestReview appending to the existing body). The detail query fetches viewerDidAuthor and viewerCanUpdate on reviews, viewerCanUpdate on comments, and pullRequestReview{id state} on thread comments. Pending thread comments and a pending review body get a Pending badge; empty pending review shells are hidden; a Submit review (N) primary button in the filter row runs submitPullRequestReview with event COMMENT. Comments with viewerCanUpdate show Edit, which reuses the composer prefilled with the body and saves through updateIssueComment, updatePullRequestReviewComment, or updatePullRequestReview by kind. The Author filter is a native Popover dropdown mirroring the status filter, with arrow/enter keyboard selection.
+
 Before installation explain Git/gh/hc execution, repository/proposal file reads, GitHub access through local credentials, and explicit actions that post/resolve, create worktrees/branches/config, open terminals, and send prompts. Read every source before installing. Copy only runtime code/assets and the built helper; docs/tests/recipe do not belong in the installed mods folder. Go/Python are development/install dependencies, not native JS runtime dependencies.
 
 Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so edits to them are lost; the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` (which switches to the clone) and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Replace only the PR slot reference and preserve node IDs, dimensions, sibling panels, and keys. GitHub PR self-opens github-pr mod tabs and uses mods/github-pr asset/helper paths; rename all consistently on an unrelated name clash. A layout node may keep its old pull-requests ID without depending on that old mod. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
@@ -52,12 +54,13 @@ GitHub Enterprise and non-GitHub hosting are unsupported. Search indexing is eve
 
 - Node tests, Python installer tests, Go tests/vet, and herdr-app check pass.
 - Package has no Factory/Better Tabs/Workflow helper/layout dependency.
+- A missing or logged-out `gh` produces the explicit install / `gh auth login` message; pending replies and summaries go to the viewer's review and Submit review publishes them; own comments are editable through the matching mutation; the author filter is a Popover dropdown.
 - Live sidebar and reusable browser tab render without errors; normal tab-close works and reopening creates one tab.
 - One browser heading has the modifier-click repository URL and bottom border, with no duplicate lone-pane heading, footer, or internal close button.
 - Local/remote source capture stays pinned through tab and space switches.
 - PR discovery handles fork heads, explicit bindings, detached/no-match states, and unavailable remotes.
 - Filters/search/pagination, saved views, thread/reply/check UI, drafts, errors, and stale-response invalidation work.
 - Preview cannot write; tests mock GitHub mutations and never post automatically.
-- Worktrees validate names/existing state and preserve completed checkouts on terminal failure.
+- Worktrees validate names/existing state, open as a new space with the chosen terminal or installed agent in the first tab, and preserve completed checkouts on space-open failure.
 - Agent proposal binding rejects stale context and posting remains an explicit reviewed action.
 - Installed layouts/keys still work after removing the old bundled PR mod and helper.
