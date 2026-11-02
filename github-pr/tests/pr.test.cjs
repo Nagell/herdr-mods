@@ -19,7 +19,7 @@ function harness(existingStorage) {
   vm.createContext(context);
   const typography=fs.readFileSync('mods/github-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
   vm.runInContext(typography,context);
-  const source=fs.readFileSync('mods/github-pr/main.js','utf8').replace(/^import .*;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
+  const source=fs.readFileSync('mods/github-pr/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
   vm.runInContext(source,context);
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.repo='owner/repo';mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';
   return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};

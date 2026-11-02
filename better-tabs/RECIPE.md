@@ -26,7 +26,7 @@ Actions: command(name,args), panel(container,stack,target), mod-tab(mod,name,pro
 
 Panel buttons select/show their child or hide an already-active panel. rememberPanels selects a configurable container/stack pair; save its choice locally per space and restore on space changes with a short acknowledgement window. Run synchronization on initialization and a 300ms timer, never in render. A new copy starts from the current layout if there is no saved choice. Unknown saved children become closed panels. Corrupt saved preferences must not break the bar.
 
-better-tabs.button:<id> invokes an eligible configured button. props.commands maps arbitrary command names to actions, so a layout can define toggle-prs without embedding PR concepts in this mod. better-tabs.overflow opens the hidden/overflow actions menu. Mod command delivery follows Herdr's shown-copy limitation. No key bindings are installed by default.
+better-tabs.button:<id> invokes an eligible configured button. props.commands maps arbitrary command names to actions, so a layout can define toggle-prs without embedding PR concepts in this mod. better-tabs.overflow opens the hidden/overflow actions menu. better-tabs.toggle-sidebar uses the same target resolution as the sidebar icon, preserving the selected child and ignoring disabled/missing targets. Include a package keys.json with global cmd-shift-b mapped to better-tabs.toggle-sidebar for macOS; merge it during installation without overwriting existing bindings. Keep Cmd+B's left-sidebar binding unchanged. Other platforms can bind an unused shortcut to the same command. Mod command delivery follows Herdr's shown-copy limitation.
 
 Opt-in props.contributions reads shared("better-tabs.buttons"), a map from publisher IDs to button arrays. Merge deterministic publisher order, keep layout entries on duplicate IDs, apply conditions and numeric ordering. Publishers explicitly unregister; shared state persists across restarts. It is a trusted declarative registry, not automatic plugin discovery. Popup entries snapshot when opened; badges and enabled/active conditions remain live.
 
@@ -36,7 +36,7 @@ One runtime folder mods/better-tabs with main.js, actions.js, toolbar.js, hooks.
 
 Use GPUI div/svg/image and gpui-base h_flex/v_flex. Herdr APIs: spaces, panes, run, openOverlay/closeOverlay, theme, window, layout, settings, props, shared/setShared, notify, nextCommand, timers, and size-change callbacks. localStorage holds panel preferences; persistent shared state holds toolbar arrangements. toolbar.js provides pure arrangement and insertion-boundary helpers. Pointer events drive drag previews and markers, without redraw timers. The shipped menu and new-menu provide context/new-tab menus. All toolbar-owned icons are bundled; configured custom paths may refer to the target mod's icon.
 
-The tabs block receives configuration through content.props. For a workflow layout, configure its own Workflow/PR panel actions and browser mod-tab action there. The standalone runtime contains no Factory/Workflow/PR-specific logic. Copy only this runtime folder to install, not tests, recipe, or preview. Rename consistently on an unrelated name clash, including self-opening overflow mod names and asset paths.
+The tabs block receives configuration through content.props. For a workflow layout, configure its own Workflow/PR panel actions and browser mod-tab action there. The standalone runtime contains no Factory/Workflow/PR-specific logic. Copy this runtime folder to install, not tests, recipe, or preview; merge the optional package keys.json separately. Rename consistently on an unrelated name clash, including self-opening overflow mod names and asset paths.
 
 ## Watch out
 
@@ -57,7 +57,7 @@ No callback contexts retained. No side effects from render. Animation uses spin(
 - Per-space panel memory restores outside render and corrupt preferences are harmless.
 - Named commands and button-ID commands dispatch eligible actions; missing targets notify instead of breaking rendering.
 - The always-visible vertical dots accept drop-to-hide, open a compact anchored menu, list hidden actions alphabetically, dispatch a chosen action, and support drag-out or explicit pin restoration.
-- The adjacent sidebar icon toggles the configured panel container, preserves its selected child, and supports missing/disabled/custom targets.
+- The adjacent sidebar icon and Cmd+Shift+B command toggle the same configured panel container, preserve its selected child, and support missing/disabled/custom targets.
 - Toolbar arrangement survives restart and remains isolated by layout/toolbar ID; dropped actions never accidentally activate.
 - Contributions opt in explicitly, preserve layout precedence, and document persistent registry cleanup.
 - Keys and unrelated layouts/mods are not overwritten; migrate only explicitly owned legacy bindings.

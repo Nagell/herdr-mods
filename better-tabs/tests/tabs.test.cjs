@@ -591,6 +591,32 @@ test("sidebar toggle follows the dots, preserves panel selection, and can be con
   assert.equal(h.calls.at(-1).args.id, "custom-panel");
 });
 
+test("sidebar shortcut command uses the icon target and safely ignores missing or disabled panels", () => {
+  const h = harness();
+  h.tabs.command("toggle-sidebar", h.cx);
+  assert.deepEqual(plain(h.calls.at(-1)), { name: "layout.toggle", args: { id: "panel" } });
+
+  h.config.panelToggle = "custom-panel";
+  h.tree.children.push({ id: "custom-panel", hidden: true });
+  h.tabs.command("toggle-sidebar", h.cx);
+  assert.equal(h.calls.at(-1).args.id, "custom-panel");
+
+  const count = h.calls.length;
+  h.config.panelToggle = false;
+  h.tabs.command("toggle-sidebar", h.cx);
+  h.config.panelToggle = "missing-panel";
+  h.tabs.command("toggle-sidebar", h.cx);
+  assert.equal(h.calls.length, count);
+
+  delete h.config.panelToggle;
+  h.config.rememberPanels = { container: "custom-panel", stack: "custom-stack" };
+  h.tabs.command("toggle-sidebar", h.cx);
+  assert.equal(h.calls.at(-1).args.id, "custom-panel");
+
+  const keys = JSON.parse(fs.readFileSync(path.join(root, "../../keys.json"), "utf8"));
+  assert.equal(keys.global["cmd-shift-b"], "better-tabs.toggle-sidebar");
+});
+
 test("toolbar arrangements are isolated by layout and toolbar ID", () => {
   const h = harness({ toolbarId: "primary" });
   h.tabs.savePreferences(h.hideToolbarAction({}, "files"));

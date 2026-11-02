@@ -1,3 +1,5 @@
+// Native tab bar, persistent action toolbar, and a separate overflow-popup view.
+// Keep layout commands in event handlers or synchronization tasks, never render.
 import { em } from "./typography.js";
 import { find, buttons, execute, matches, isActive } from "./actions.js";
 import {
@@ -29,9 +31,13 @@ import {
 const ASSETS = "mods/better-tabs/";
 const DRAG_KEY = "better-tabs.action-drag";
 const PREFERENCES_KEY = "better-tabs.toolbar";
-const DRAG_THRESHOLD = 5;
+const DRAG_THRESHOLD = 5; // Small pointer movements must remain ordinary clicks.
+const DRAG_TIMEOUT_MS = 15000;
 const MENU_WIDTH = 240;
+
+// Each row is 32px, with 2px gaps and 5px padding on each edge.
 const menuHeight = (count) => Math.min(420, Math.max(1, count) * 34 + 8);
+
 const DEFAULTS = {
   rememberPanels: { container: "panel", stack: "panel-body" },
   buttons: [
@@ -69,6 +75,8 @@ function afterMiddle(event) {
 }
 
 export default class Tabs extends View {
+  // ── Configuration, lifecycle, and command dispatch ────────────────────────
+
   config() {
     return { ...DEFAULTS, ...props() };
   }
@@ -88,7 +96,7 @@ export default class Tabs extends View {
       cx.timer.every(300, () => {
         this.syncPanel();
         const drag = shared(DRAG_KEY);
-        if (drag?.scope === this.toolbarScope() && Date.now() - drag.at > 15000)
+        if (drag?.scope === this.toolbarScope() && Date.now() - drag.at > DRAG_TIMEOUT_MS)
           setShared(DRAG_KEY, null);
       });
       cx.spawn(async (cx) => {
@@ -100,8 +108,14 @@ export default class Tabs extends View {
   entries() {
     return buttons(this.config(), shared("better-tabs.buttons"));
   }
+
   command(command, cx) {
     const config = this.config();
+    if (command === "toggle-sidebar") {
+      this.toggleSidebar();
+      return;
+    }
+
     if (command === "overflow") {
       this.openActions(this.toolbar().overflow);
       return;
@@ -113,9 +127,11 @@ export default class Tabs extends View {
     if (entry && !this.enabled(entry)) return;
     if (action) this.act(action, cx);
   }
+
   enabled(button) {
     return !button.disabled && (!button.enabledWhen || matches(button.enabledWhen));
   }
+
   act(action, cx) {
     const space = spaces().find((s) => s.active);
     const failed = (error) =>
@@ -133,15 +149,27 @@ export default class Tabs extends View {
     }
   }
 
-  // ── Per-space panel memory ────────────────────────────────────────────────
+  // ── Sidebar visibility and per-space panel memory ────────────────────────
+
+  sidebarPanel(root = layout()) {
+    const config = this.config();
+    const id = config.panelToggle ?? config.rememberPanels?.container ?? "panel";
+    return id === false ? null : find(root, id);
+  }
+
+  toggleSidebar() {
+    const panel = this.sidebarPanel();
+    // Hide the container, not its active child, so reopening keeps the selection.
+    if (panel) run("layout.toggle", { id: panel.id });
+  }
 
   syncPanel() {
     const memory = this.config().rememberPanels;
     if (!memory) return;
-    const space = spaces().find((s) => s.active),
-      root = layout();
-    const panel = find(root, memory.container),
-      body = find(root, memory.stack);
+    const space = spaces().find((s) => s.active);
+    const root = layout();
+    const panel = find(root, memory.container);
+    const body = find(root, memory.stack);
     if (!space || !panel || !body) return;
     const key = JSON.stringify([memory.container, memory.stack, space.id]);
     const now = panel.hidden ? null : body.active;
@@ -162,6 +190,8 @@ export default class Tabs extends View {
         }
       }
     }
+    // Commands are queued. Let a restore reach the layout before saving again,
+    // or the old visible panel would overwrite the preference we just restored.
     if (this.pending) {
       if (this.pending.want !== now && Date.now() < this.pending.until) return;
       this.pending = null;
@@ -179,15 +209,18 @@ export default class Tabs extends View {
       JSON.stringify([shared("layout") ?? "default", this.config().toolbarId ?? "main"])
     );
   }
+
   preferences() {
     return toolbarPreferences(shared(PREFERENCES_KEY)?.[this.toolbarScope()]);
   }
+
   savePreferences(value) {
     setShared(PREFERENCES_KEY, {
       ...(shared(PREFERENCES_KEY) ?? {}),
       [this.toolbarScope()]: value,
     });
   }
+
   toolbar() {
     const limit = Math.max(
       0,
@@ -198,6 +231,7 @@ export default class Tabs extends View {
     );
     return toolbarPartition(this.entries(), this.preferences(), limit);
   }
+
   pinAction(entry, target = null, after = false) {
     const entries =
       this.config().mode === "overflow"
@@ -205,8 +239,11 @@ export default class Tabs extends View {
         : this.entries();
     this.savePreferences(placeToolbarAction(entries, this.preferences(), entry.id, target, after));
   }
+
   openActions(entries) {
     const bounds = this.moreBounds;
+    // A popup is another copy of this mod. Pass its originating scope and full
+    // action list so pinning can update the toolbar after the popup closes.
     openOverlay({
       ...(bounds
         ? {
@@ -256,6 +293,7 @@ export default class Tabs extends View {
       target: null,
     };
   }
+
   hoverTab(tab, event, cx) {
     if (!this.tabDrag) return;
     const point = event.position ?? this.tabDrag.point;
@@ -266,6 +304,7 @@ export default class Tabs extends View {
       cx.notify();
     }
   }
+
   finishTabDrag(tab, event, cx) {
     const drag = this.tabDrag;
     if (!drag) return;
@@ -273,6 +312,7 @@ export default class Tabs extends View {
     this.hoverTab(tab, event, cx);
     this.commitTabDrag(cx, tab.id);
   }
+
   commitTabDrag(cx, clickedID = null) {
     const drag = this.tabDrag;
     this.tabDrag = null;
@@ -287,10 +327,16 @@ export default class Tabs extends View {
     }
     cx.notify();
   }
+
+  // Toolbar and popup instances exchange drag state through shared storage;
+  // tab drags remain local because they never cross between those views.
   actionDrag() {
     const drag = shared(DRAG_KEY);
-    return drag?.scope === this.toolbarScope() && Date.now() - drag.at < 15000 ? drag : null;
+    return drag?.scope === this.toolbarScope() && Date.now() - drag.at < DRAG_TIMEOUT_MS
+      ? drag
+      : null;
   }
+
   beginActionDrag(entry, event, cx, fromMenu) {
     cx.stop_propagation();
     this.tabDrag = null;
@@ -308,6 +354,7 @@ export default class Tabs extends View {
       target: null,
     });
   }
+
   moveActionDrag(event, cx, target = undefined) {
     const drag = this.actionDrag();
     if (!drag) return;
@@ -320,6 +367,7 @@ export default class Tabs extends View {
       cx.notify();
     }
   }
+
   hoverAction(entry, event, cx) {
     this.moveActionDrag(event, cx, {
       kind: "toolbar",
@@ -328,6 +376,7 @@ export default class Tabs extends View {
       bounds: event.bounds,
     });
   }
+
   finishActionDrag(cx) {
     // A terminal tab dropped on an action is not a toolbar-action gesture.
     // Cancel it rather than leaving a ghost or activating the drop target.
@@ -353,19 +402,22 @@ export default class Tabs extends View {
     cx.notify();
     return true;
   }
-  leaveMenu(cx) {
+
+  leaveMenu(_cx) {
     const drag = this.actionDrag();
     if (!drag?.fromMenu) return;
     // Closing the popup on drag-out exposes the real toolbar as a drop surface.
     setShared(DRAG_KEY, { ...drag, active: true, at: Date.now(), target: null });
     closeOverlay(props().overlay);
   }
+
   cancelDrags(cx) {
     const active = Boolean(this.tabDrag || this.actionDrag());
     this.tabDrag = null;
     if (this.actionDrag()) setShared(DRAG_KEY, null);
     if (active) cx.notify();
   }
+
   movePointer(event, cx) {
     if (event.bounds) this.barBounds = event.bounds;
     if (this.tabDrag) {
@@ -384,6 +436,7 @@ export default class Tabs extends View {
       .size(size)
       .flex_none();
   }
+
   simple(id, label, tooltip, action) {
     const t = theme();
     return div()
@@ -405,6 +458,7 @@ export default class Tabs extends View {
       })
       .child(label);
   }
+
   marker(after, t) {
     return div()
       .id("drop-indicator")
@@ -417,10 +471,11 @@ export default class Tabs extends View {
       .when(after, (el) => el.right(-2))
       .when(!after, (el) => el.left(-2));
   }
+
   actionButton(entry, cx, menu = false) {
-    const t = theme(),
-      enabled = this.enabled(entry),
-      drag = this.actionDrag();
+    const t = theme();
+    const enabled = this.enabled(entry);
+    const drag = this.actionDrag();
     const active = entry.activeWhen ? matches(entry.activeWhen) : isActive(entry.action);
     const badge = entry.badge?.shared ? shared(entry.badge.shared) : entry.badge;
     return h_flex()
@@ -476,7 +531,7 @@ export default class Tabs extends View {
       )
       .when(menu, (el) =>
         el.child(
-          this.simple(`pin-${entry.id}`, this.icon("pin", 13), "Show in toolbar", (_e, cx) => {
+          this.simple(`pin-${entry.id}`, this.icon("pin", 13), "Show in toolbar", () => {
             setShared(DRAG_KEY, null);
             this.pinAction(entry);
             closeOverlay(props().overlay);
@@ -624,15 +679,15 @@ export default class Tabs extends View {
   }
 
   render(cx) {
-    const config = this.config(),
-      t = theme();
+    const config = this.config();
+    const t = theme();
     if (config.mode === "overflow") return this.renderOverflow(cx);
-    const space = spaces().find((s) => s.active),
-      shown = space?.tabs ?? [],
-      ps = panes();
-    const root = layout(),
-      sidebar = find(root, config.sidebar ?? "sidebar"),
-      w = window();
+    const space = spaces().find((s) => s.active);
+    const shown = space?.tabs ?? [];
+    const ps = panes();
+    const root = layout();
+    const sidebar = find(root, config.sidebar ?? "sidebar");
+    const w = window();
     const padding =
       w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && root?.traffic_lights
         ? Math.max(
@@ -759,15 +814,14 @@ export default class Tabs extends View {
     );
     // The panel control stays outside the configurable action list, so it
     // cannot itself be hidden in overflow. Toggling preserves the active child.
-    const panelID = config.panelToggle ?? config.rememberPanels?.container ?? "panel";
-    const panel = panelID !== false ? find(root, panelID) : null;
+    const panel = this.sidebarPanel(root);
     if (panel)
       actions.child(
         this.simple(
           "panel-toggle",
           this.icon("panel-right", 16),
           panel.hidden ? "Show sidebar" : "Hide sidebar",
-          () => run("layout.toggle", { id: panelID }),
+          () => this.toggleSidebar(),
         ).text_color(panel.hidden ? t.dim : t.foreground),
       );
     bar.child(actions);

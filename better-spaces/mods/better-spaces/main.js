@@ -31,22 +31,25 @@ function find(node, id) {
   return null;
 }
 
-// Where a space is now: its first terminal's live folder, else where it was made.
-// `ps`: panes(), read once by the caller (each read copies every pane).
-function place(s, ps) {
-  const tabs = new Set((s.tabs ?? []).map((c) => c.id));
-  return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
+// The first terminal defines a space's checkout, not whichever pane is focused.
+// Pass a panes() snapshot: each API call copies the full pane list.
+function spaceFolder(space, paneList) {
+  const tabIDs = new Set((space.tabs ?? []).map((tab) => tab.id));
+  return paneList.find((pane) => tabIDs.has(pane.tab) && pane.cwd)?.cwd || space.folder;
 }
+
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
-const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
-const base = (path) => path.replace(/\/+$/, "").split("/").pop();
-// Changes made outside Herdr (an editor's save, a commit in another app): looked
-// for this often, in repos the list shows, while the window is in front.
-const FALLBACK = 15000;
+const checkoutKey = (space, paneList) =>
+  JSON.stringify([space.machine ?? null, spaceFolder(space, paneList)]);
+const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
+
+// Watches and terminal events handle most changes. Poll visible repositories
+// occasionally to catch edits and commits made outside Herdr.
+const GIT_FALLBACK_MS = 15000;
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
-const MARK = {
+const AVATAR_COLORS = {
   ansi6: "#22a99a",
   ansi3: "#e3814f",
   ansi4: "#5b8def",
@@ -69,13 +72,16 @@ export default class Spaces extends View {
 
   init(_props, cx) {
     this.prObserver = new PRStatusObserver();
-    this.git = Object.create(null); // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
-    this.checked = {}; // where() -> when it was last looked at
-    this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
-    this.pending = new Set(); // where()s to look at next
+    // Repository caches are keyed by [machine, folder], so equal paths on
+    // different machines cannot share Git or PR state. null means not a repo.
+    this.git = Object.create(null);
+    this.checked = {}; // Checkout key -> last Git read time.
+    this.unsure = new Set(); // Transient failures, eligible for retry.
+    this.pending = new Set(); // Deduplicated queue for the single Git reader.
+
     this.busy = {}; // pane -> an agent working or a program in front of its shell
     this.ready = {}; // machine -> its layout was readable at the last look
-    this.at = {}; // space -> its where() at the last look
+    this.at = {}; // Space ID -> checkout key at the previous refresh.
     this.watching = new Set(); // local repos' git folders
     // Spaces made while this runs wait (at most a moment) for their git, so a
     // worktree appears under its repo instead of jumping there.
@@ -105,7 +111,7 @@ export default class Spaces extends View {
     const ps = panes();
     const places = sp.map((s) => {
       const tabs = new Set((s.tabs ?? []).map((tab) => tab.id));
-      const folder = place(s, ps);
+      const folder = spaceFolder(s, ps);
       return {
         folder,
         machine: s.machine,
@@ -123,54 +129,76 @@ export default class Spaces extends View {
   // Places whose git could have changed: new ones (a new space, a cd), where a
   // command or an agent's turn just ended (a checkout, a commit, edits), those on
   // a machine that is back, and repos in view whose fallback is due.
-  due(now, sp, ps) {
-    // Moved there: what it knew of that place may be old.
-    const at = Object.create(null);
-    for (const s of sp) at[s.id] = where(s, ps);
-    const keys = new Set(Object.values(at).filter((k) => JSON.parse(k)[1]));
-    const due = new Set([...keys].filter((k) => !(k in this.git)));
-    // Herdr reports terminal branch changes live. Refresh our richer metadata
-    // promptly, instead of waiting for a filesystem event or fallback poll.
-    for (const s of sp) {
-      const key = at[s.id];
-      const folder = place(s, ps);
-      const tabs = new Set((s.tabs ?? []).map((tab) => tab.id));
-      const branch = ps.find((p) => tabs.has(p.tab) && p.cwd === folder)?.branch;
+  due(now, spaceList, paneList) {
+    const currentPlaces = Object.create(null);
+    for (const space of spaceList) currentPlaces[space.id] = checkoutKey(space, paneList);
+    const usedKeys = new Set(Object.values(currentPlaces).filter((key) => JSON.parse(key)[1]));
+    const dueKeys = new Set([...usedKeys].filter((key) => !(key in this.git)));
+
+    // Branch names arrive live from Herdr. Refresh richer Git metadata promptly
+    // after a checkout, without waiting for the slower fallback poll.
+    for (const space of spaceList) {
+      const key = currentPlaces[space.id];
+      const folder = spaceFolder(space, paneList);
+      const tabIDs = new Set((space.tabs ?? []).map((tab) => tab.id));
+      const branch = paneList.find((pane) => tabIDs.has(pane.tab) && pane.cwd === folder)?.branch;
       if (
         branch &&
         !this.unsure.has(key) &&
         this.git[key]?.branch !== branch &&
         now - (this.checked[key] ?? 0) > 1000
-      )
-        due.add(key);
-    }
-    for (const [id, k] of Object.entries(at))
-      if (this.at[id] && this.at[id] !== k && keys.has(k)) due.add(k);
-    this.at = at;
-    const spaceOf = {};
-    for (const s of sp) for (const t of s.tabs ?? []) spaceOf[t.id] = s;
-    const busy = {};
-    for (const p of ps) {
-      if (!p.terminal || !spaceOf[p.tab]) continue;
-      busy[p.pane] = p.status === "working" || !(p.program?.shell || p.program?.agent);
-      if (this.busy[p.pane] && !busy[p.pane])
-        this.sameRepo(at[spaceOf[p.tab].id], keys).forEach((k) => due.add(k));
-    }
-    this.busy = busy;
-    for (const m of machines()) {
-      const ready = m.layout === "ready";
-      if (ready && this.ready[m.name] === false)
-        for (const k of keys) if (JSON.parse(k)[0] === m.name) due.add(k);
-      this.ready[m.name] = ready;
-    }
-    if (window().active) {
-      for (const k of keys) {
-        const asks = this.git[k] || this.unsure.has(k);
-        if (asks && !this.folded.has(JSON.parse(k)[0]) && now - (this.checked[k] ?? 0) > FALLBACK)
-          due.add(k);
+      ) {
+        dueKeys.add(key);
       }
     }
-    return due;
+
+    // Returning to a previously visited folder still requires a fresh read.
+    for (const [id, key] of Object.entries(currentPlaces)) {
+      if (this.at[id] && this.at[id] !== key && usedKeys.has(key)) dueKeys.add(key);
+    }
+    this.at = currentPlaces;
+
+    // A completed command may have changed sibling worktrees' ahead/behind too.
+    const spaceByTab = {};
+    for (const space of spaceList) {
+      for (const tab of space.tabs ?? []) spaceByTab[tab.id] = space;
+    }
+    const busyByPane = {};
+    for (const pane of paneList) {
+      if (!pane.terminal || !spaceByTab[pane.tab]) continue;
+      busyByPane[pane.pane] =
+        pane.status === "working" || !(pane.program?.shell || pane.program?.agent);
+      if (this.busy[pane.pane] && !busyByPane[pane.pane]) {
+        this.sameRepo(currentPlaces[spaceByTab[pane.tab].id], usedKeys).forEach((key) =>
+          dueKeys.add(key),
+        );
+      }
+    }
+    this.busy = busyByPane;
+
+    for (const machine of machines()) {
+      const ready = machine.layout === "ready";
+      if (ready && this.ready[machine.name] === false) {
+        for (const key of usedKeys) {
+          if (JSON.parse(key)[0] === machine.name) dueKeys.add(key);
+        }
+      }
+      this.ready[machine.name] = ready;
+    }
+
+    if (window().active) {
+      for (const key of usedKeys) {
+        const needsPolling = this.git[key] || this.unsure.has(key);
+        if (
+          needsPolling &&
+          !this.folded.has(JSON.parse(key)[0]) &&
+          now - (this.checked[key] ?? 0) > GIT_FALLBACK_MS
+        ) {
+          dueKeys.add(key);
+        }
+      }
+    }
+    return dueKeys;
   }
 
   // `key` and the other places in its repo (a commit there moves their ahead/behind).
@@ -185,7 +213,9 @@ export default class Spaces extends View {
         const r = await hc(["machine", "ls", "--json"]);
         if (r.code === 0)
           this.machines = (JSON.parse(r.stdout).machines ?? []).filter((m) => !m.temporary);
-      } catch {}
+      } catch {
+        // Keep the last machine list if core is temporarily unavailable.
+      }
       cx.notify();
     });
   }
@@ -222,8 +252,8 @@ export default class Spaces extends View {
     this.checked[key] = Date.now();
     this.unsure.delete(key);
     try {
-      // No optional locks: a status that touched the index would wake the watch again.
-      // Writes nothing under .git (index lock, fsmonitor cookie): watch() would wake on it.
+      // Reading status must not touch the index or fsmonitor: our own writes
+      // would wake the Git-folder watch and create a refresh loop.
       const r = await exec(
         "git",
         [
@@ -255,8 +285,8 @@ export default class Spaces extends View {
       if (top.code !== 0 || common.code !== 0) throw new Error("Cannot read repository metadata");
       const repo = common.stdout.trim();
       const name = repo.endsWith("/.git")
-        ? base(repo.slice(0, -5))
-        : base(repo).replace(/\.git$/, "");
+        ? basename(repo.slice(0, -5))
+        : basename(repo).replace(/\.git$/, "");
       const info = {
         name,
         branch: null,
@@ -317,15 +347,15 @@ export default class Spaces extends View {
 
   // Spaces in order, each worktree space moved under its main checkout's.
   ordered() {
-    const sp = spaces(),
-      ps = panes();
+    const sp = spaces();
+    const ps = panes();
     const ready = (w) =>
       this.shown.has(w.id) ||
-      where(w, ps) in this.git ||
+      checkoutKey(w, ps) in this.git ||
       Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp
-      .map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null }))
+      .map((w, i) => ({ w, i, g: this.git[checkoutKey(w, ps)] ?? null }))
       .filter((r) => this.shown.has(r.w.id));
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
@@ -488,7 +518,7 @@ export default class Spaces extends View {
   // terminal, matching Herdr's space naming and worktree grouping semantics.
   checkoutStatus(w) {
     const ps = panes();
-    const folder = place(w, ps);
+    const folder = spaceFolder(w, ps);
     const tabs = new Set((w.tabs ?? []).map((tab) => tab.id));
     const branch =
       ps.find((pane) => tabs.has(pane.tab) && pane.cwd === folder)?.branch ??
@@ -496,9 +526,11 @@ export default class Spaces extends View {
     const status = this.prObserver.entries.get(prPlaceKey(w.machine, folder));
     return status?.branch === branch ? status : null;
   }
+
   checkoutPRs(w) {
     return this.checkoutStatus(w)?.prs ?? [];
   }
+
   // Keep ordinary clicks available to the enclosing space row. Modified link
   // presses must stop both mouse events: the row selects on mouse-up, not click.
   isPRLinkClick(event) {
@@ -573,6 +605,7 @@ export default class Spaces extends View {
       );
     return badge;
   }
+
   prLine(w, t, tree) {
     const status = this.checkoutStatus(w);
     return h_flex()
@@ -602,7 +635,7 @@ export default class Spaces extends View {
     const hasPRLine = Boolean(status?.prs.length || status?.error);
     const colors = shared("space.colors") ?? {};
     const color = colors[w.id] ?? "ansi6";
-    const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
+    const fill = color.startsWith("#") ? color : (AVATAR_COLORS[color] ?? t[color]);
     return v_flex()
       .relative()
       .id(`space-${w.id}`)

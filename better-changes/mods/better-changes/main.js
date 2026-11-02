@@ -1,3 +1,5 @@
+// Sidebar status/commit controls and a reusable diff-tab view share this class.
+// Pure Git-output parsing and diff-row transformations live in model.js.
 import { em, codeFont } from "./typography.js";
 import { changedFiles, fileTree, diffRows, splitDiffRows } from "./model.js";
 import { View, div, svg } from "gpui-kit";
@@ -37,8 +39,8 @@ const TAB_OPEN_TIMEOUT_MS = 1500;
 // Follow the active terminal unless the active tab is our diff viewer. Mod panes
 // have no terminal cwd, so that case must use the repository saved for the tab.
 function location() {
-  const space = spaces().find((s) => s.active),
-    tab = space?.tabs?.find((t) => t.active)?.id;
+  const space = spaces().find((s) => s.active);
+  const tab = space?.tabs?.find((t) => t.active)?.id;
   const candidates = panes().filter((p) => p.tab === tab && p.cwd);
   if (!candidates.length && panes().some((p) => p.tab === tab && p.mod === "better-changes")) {
     const source = (shared("better-changes.diff-tabs") ?? {})[space?.id]?.source;
@@ -95,8 +97,8 @@ export default class Changes extends View {
     if (this.mode === "diff" && this.diffSpace) {
       const entries = shared("better-changes.diff-tabs") ?? {};
       if (!entries[this.diffSpace]) {
-        let selected = props()?.selection ?? _props?.selection,
-          source = this.source;
+        let selected = props()?.selection ?? _props?.selection;
+        let source = this.source;
         try {
           const saved = JSON.parse(localStorage.getItem("diff.selection"));
           if (typeof saved?.path === "string" && typeof JSON.parse(saved.context)?.cwd === "string")
@@ -168,29 +170,34 @@ export default class Changes extends View {
           location())
       : (this.source ?? location());
   }
+
   // Include both cwd and machine: identical paths on different machines are
   // different repositories. Async reads compare this key before publishing.
   contextKey() {
     return JSON.stringify(this.location());
   }
+
   currentSelection() {
     return this.mode === "diff"
       ? ((shared("better-changes.diff-tabs") ?? {})[this.diffSpace]?.selection ??
           shared("better-changes.selection"))
       : shared("better-changes.selection");
   }
+
   diffTab(space = this.diffSpace) {
     const target = spaces().find((s) => s.id === space);
     const ids = new Set((target?.tabs ?? []).map((t) => t.id));
     return panes().find((p) => p.mod === "better-changes" && ids.has(p.tab))?.tab;
   }
+
   git(args, root = this.root, on = this.on) {
     return exec("git", [...READ_ONLY_GIT_OPTIONS, ...args], { cwd: root, on });
   }
+
   refresh(cx) {
     if (this.loading || this.busy) return;
-    const { cwd, on } = this.location(),
-      context = this.contextKey();
+    const { cwd, on } = this.location();
+    const context = this.contextKey();
     // Clear every repository-specific field before loading the new context.
     // Incrementing diffToken invalidates previews still in flight.
     if (context !== this.context) {
@@ -223,8 +230,8 @@ export default class Changes extends View {
           this.error = "Not a Git repository";
           return;
         }
-        const root = top.stdout.trim(),
-          git = (args) => this.git(args, root, on);
+        const root = top.stdout.trim();
+        const git = (args) => this.git(args, root, on);
         const status = await git([
           "status",
           "--porcelain=v1",
@@ -233,8 +240,8 @@ export default class Changes extends View {
           "--untracked-files=all",
         ]);
         if (status.code !== 0) throw Error(status.stderr || "Cannot read changes");
-        const head = await git(["rev-parse", "--verify", "HEAD"]),
-          hasHead = head.code === 0;
+        const head = await git(["rev-parse", "--verify", "HEAD"]);
+        const hasHead = head.code === 0;
         const statArgs = ["--numstat", "-z", "--no-renames", "--no-ext-diff", "--no-textconv"];
         const stats = [
           await git(["diff", "--cached", ...statArgs]),
@@ -269,6 +276,7 @@ export default class Changes extends View {
       }
     });
   }
+
   watch(root, cx) {
     if (this.on || this.watched === root) return;
     this.watched = root;
@@ -296,11 +304,11 @@ export default class Changes extends View {
       scope,
       at: Date.now(),
     };
-    const entries = shared("better-changes.diff-tabs") ?? {},
-      old = entries[space.id],
-      tab = this.diffTab(space.id);
-    const source = JSON.parse(this.context),
-      name = file.path.split("/").pop();
+    const entries = shared("better-changes.diff-tabs") ?? {};
+    const old = entries[space.id];
+    const tab = this.diffTab(space.id);
+    const source = JSON.parse(this.context);
+    const name = file.path.split("/").pop();
     // Publish before opening/selecting the tab so its View sees the latest pick.
     // A pending timestamp prevents rapid clicks from creating duplicate tabs.
     setShared("better-changes.selection", selected);
@@ -332,6 +340,7 @@ export default class Changes extends View {
       run("layout.select", { stack: center.id, child: "main" });
     cx.notify();
   }
+
   syncSelection(cx) {
     const selected = this.currentSelection();
     if (!selected || selected.context !== this.context) {
@@ -375,14 +384,14 @@ export default class Changes extends View {
   // ── Read-only diff loading ────────────────────────────────────────────────
 
   loadDiff(cx) {
-    const path = this.path,
-      context = this.context,
-      root = this.root,
-      on = this.on,
-      hasHead = this.hasHead,
-      scope = this.scope || "all";
-    const file = this.files.find((f) => f.path === path),
-      token = ++this.diffToken;
+    const path = this.path;
+    const context = this.context;
+    const root = this.root;
+    const on = this.on;
+    const hasHead = this.hasHead;
+    const scope = this.scope || "all";
+    const file = this.files.find((f) => f.path === path);
+    const token = ++this.diffToken;
     this.note = null;
     if (!file) {
       this.rows = [];
@@ -440,8 +449,8 @@ export default class Changes extends View {
             on,
           );
           if (result.code !== 0) throw Error(result.stderr || "Cannot read diff");
-          const all = result.stdout.replace(/\n$/, "").split("\n"),
-            first = all.findIndex((line) => line.startsWith("@@"));
+          const all = result.stdout.replace(/\n$/, "").split("\n");
+          const first = all.findIndex((line) => line.startsWith("@@"));
           lines =
             first < 0
               ? [
@@ -494,9 +503,9 @@ export default class Changes extends View {
       !this.files.some((f) => f.path === path && (action === "stage" ? f.unstaged : f.staged))
     )
       return;
-    const root = this.root,
-      on = this.on,
-      context = this.context;
+    const root = this.root;
+    const on = this.on;
+    const context = this.context;
     let args;
     if (action === "stage")
       args = path ? ["--literal-pathspecs", "add", "--", path] : ["add", "-A"];
@@ -527,6 +536,7 @@ export default class Changes extends View {
       }
     });
   }
+
   // Commit the existing index, not all working-tree edits. On failure, keep the
   // message so the user can fix the problem and retry without retyping it.
   commit(cx) {
@@ -541,10 +551,10 @@ export default class Changes extends View {
       this.mode !== "sidebar"
     )
       return;
-    const root = this.root,
-      on = this.on,
-      context = this.context,
-      message = this.message.trim();
+    const root = this.root;
+    const on = this.on;
+    const context = this.context;
+    const message = this.message.trim();
     this.busy = true;
     this.operation = "commit";
     this.note = null;
@@ -597,10 +607,11 @@ export default class Changes extends View {
       })
       .child(svg(`mods/better-changes/${asset}.svg`).size(size <= 22 ? 12 : 14));
   }
+
   fileRow(file, depth, t, scope = "all") {
-    const flat = this.view === "flat",
-      parts = file.path.split("/"),
-      name = parts.pop();
+    const flat = this.view === "flat";
+    const parts = file.path.split("/");
+    const name = parts.pop();
     const selected = this.currentSelection();
     return h_flex()
       .id(`change-${scope}-${file.path}`)
@@ -662,6 +673,7 @@ export default class Changes extends View {
         ),
       );
   }
+
   setDiffLayout(style, cx) {
     if (!["inline", "split"].includes(style)) return;
     this.diffLayout = style;
@@ -669,6 +681,7 @@ export default class Changes extends View {
     setShared("better-changes.diff-layout", style);
     cx.notify();
   }
+
   diffLayoutToggle(t) {
     const row = h_flex()
       .id("changes-diff-layout")
@@ -707,18 +720,18 @@ export default class Changes extends View {
   }
   // ── Sidebar rendering ────────────────────────────────────────────────────
 
-  render(cx) {
-    const t = theme(),
-      root = v_flex()
-        .size_full()
-        .min_h(0)
-        .rounded(10)
-        .overflow_hidden()
-        .border_1()
-        .border_color(t.border)
-        .bg(t.background)
-        .text_color(t.foreground)
-        .text_size(em(1));
+  render() {
+    const t = theme();
+    const root = v_flex()
+      .size_full()
+      .min_h(0)
+      .rounded(10)
+      .overflow_hidden()
+      .border_1()
+      .border_color(t.border)
+      .bg(t.background)
+      .text_color(t.foreground)
+      .text_size(em(1));
     if (this.mode === "diff") return this.renderDiff(root, t);
     root.child(this.renderSidebarHeader(t));
     root.child(this.renderFileList(t));
@@ -758,8 +771,8 @@ export default class Changes extends View {
       .border_color(t.border)
       .bg(t.raised);
     for (const view of ["tree", "flat"]) {
-      const active = this.view === view,
-        label = view === "tree" ? "Tree view" : "Flat view";
+      const active = this.view === view;
+      const label = view === "tree" ? "Tree view" : "Flat view";
       fileViews.child(
         div()
           .id(`changes-${view}`)
@@ -966,8 +979,7 @@ export default class Changes extends View {
   // ── Diff rendering (inline and side-by-side) ───────────────────────────────
 
   renderDiff(root, t) {
-    const selected = this.currentSelection(),
-      original = this.files.find((f) => f.path === this.path);
+    const original = this.files.find((f) => f.path === this.path);
     const file = original
       ? {
           ...original,
@@ -1049,8 +1061,8 @@ export default class Changes extends View {
       root.child(
         div().p(14).text_color(t.dim).child("Select a changed file in Changes to view its diff."),
       );
-    const height = Math.ceil(em(1.65)),
-      split = this.diffLayout === "split";
+    const height = Math.ceil(em(1.65));
+    const split = this.diffLayout === "split";
     if (split)
       root.child(
         h_flex()
@@ -1103,8 +1115,8 @@ export default class Changes extends View {
       this.pairedSource = this.rows;
       this.pairedRows = splitDiffRows(this.rows);
     }
-    const rows = split ? this.pairedRows : this.rows,
-      listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
+    const rows = split ? this.pairedRows : this.rows;
+    const listId = `factory-diff-${this.context}-${this.path}-${this.scope}-${this.diffLayout}`;
     const viewport = div()
       .flex_1()
       .min_h(0)
@@ -1165,6 +1177,7 @@ export default class Changes extends View {
       );
     return root;
   }
+
   // One horizontal offset moves both text columns, leaving line gutters fixed.
   scrollSplit(delta, cx) {
     this.splitOffset = Math.max(
@@ -1173,6 +1186,7 @@ export default class Changes extends View {
     );
     cx.notify();
   }
+
   splitRow(row, t, height) {
     if (row.kind !== "pair")
       return div()
@@ -1188,8 +1202,8 @@ export default class Changes extends View {
       ["left", row.left],
       ["right", row.right],
     ]) {
-      const changed = entry?.kind === "+" || entry?.kind === "-",
-        color = entry?.kind === "+" ? t.ansi2 : entry?.kind === "-" ? t.ansi1 : t.foreground;
+      const changed = entry?.kind === "+" || entry?.kind === "-";
+      const color = entry?.kind === "+" ? t.ansi2 : entry?.kind === "-" ? t.ansi1 : t.foreground;
       line.child(
         h_flex()
           .flex_1()
@@ -1236,6 +1250,7 @@ export default class Changes extends View {
     }
     return line;
   }
+
   diffRow(row, t, height) {
     if (row.kind === "@")
       return div().h(height).px(12).w_full().bg(t.raised).text_color(t.accent).child(row.text);

@@ -1,3 +1,5 @@
+// Read-only PR discovery for each [machine, checkout]. This observer is separate
+// from space rendering so frequent redraws never launch Git or GitHub commands.
 import { exec } from "herdr";
 
 export const PR_POLL_MS = 60000;
@@ -36,10 +38,10 @@ export function githubRepository(url) {
  */
 export class PRStatusObserver {
   constructor() {
-    this.places = new Map();
-    this.checked = new Map();
-    this.entries = new Map();
-    this.cache = new Map();
+    this.places = new Map(); // Current checkout snapshots, replaced on refresh.
+    this.checked = new Map(); // Checkout key -> last attempt time and branch.
+    this.entries = new Map(); // Checkout key -> last published PRs or error.
+    this.cache = new Map(); // gh argument list -> short-lived response cache.
   }
 
   refresh(places, cx) {
@@ -92,6 +94,8 @@ export class PRStatusObserver {
     });
   }
 
+  // A lookup may finish after navigation or a branch switch. Publish only if
+  // the caller's checkout snapshot still describes a tracked space.
   isCurrent(key, place) {
     return this.places.has(key) && this.places.get(key).branch === place.branch;
   }
@@ -105,6 +109,8 @@ export class PRStatusObserver {
       throw new Error("Cannot read checkout branch");
     }
     const branch = head.stdout.trim();
+    // Explicit worktree bindings survive local branch renames and take
+    // precedence over guessing a PR from matching head branch names.
     const association = await git(["config", "--get", `branch.${branch}.herdr-pr`]);
     if (association.code !== 0 && association.code !== 1)
       throw new Error("Cannot read PR association");

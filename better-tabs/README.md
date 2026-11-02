@@ -10,7 +10,7 @@ A standalone native tab bar and extensible action toolbar for [Herdr Desktop](ht
 - Configurable buttons for panels, app/mod commands, overlays, stack toggles, shared state, or custom local JavaScript hooks.
 - Button groups, ordering, tooltips, icon-only display, shared-state badges, visibility/enabled predicates, and active highlighting.
 - An always-visible vertical **⋮** menu for toolbar actions. Drag actions onto it to hide them, then drag them back out or use the **Show in toolbar** pin icon. Hidden actions are listed alphabetically.
-- A sidebar-toggle icon immediately after **⋮** hides or reopens the right sidebar without changing its selected panel.
+- A sidebar-toggle icon immediately after **⋮** hides or reopens the right sidebar without changing its selected panel. The included macOS binding uses **Cmd+Shift+B**.
 - Responsive overflow, with a configurable maximum number of visible toolbar buttons and a saved arrangement per layout.
 - Optional panel memory per space; window controls where the OS requires them.
 - No dependency on a workflow, Better Spaces, Better Changes, or any other custom mod.
@@ -19,7 +19,7 @@ A standalone native tab bar and extensible action toolbar for [Herdr Desktop](ht
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-tabs
 
-Follow [RECIPE.md](RECIPE.md). Copy only `mods/better-tabs/` to the app's mods folder. It uses `place: none`: replace your existing tabs block's mod reference, preserving the block's dimensions and window-drag setting. Clone shipped layouts first. Do not add a second tab bar or overwrite an unrelated mod on a name clash.
+Follow [RECIPE.md](RECIPE.md). Copy `mods/better-tabs/` to the app's mods folder. For the macOS sidebar shortcut, merge this package's `keys.json` into `~/.config/herdr-app/keys.json`, preserving existing sections and bindings; ask before replacing a shortcut already in use. It uses `place: none`: replace your existing tabs block's mod reference, preserving the block's dimensions and window-drag setting. Clone shipped layouts first. Do not add a second tab bar or overwrite an unrelated mod on a name clash.
 
 The mod itself does not run executables, read repository files, or contact a network. It runs Herdr commands, opens overlays, and reads/writes mod preferences and shared state. Configured commands, overlays, and trusted hooks can perform broader operations; review them before installing.
 
@@ -120,7 +120,9 @@ The arrangement is saved in Herdr shared preferences by layout and `toolbarId` (
 
 The panel icon immediately after **⋮** toggles the right sidebar without changing its selected panel. Its tooltip changes between **Hide sidebar** and **Show sidebar**. It stays outside the hideable action list.
 
-By default it targets `rememberPanels.container`, or the `panel` layout node. Set `"panelToggle": "my-sidebar"` to target a different node, or `"panelToggle": false` to omit it. The control is omitted if the target does not exist.
+The included `keys.json` binds **Cmd+Shift+B** on macOS to `better-tabs.toggle-sidebar`. This uses the same target and behavior as the icon; **Cmd+B** remains available for the left sidebar. On Linux/Windows, bind an unused shortcut to the same command. No shortcut is registered by the JavaScript itself: merge the key file during installation.
+
+By default it targets `rememberPanels.container`, or the `panel` layout node. Set `"panelToggle": "my-sidebar"` to target a different node, or `"panelToggle": false` to omit it. The control is omitted if the target does not exist, and the command safely does nothing when disabled or missing.
 
 ### Other mods contributing buttons
 
