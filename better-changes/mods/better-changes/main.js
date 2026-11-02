@@ -3,7 +3,15 @@
 import { em, codeFont } from "./typography.js";
 import { changedFiles, fileTree, diffRows, splitDiffRows } from "./model.js";
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
+import {
+  v_flex,
+  h_flex,
+  TextareaState,
+  Textarea,
+  Popover,
+  Scrollbar,
+  v_virtual_list,
+} from "gpui-base";
 import {
   spaces,
   panes,
@@ -80,12 +88,22 @@ export default class Changes extends View {
     this.rows = [];
     this.diffToken = 0; // Monotonically increasing ID for async preview requests.
     this.message = "";
-    this.input = InputState.new({ placeholder: "Commit message…" });
+    this.messageRevision = 0;
+    this.commitMode = "commit";
+    this.commitMenuOpen = false;
+    this.commitMenuIndex = 0;
+    this.commitTriggerFocus = cx.focus_handle();
+    this.commitMenuFocus = cx.focus_handle();
+    this.amendToken = 0;
+    this.amendLoading = false;
+    this.amendHead = null;
+    this.input = TextareaState.new({ placeholder: "Commit message…", rows: 4 });
     this.input.on("change", (_e, cx) => {
       this.message = this.input.value();
+      this.messageRevision++;
       cx.notify();
     });
-    this.input.on("submit", (_e, cx) => this.commit(cx));
+    // Enter belongs to the multiline editor. Only the explicit button commits.
     this.startPolling(cx);
     this.listenForCommands(cx);
     this.refresh(cx);
@@ -215,6 +233,11 @@ export default class Changes extends View {
       this.watched = null;
       this.message = "";
       this.input.set_value("");
+      this.commitMode = "commit";
+      this.commitMenuOpen = false;
+      this.amendToken++;
+      this.amendLoading = false;
+      this.amendHead = null;
     }
     if (!cwd) return;
     this.loading = true;
@@ -537,41 +560,119 @@ export default class Changes extends View {
     });
   }
 
-  // Commit the existing index, not all working-tree edits. On failure, keep the
-  // message so the user can fix the problem and retry without retyping it.
-  commit(cx) {
+  setCommitMode(mode, cx) {
     if (
-      !this.message.trim() ||
+      !["commit", "amend"].includes(mode) ||
       !this.root ||
       this.loading ||
       this.busy ||
       this.contextKey() !== this.context ||
-      !this.stagedCount ||
-      this.conflicts ||
-      this.mode !== "sidebar"
+      this.mode !== "sidebar" ||
+      (mode === "amend" && !this.hasHead)
     )
       return;
+
+    this.commitMode = mode;
+    this.commitMenuOpen = false;
+    this.note = null;
+    this.amendHead = null;
+    const token = ++this.amendToken;
+    this.amendLoading = mode === "amend";
+    cx.notify();
+    if (mode !== "amend") return;
+
+    const context = this.context;
+    const root = this.root;
+    const on = this.on;
+    const revision = this.messageRevision;
+    cx.spawn(async (cx) => {
+      try {
+        // Read the commit ID and full message together. Never replace a draft
+        // the user already wrote, or one edited while this read was in flight.
+        const result = await this.git(["log", "-1", "--format=%H%x00%B"], root, on);
+        if (token !== this.amendToken || context !== this.contextKey()) return;
+        if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
+        const separator = result.stdout.indexOf("\0");
+        const head = result.stdout.slice(0, separator);
+        if (separator < 0 || !/^[0-9a-f]{40,64}$/i.test(head))
+          throw Error("Cannot read the latest commit.");
+        this.amendHead = head;
+        if (!this.message.trim() && this.messageRevision === revision) {
+          this.message = result.stdout.slice(separator + 1).trimEnd();
+          this.input.set_value(this.message);
+        }
+      } catch (error) {
+        if (token === this.amendToken && context === this.contextKey())
+          this.note = `Cannot prepare amend: ${error.message}`;
+      } finally {
+        if (token === this.amendToken) {
+          this.amendLoading = false;
+          cx.notify();
+        }
+      }
+    });
+  }
+
+  canCommit() {
+    const ready =
+      this.message.trim() &&
+      this.root &&
+      !this.busy &&
+      !this.loading &&
+      !this.conflicts &&
+      this.mode === "sidebar" &&
+      this.contextKey() === this.context;
+    // A message-only amend is valid; a new commit still needs staged changes.
+    return Boolean(
+      ready &&
+      (this.commitMode === "amend"
+        ? this.hasHead && this.amendHead && !this.amendLoading
+        : this.stagedCount),
+    );
+  }
+
+  // Both operations use the existing index, never `-a` or an implicit stage-all.
+  // Preserve the draft on failure, and any new text typed during a successful write.
+  commit(cx) {
+    if (!this.canCommit()) return;
     const root = this.root;
     const on = this.on;
     const context = this.context;
-    const message = this.message.trim();
+    const originalMessage = this.message;
+    const message = originalMessage.trim();
+    const amend = this.commitMode === "amend";
+    const expectedHead = this.amendHead;
     this.busy = true;
-    this.operation = "commit";
+    this.operation = amend ? "amend" : "commit";
+    this.commitMenuOpen = false;
     this.note = null;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const result = await this.git(["commit", "-m", message], root, on);
+        if (amend) {
+          // Recheck after the human edits the message: another tool may have
+          // advanced HEAD since they selected Amend. Do not rewrite it silently.
+          const head = await this.git(["rev-parse", "--verify", "HEAD"], root, on);
+          if (head.code !== 0 || head.stdout.trim() !== expectedHead)
+            throw Error("Latest commit changed. Choose Amend again before retrying.");
+        }
+        const args = ["commit", ...(amend ? ["--amend"] : []), "-m", message];
+        const result = await this.git(args, root, on);
         if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
         const at = Date.now();
         this.reload = at;
         setShared("better-changes.reload", { root, on: on ?? null, at });
         if (context === this.contextKey()) {
-          this.message = "";
-          this.input.set_value("");
+          if (this.message === originalMessage) {
+            this.message = "";
+            this.input.set_value("");
+          }
+          this.commitMode = "commit";
+          this.amendHead = null;
         }
       } catch (error) {
-        if (context === this.contextKey()) this.note = `Commit failed: ${error.message}`;
+        if (context === this.contextKey())
+          this.note = `${amend ? "Amend" : "Commit"} failed: ${error.message}`;
       } finally {
         this.busy = false;
         this.operation = null;
@@ -910,15 +1011,127 @@ export default class Changes extends View {
       .child(div().min_w(0).truncate().child(row.name));
   }
 
+  renderCommitDropdown(t) {
+    const available = Boolean(this.root && !this.busy && !this.loading);
+    const choices = [
+      { mode: "commit", label: "Commit", icon: "commit" },
+      { mode: "amend", label: "Amend", icon: "amend", disabled: !this.hasHead },
+    ];
+    const menu = v_flex()
+      .id("changes-commit-menu")
+      .w(190)
+      .p(5)
+      .gap(2)
+      .rounded(7)
+      .border_1()
+      .border_color(t.border)
+      .bg(t.popover)
+      .text_color(t.foreground)
+      .track_focus(this.commitMenuFocus)
+      .on_key_down((event, cx) => {
+        const enabled = choices.filter((choice) => !choice.disabled);
+        if (event.key === "up" || event.key === "down") {
+          this.commitMenuIndex =
+            (this.commitMenuIndex + (event.key === "down" ? 1 : enabled.length - 1)) %
+            enabled.length;
+        } else if (event.key === "enter") {
+          this.setCommitMode(enabled[this.commitMenuIndex % enabled.length].mode, cx);
+          this.commitTriggerFocus.focus();
+        } else if (event.key === "escape") {
+          this.commitMenuOpen = false;
+          this.commitTriggerFocus.focus();
+        } else return;
+        cx.stop_propagation();
+        cx.notify();
+      });
+    for (const [index, choice] of choices.entries()) {
+      menu.child(
+        h_flex()
+          .id(`changes-mode-${choice.mode}`)
+          .h(30)
+          .px(8)
+          .gap(8)
+          .items_center()
+          .rounded(4)
+          .text_size(12.8)
+          .role("list_box_option")
+          .aria_selected(this.commitMode === choice.mode)
+          .when(!choice.disabled && index === this.commitMenuIndex, (el) =>
+            el.bg(t.selected).aria_active_descendant(),
+          )
+          .text_color(choice.disabled ? t.dim : t.foreground)
+          .tooltip(
+            choice.mode === "amend"
+              ? this.hasHead
+                ? "Rewrite the latest commit; unstaged changes stay untouched"
+                : "Create a first commit before amending"
+              : "Create a commit from staged changes only",
+          )
+          .when(!choice.disabled, (el) =>
+            el
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_event, cx) => {
+                this.setCommitMode(choice.mode, cx);
+                this.commitTriggerFocus.focus();
+              }),
+          )
+          .child(svg(`mods/better-changes/${choice.icon}.svg`).size(14).flex_none())
+          .child(choice.label),
+      );
+    }
+    const trigger = div()
+      .id("changes-commit-options")
+      .w(30)
+      .h(32)
+      .flex_none()
+      .flex()
+      .items_center()
+      .justify_center()
+      .border_l(1)
+      .border_color(t.border)
+      .track_focus(this.commitTriggerFocus)
+      .tooltip("Commit options")
+      .accessibility_label("Commit options")
+      .text_color(available ? t.foreground : t.dim)
+      .when(available, (el) =>
+        el
+          .cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_key_down((event, cx) => {
+            if (!["enter", "space", "up", "down"].includes(event.key)) return;
+            this.commitMenuOpen = !this.commitMenuOpen;
+            this.commitMenuIndex = this.commitMode === "amend" && this.hasHead ? 1 : 0;
+            if (this.commitMenuOpen) this.commitMenuFocus.focus();
+            cx.stop_propagation();
+            cx.notify();
+          }),
+      )
+      .child(svg("mods/better-changes/chevron-down.svg").size(12));
+    return Popover.new("changes-commit-dropdown")
+      .open(Boolean(available && this.commitMenuOpen))
+      .anchor("bottom_right")
+      .track_focus(this.commitMenuFocus)
+      .on_open_change((open, cx) => {
+        this.commitMenuOpen = available && open;
+        this.commitMenuIndex = this.commitMode === "amend" && this.hasHead ? 1 : 0;
+        cx.notify();
+      })
+      .trigger(trigger)
+      .when(available && this.commitMenuOpen, (el) => el.content(menu));
+  }
+
   renderCommitFooter(t) {
-    const enabled = Boolean(
-      this.message.trim() &&
-      this.root &&
-      !this.busy &&
-      !this.loading &&
-      this.stagedCount &&
-      !this.conflicts,
-    );
+    const enabled = this.canCommit();
+    const amend = this.commitMode === "amend";
+    const label =
+      this.operation === "commit"
+        ? "Committing…"
+        : this.operation === "amend"
+          ? "Amending…"
+          : amend
+            ? "Amend"
+            : "Commit staged";
     return v_flex()
       .p(10)
       .gap(8)
@@ -926,53 +1139,81 @@ export default class Changes extends View {
       .border_t(1)
       .border_color(t.border)
       .child(
+        Textarea.new(this.input)
+          .id("changes-commit-message")
+          .w_full()
+          .h(84)
+          .px(8)
+          .py(7)
+          .rounded(6)
+          .border_1()
+          .border_color(t.border)
+          .bg(t.input)
+          .text_color(t.foreground)
+          .text_size(em(0.9))
+          .accessibility_label("Commit message"),
+      )
+      .child(
         h_flex()
-          .gap(6)
+          .h(32)
+          .w_full()
           .items_center()
+          .rounded(6)
+          .border_1()
+          .border_color(t.border)
+          .bg(t.raised)
+          .text_size(em(0.9))
           .child(
-            Input.new(this.input)
-              .id("changes-commit-message")
-              .h(28)
+            h_flex()
+              .id("changes-commit")
+              .h_full()
               .flex_1()
               .min_w(0)
-              .px(8)
-              .rounded(5)
-              .border_1()
-              .border_color(t.border)
-              .bg(t.input)
-              .text_size(em(0.9)),
-          )
-          .child(
-            div()
-              .id("changes-commit")
-              .tooltip("Commit staged changes only")
-              .h(28)
-              .px(8)
-              .flex()
-              .gap(5)
+              .px(10)
+              .gap(7)
               .items_center()
-              .rounded(5)
-              .border_1()
-              .border_color(t.border)
+              .justify_center()
+              .rounded_l(5)
               .bg(enabled ? t.solid : t.raised)
               .text_color(enabled ? t.solid_foreground : t.dim)
-              .text_size(em(0.85))
-              .when(enabled, (el) => el.cursor_pointer().on_click((_e, cx) => this.commit(cx)))
-              .child(svg("mods/better-changes/commit.svg").size(14))
-              .child(this.operation === "commit" ? "Committing…" : "Commit staged"),
-          ),
+              .tooltip(
+                amend
+                  ? "Amend the latest commit with this message and staged changes"
+                  : "Commit staged changes only",
+              )
+              .accessibility_label(label)
+              .when(enabled, (el) =>
+                el
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.accent))
+                  .on_click((_event, cx) => this.commit(cx)),
+              )
+              .child(
+                svg(amend ? "mods/better-changes/amend.svg" : "mods/better-changes/commit.svg")
+                  .size(14)
+                  .flex_none(),
+              )
+              .child(label),
+          )
+          .child(this.renderCommitDropdown(t)),
       )
       .child(
         div()
           .text_size(em(0.8))
-          .text_color(t.dim)
+          .text_color(amend ? t.ansi3 : t.dim)
+          .whitespace_normal()
           .child(
-            this.total > MAX_FILES
-              ? "First 1,000 files shown"
+            this.amendLoading
+              ? "Loading latest commit…"
               : this.conflicts
                 ? "Resolve conflicts and stage the files before committing"
-                : "Commit includes staged changes only",
+                : amend
+                  ? "Amend rewrites the latest commit. Unstaged changes stay untouched."
+                  : "Commit includes staged changes only",
           ),
+      )
+      .when(this.total > MAX_FILES, (el) =>
+        el.child(div().text_size(em(0.8)).text_color(t.dim).child("First 1,000 files shown")),
       );
   }
 

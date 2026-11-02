@@ -17,7 +17,7 @@ function harness(mode = "sidebar") {
     proxy = new Proxy(data, {
       get(t, k) {
         if (k in t) return t[k];
-        if (k === "child")
+        if (k === "child" || k === "content" || k === "trigger")
           return (c) => {
             t.nodes.push(c);
             return proxy;
@@ -49,11 +49,15 @@ function harness(mode = "sidebar") {
     set_value(v) {
       this.text = v;
     },
-    on() {},
+    handlers: {},
+    on(event, handler) {
+      this.handlers[event] = handler;
+    },
   });
   const cx = {
     stop_propagation() {},
     notify() {},
+    focus_handle: () => ({ focus() {} }),
     timer: { every() {} },
     spawn(fn) {
       pending.push(fn(cx));
@@ -65,8 +69,15 @@ function harness(mode = "sidebar") {
     svg: el,
     v_flex: el,
     h_flex: el,
-    InputState: { new: state },
-    Input: { new: el },
+    TextareaState: { new: state },
+    Textarea: {
+      new: () => {
+        const node = el();
+        node.type = "textarea";
+        return node;
+      },
+    },
+    Popover: { new: (id) => el().id(id) },
     Scrollbar: { vertical: el },
     v_virtual_list: () => el(),
     spaces: () => live.spaces,
@@ -390,6 +401,123 @@ test("commit writes only the staged index and refuses empty staging or conflicts
   assert.deepEqual(Array.from(h.calls[0].args.slice(5)), ["commit", "-m", "Commit staged work"]);
   assert.equal(h.mod.message, "");
 });
+test("commit footer has a multiline editor and mode selection never executes a commit", async () => {
+  const h = harness();
+  h.mod.commitMenuOpen = true;
+  h.context.exec = async (_cmd, args) => {
+    h.calls.push({ args });
+    return { code: 0, stdout: `${"a".repeat(40)}\0Previous title\n\nPrevious body\n\n` };
+  };
+  const footer = h.mod.renderCommitFooter({});
+  assert.equal(find(footer, "changes-commit-message").type, "textarea");
+  assert.equal(h.mod.input.handlers.submit, undefined, "Enter must not submit a commit");
+  assert.ok(find(footer, "changes-mode-commit"));
+  find(footer, "changes-mode-amend").handlers.click({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.commitMode, "amend");
+  assert.equal(h.mod.commitMenuOpen, false);
+  assert.equal(h.mod.message, "Previous title\n\nPrevious body");
+  assert.equal(h.mod.input.value(), h.mod.message);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].args.includes("commit"), false);
+  assert.equal(h.mod.canCommit(), true, "message-only amend is allowed");
+
+  h.mod.hasHead = false;
+  h.mod.commitMenuOpen = true;
+  assert.equal(find(h.mod.renderCommitFooter({}), "changes-mode-amend").handlers.click, undefined);
+  assert.equal(h.mod.canCommit(), false);
+});
+
+test("preparing amend preserves drafts and ignores superseded responses", async () => {
+  const h = harness();
+  let resolve;
+  h.context.exec = () =>
+    new Promise((done) => {
+      resolve = done;
+    });
+  h.mod.setCommitMode("amend", h.cx);
+  assert.equal(h.mod.canCommit(), false);
+  h.mod.input.set_value("Typed while loading\n\nKeep this body");
+  h.mod.input.handlers.change({}, h.cx);
+  resolve({ code: 0, stdout: `${"a".repeat(40)}\0Old message\n` });
+  await h.flush();
+  assert.equal(h.mod.message, "Typed while loading\n\nKeep this body");
+
+  h.mod.setCommitMode("amend", h.cx);
+  h.mod.setCommitMode("commit", h.cx);
+  resolve({ code: 0, stdout: `${"b".repeat(40)}\0Stale message\n` });
+  await h.flush();
+  assert.equal(h.mod.commitMode, "commit");
+  assert.equal(h.mod.amendHead, null);
+  assert.equal(h.mod.amendLoading, false);
+  assert.equal(h.mod.message, "Typed while loading\n\nKeep this body");
+});
+
+test("amend refuses missing HEAD, conflicts, and a changed latest commit", async () => {
+  const h = harness();
+  h.mod.refresh = () => {};
+  h.mod.hasHead = false;
+  h.mod.setCommitMode("amend", h.cx);
+  assert.equal(h.mod.commitMode, "commit");
+  assert.equal(h.calls.length, 0);
+
+  h.mod.hasHead = true;
+  h.context.exec = async (_cmd, args) => {
+    h.calls.push({ args });
+    return {
+      code: 0,
+      stdout: args.includes("log") ? `${"a".repeat(40)}\0Old message\n` : `${"b".repeat(40)}\n`,
+    };
+  };
+  h.mod.setCommitMode("amend", h.cx);
+  await h.flush();
+  h.mod.conflicts = true;
+  h.mod.commit(h.cx);
+  assert.equal(h.calls.length, 1);
+  h.mod.conflicts = false;
+  h.mod.commit(h.cx);
+  await h.flush();
+  assert.equal(h.calls.length, 2);
+  assert.equal(
+    h.calls.some((call) => call.args.includes("commit")),
+    false,
+  );
+  assert.match(h.mod.note, /Latest commit changed/);
+  assert.equal(h.mod.message, "Old message");
+  assert.equal(h.mod.busy, false);
+});
+
+test("failed amend retains multiline text and releases its busy state", async () => {
+  const h = harness();
+  h.mod.refresh = () => {};
+  h.context.exec = async (_cmd, args) => {
+    if (args.includes("log")) return { code: 0, stdout: `${"a".repeat(40)}\0Title\n\nBody\n` };
+    if (args.includes("rev-parse")) return { code: 0, stdout: "a".repeat(40) };
+    return { code: 1, stderr: "Commit hook rejected the message" };
+  };
+  h.mod.setCommitMode("amend", h.cx);
+  await h.flush();
+  h.mod.commit(h.cx);
+  await h.flush();
+  assert.equal(h.mod.message, "Title\n\nBody");
+  assert.match(h.mod.note, /Amend failed: Commit hook rejected/);
+  assert.equal(h.mod.commitMode, "amend");
+  assert.equal(h.mod.busy, false);
+});
+
+test("commit dropdown supports keyboard mode selection without writing Git", () => {
+  const h = harness();
+  const trigger = find(h.mod.renderCommitFooter({}), "changes-commit-options");
+  trigger.handlers.key_down({ key: "down" }, h.cx);
+  assert.equal(h.mod.commitMenuOpen, true);
+  const menu = find(h.mod.renderCommitFooter({}), "changes-commit-menu");
+  menu.handlers.key_down({ key: "down" }, h.cx);
+  assert.equal(h.mod.commitMenuIndex, 1);
+  menu.handlers.key_down({ key: "escape" }, h.cx);
+  assert.equal(h.mod.commitMenuOpen, false);
+  assert.equal(h.calls.length, 0);
+});
+
 test("staged and unstaged entries render separately and select the correct diff version", async () => {
   const h = harness();
   h.mod.files = [{ ...files[0], staged: true, unstaged: true }];
@@ -531,6 +659,84 @@ test("initial staging and unstaging preserve working files and literal filenames
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+test("amend rewrites only the last commit, preserves unstaged edits, and supports message-only changes in real Git", async () => {
+  const os = require("node:os");
+  const path = require("node:path");
+  const cp = require("node:child_process");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "herdr-amend-"));
+  const git = (args) =>
+    cp.execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    git(["init", "-q"]);
+    git(["config", "user.name", "Test"]);
+    git(["config", "user.email", "test@example.invalid"]);
+    git(["config", "commit.gpgsign", "false"]);
+    git(["config", "core.hooksPath", path.join(dir, "no-hooks")]);
+    fs.writeFileSync(path.join(dir, "file.txt"), "baseline\n");
+    git(["add", "."]);
+    git(["commit", "-qm", "First"]);
+    const parent = git(["rev-parse", "HEAD"]).trim();
+    fs.writeFileSync(path.join(dir, "file.txt"), "second\n");
+    git(["add", "."]);
+    git(["commit", "-qm", "Second title\n\nSecond body"]);
+    const previousHead = git(["rev-parse", "HEAD"]).trim();
+    fs.writeFileSync(path.join(dir, "file.txt"), "staged version\n");
+    git(["add", "."]);
+    fs.writeFileSync(path.join(dir, "file.txt"), "unstaged version\n");
+
+    const h = harness();
+    h.live.spaces[0].folder = dir;
+    h.live.panes[0].cwd = dir;
+    h.mod.context = JSON.stringify({ cwd: dir, on: null });
+    h.mod.root = dir;
+    h.mod.refresh = () => {};
+    h.mod.stagedCount = 1;
+    h.context.exec = async (_cmd, args) => {
+      try {
+        return { code: 0, stdout: git(args) };
+      } catch (error) {
+        return { code: error.status, stderr: error.stderr.toString() };
+      }
+    };
+    h.mod.setCommitMode("amend", h.cx);
+    await h.flush();
+    assert.equal(h.mod.message, "Second title\n\nSecond body");
+    assert.equal(h.mod.amendHead, previousHead);
+    h.mod.message = "Amended title\n\nBody line 1\nBody line 2";
+    h.mod.commit(h.cx);
+    await h.flush();
+    assert.equal(h.mod.note, null);
+    assert.equal(h.mod.commitMode, "commit");
+    assert.notEqual(git(["rev-parse", "HEAD"]).trim(), previousHead);
+    assert.equal(git(["rev-parse", "HEAD^"]).trim(), parent);
+    assert.equal(git(["rev-list", "--count", "HEAD"]).trim(), "2");
+    assert.equal(
+      git(["log", "-1", "--format=%B"]).trimEnd(),
+      "Amended title\n\nBody line 1\nBody line 2",
+    );
+    assert.equal(git(["show", "HEAD:file.txt"]), "staged version\n");
+    assert.equal(fs.readFileSync(path.join(dir, "file.txt"), "utf8"), "unstaged version\n");
+    assert.equal(git(["diff", "--cached"]), "");
+
+    h.mod.stagedCount = 0;
+    h.mod.setCommitMode("amend", h.cx);
+    await h.flush();
+    h.mod.message = "Message-only amend\n\nA new explanation.";
+    assert.equal(h.mod.canCommit(), true);
+    h.mod.commit(h.cx);
+    await h.flush();
+    assert.equal(h.mod.note, null);
+    assert.equal(git(["rev-list", "--count", "HEAD"]).trim(), "2");
+    assert.equal(
+      git(["log", "-1", "--format=%B"]).trimEnd(),
+      "Message-only amend\n\nA new explanation.",
+    );
+    assert.equal(fs.readFileSync(path.join(dir, "file.txt"), "utf8"), "unstaged version\n");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("different files reuse and rename the same diff tab, and closing permits a replacement", () => {
   const h = harness();
   h.mod.files = files;
