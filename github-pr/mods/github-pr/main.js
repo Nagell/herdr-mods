@@ -3683,6 +3683,25 @@ export default class PullRequests extends View {
                       .text_color(t.dim)
                       .child(this.commentDate(c.createdAt ?? c.submittedAt)),
                   )
+                  .when(Boolean(c.url), (el) =>
+                    el.child(
+                      div()
+                        .id(`pr-copy-${c.id}`)
+                        .px(6)
+                        .py(1)
+                        .rounded(4)
+                        .text_size(em(0.8))
+                        .text_color(t.muted)
+                        .cursor_pointer()
+                        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                        .on_click((_e, cx) => {
+                          cx.write_to_clipboard(c.url);
+                          this.notice = "Comment link copied.";
+                          cx.notify();
+                        })
+                        .child("Copy link"),
+                    ),
+                  )
                   .when(Boolean(c.viewerCanUpdate && !this.preview), (el) =>
                     el.child(
                       div()

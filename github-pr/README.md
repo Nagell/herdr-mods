@@ -93,7 +93,7 @@ PR details provide Description, Conversations, and Checks. Conversation cards sh
 
 **Pending reviews.** Every composer has a second button, **Start review** or **Add to review**, that holds the comment in your unsubmitted GitHub review instead of posting it. Thread replies join the review as pending review comments; a general comment becomes the review summary, and later ones append to it. Pending items show a **Pending** badge, the summary appears as a *Review · Pending (not submitted)* card, and a **Submit review (N)** button in the filter row publishes everything at once as a comment review. Until then only you can see them, on GitHub too.
 
-**Editing.** Comments, replies and review summaries you wrote show an **Edit** control. It opens the same editor prefilled with the current text; **Save** updates the comment on GitHub. Editing is disabled in preview mode.
+**Editing.** Comments, replies and review summaries you wrote show an **Edit** control. It opens the same editor prefilled with the current text; **Save** updates the comment on GitHub. Editing is disabled in preview mode. Every comment card also has **Copy link**, which puts the comment's GitHub URL on the clipboard.
 
 Checks show overall status and grouped workflows, jobs, steps, and failed logs (last 60KB), with links to full GitHub output. Open/draft/merged/closed use green/gray/purple/red icons; queued/running/passed/failed/skipped/cancelled check states have distinct icons. Agent working/blocked/done/idle are separate from PR state and do not recolor it.
 

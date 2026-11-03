@@ -368,6 +368,11 @@ test('Add to review starts a pending review for replies, appends general comment
  submit.handlers.click({},h.cx);await h.flush();
  assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review,c.event]),[['submit-review','rev1','COMMENT']]);assert.match(h.mod.notice,/submitted/);
 });
+test('every comment card offers Copy link, which writes the comment URL to the clipboard',()=>{
+ const h=harness();const p=pr();p.comments[0].url='https://github.com/o/r/pull/1#issuecomment-1';h.mod.pr=p;h.mod.section='conversation';const copied=[];h.cx.write_to_clipboard=text=>copied.push(text);
+ findElement(h.mod.render(),'pr-copy-c').handlers.click({},h.cx);
+ assert.deepEqual(copied,['https://github.com/o/r/pull/1#issuecomment-1']);assert.match(h.mod.notice,/copied/);
+});
 test('own comments and review replies get an Edit control that saves through the matching mutation',async()=>{
  const h=harness();const p=pr();p.comments[0].viewerCanUpdate=true;p.threads[0].comments[0].viewerCanUpdate=true;h.mod.pr=p;h.mod.section='conversation';const calls=[];
  h.mod.api=async r=>{calls.push(r);return r.action==='detail'?p:{}};
