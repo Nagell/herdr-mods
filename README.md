@@ -12,6 +12,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 | [Better Spaces](better-spaces/README.md) | Spaces and nested worktrees with right-aligned Git branches and color-coded pull-request status from `gh`. |
 | [Better Tabs](better-tabs/README.md) | Native tab bar with configurable action buttons, hooks, panel memory, and responsive overflow. |
 | [GitHub PR](github-pr/README.md) | GitHub PR sidebar and reusable browser tab with conversations, reviews, checks, worktrees, and explicit agent actions. |
+| [Linear Issue](linear-issue/README.md) | Linear issue sidebar that follows the branch, an All issues browser, quick state/priority/assignee edits, comments, and Start work worktrees with agent handoff. |
 
 ### Better Changes
 
@@ -28,6 +29,10 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 ### GitHub PR
 
 ![GitHub PR](github-pr/preview.png)
+
+### Linear Issue
+
+![Linear Issue](linear-issue/preview.png)
 
 ## Quick install
 
