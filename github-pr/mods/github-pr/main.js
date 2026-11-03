@@ -3301,9 +3301,9 @@ export default class PullRequests extends View {
           .min_h(26)
           .flex()
           .items_center()
-          .whitespace_normal()
           .font_semibold()
-          .child(`#${pr.number} ${pr.title}`),
+          // The text needs its own shrinkable box, or it will not wrap inside the flex row.
+          .child(div().min_w(0).whitespace_normal().child(`#${pr.number} ${pr.title}`)),
       )
       .child(
         icon("pr-detail-github", "mods/github-pr/github.svg", "Open pull request on GitHub", (cx) =>
