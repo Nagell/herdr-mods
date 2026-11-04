@@ -17,9 +17,9 @@ function harness(existingStorage) {
     readTextFile:async()=>null,shared:()=>null,setShared:()=>{},settings:()=>({font_size:14,ui_font_family:"Configured UI",font_family:"Configured Code"}),run:()=>{},props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),layout:()=>null,home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),knownAgents:async()=>[{key:'claude',name:'Claude Code',run:['claude'],installed:true},{key:'codex',name:'Codex',run:['codex'],installed:false}],
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console };
   vm.createContext(context);
-  const typography=fs.readFileSync('mods/github-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
+  const typography=fs.readFileSync('mods/branch-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
   vm.runInContext(typography,context);
-  const source=fs.readFileSync('mods/github-pr/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
+  const source=fs.readFileSync('mods/branch-pr/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
   vm.runInContext(source,context);
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.repo='owner/repo';mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';
   return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};
@@ -67,7 +67,11 @@ test('repository detection prefers upstream and executes git on the space machin
 test('repository detection falls back to branch tracking then origin',async()=>{
  const h=harness(),calls=[];h.context.exec=async(cmd,args)=>{calls.push(args.join(' '));if(args[0]==='symbolic-ref')return{code:0,stdout:'feature\n'};if(args[0]==='config')return{code:0,stdout:'fork\n'};if(args[2]==='origin')return{code:0,stdout:'https://github.com/owner/project.git'};return{code:1,stdout:''}};
  assert.equal(await h.mod.detectRepo({folder:'/repo'}),'owner/project');assert.equal(calls.at(-2),'remote get-url fork');assert.equal(calls.at(-1),'remote get-url origin');
- assert.throws(()=>vm.runInContext('repositoryFromRemote("https://notgithub.com/o/r.git")',h.context));
+ assert.equal(vm.runInContext('repositoryFromRemote("https://gitlab.com/group/sub/project.git")',h.context),'gitlab.com/group/sub/project');
+ assert.equal(vm.runInContext('repositoryFromRemote("git@gitlab.example.com:team/app.git")',h.context),'gitlab.example.com/team/app');
+ assert.equal(vm.runInContext('repositoryFromRemote("ssh://git@github.com:22/o/r.git")',h.context),'o/r');
+ for(const bad of['https://github.com/o/r/extra.git','git@gitlab.com:only.git','/local/path','https://gitlab.com/../x.git'])assert.throws(()=>vm.runInContext(`repositoryFromRemote(${JSON.stringify(bad)})`,h.context),bad);
+ assert.equal(vm.runInContext('hostOf("gitlab.com/g/p")+" "+siteName("gitlab.com/g/p")+" "+repoUrl("gitlab.com/g/p")+" "+siteName("o/r")+" "+repoUrl("o/r")',h.context),'gitlab.com GitLab https://gitlab.com/g/p GitHub https://github.com/o/r');
 });
 test('list chrome has dropdown filters and no manual repository or search buttons',()=>{
  const h=harness(),text=strings(h.mod.render());assert.match(text,/All PRs/);assert.ok(findElement(h.mod.render(),'pr-scope'));assert.ok(findElement(h.mod.render(),'pr-search-input'));assert.match(text,/owner\/repo/);assert.doesNotMatch(text,/Use repo|Search GitHub|Clear|Refresh/);
@@ -95,15 +99,15 @@ test('status popover supports keyboard selection and native dismissal',async()=>
  findElement(h.mod.render(),'pr-state').handlers.open_change(true,h.cx);
  findElement(h.mod.render(),'pr-state').handlers.open_change(false,h.cx);assert.equal(h.mod.stateOpen,false);
 });
-test('remote menu discovers GitHub remotes and disables other hosts',async()=>{
+test('remote menu discovers GitHub and GitLab remotes and disables unparseable ones',async()=>{
  const h=harness(),calls=[];h.context.exec=async(cmd,args,options)=>{
   calls.push({args,options});if(args.length===1)return{code:0,stdout:'origin\nupstream\narchive\n'};
-  return{code:0,stdout:args.at(-1)==='archive'?'git@gitlab.com:owner/archive.git':`git@github.com:${args.at(-1)}/repo.git`};
+  return{code:0,stdout:args.at(-1)==='archive'?'/mnt/backup/archive.git':`git@github.com:${args.at(-1)}/repo.git`};
  };
  const remotes=await h.mod.discoverRemotes({folder:'/checkout',machine:'remote'});
  assert.equal(remotes.length,3);assert.equal(remotes.find(r=>r.name==='archive').repo,null);assert.equal(remotes.find(r=>r.name==='upstream').repo,'upstream/repo');assert.ok(calls.every(c=>c.options.on==='remote'&&c.options.cwd==='/checkout'));
  h.mod.remotes=remotes;h.mod.remote='origin';findElement(h.mod.remoteSelector({}),'pr-remote').handlers.open_change(true,h.cx);
- const opened=h.mod.remoteSelector({});assert.match(strings(findElement(opened,'pr-remote-menu')),/Not a GitHub remote/);assert.equal(findElement(opened,'pr-remote-archive').handlers.click,undefined);
+ const opened=h.mod.remoteSelector({});assert.match(strings(findElement(opened,'pr-remote-menu')),/Not a GitHub or GitLab remote/);assert.equal(findElement(opened,'pr-remote-archive').handlers.click,undefined);
 });
 test('selecting remote updates PR scope, preserves drafts, and invalidates stale requests',async()=>{
  const h=harness(),requests=[];let finishOld;
@@ -147,9 +151,9 @@ test('branch sidebar All PRs opens a pinned browser tab without Better Tabs',()=
  h.live.spaces=[{id:'space',active:true,folder:'/main',tabs:[{id:'shell',active:true}]}];
  h.live.panes=[{tab:'shell',cwd:'/worktree',focused:true}];
  const open=()=>findElement(h.mod.render(),'pr-browser-toggle').handlers.click({},h.cx);
- open();assert.equal(calls.length,1);assert.equal(calls[0].name,'tab.new');assert.equal(calls[0].args.mod,'github-pr');
+ open();assert.equal(calls.length,1);assert.equal(calls[0].name,'tab.new');assert.equal(calls[0].args.mod,'branch-pr');
  assert.equal(calls[0].args.props.source.cwd,'/worktree');open();assert.equal(calls.length,1);
- h.live.spaces[0].tabs.push({id:'browser'});h.live.panes.push({mod:'github-pr',tab:'browser'});
+ h.live.spaces[0].tabs.push({id:'browser'});h.live.panes.push({mod:'branch-pr',tab:'browser'});
  open();assert.equal(calls.at(-1).name,'tab.select');assert.equal(calls.at(-1).args.id,'browser');
 });
 test('browser tab has no internal close or stack toggle control',()=>{
@@ -180,8 +184,8 @@ test('browser tab pins its source checkout even while another space is selected'
 });
 test('branch sidebar retains the browser checkout while a mod tab is selected',()=>{
  const h=harness();h.mod.mode='branch';h.live.spaces=[{id:'space',active:true,folder:'/main',tabs:[{id:'browser',active:true}]}];
- h.live.panes=[{mod:'github-pr',tab:'browser'}];
- h.context.shared=key=>key==='github-pr.browser-tabs'?{space:{source:{cwd:'/worktree',on:null}}}:null;
+ h.live.panes=[{mod:'branch-pr',tab:'browser'}];
+ h.context.shared=key=>key==='branch-pr.browser-tabs'?{space:{source:{cwd:'/worktree',on:null}}}:null;
  assert.equal(h.mod.currentSpace().folder,'/worktree');
 });
 test('scope dropdown selects All PRs, Created and Involved',async()=>{
@@ -295,9 +299,9 @@ test('typography derives relative sizes from live Herdr settings and configured 
  h.context.settings=()=>({font_size:18,font_family:'User Code',ui_font_family:'User UI'});
  assert.equal(vm.runInContext('em(1)',h.context),18);assert.equal(vm.runInContext('em(0.8)',h.context),14.4);assert.equal(vm.runInContext('codeFont()',h.context),'User Code');
  h.context.settings=()=>({ui_font_size:20,font_size:18});assert.equal(vm.runInContext('em(1.2)',h.context),24);
- for(const mod of ['github-pr']){
+ for(const mod of ['branch-pr']){
   assert.doesNotMatch(fs.readFileSync(`mods/${mod}/main.js`,'utf8'),/\.text_size\(\d/);
-  assert.equal(fs.readFileSync(`mods/${mod}/typography.js`,'utf8'),fs.readFileSync('mods/github-pr/typography.js','utf8'));
+  assert.equal(fs.readFileSync(`mods/${mod}/typography.js`,'utf8'),fs.readFileSync('mods/branch-pr/typography.js','utf8'));
  }
 });
 
@@ -330,6 +334,19 @@ test('PR worktree uses chosen names, fetched head and a terminal in the captured
  const add=h.calls.filter(c=>c.args[0]==='worktree');assert.equal(add.length,1);assert.deepEqual(Array.from(add[0].args),['worktree','add','-b','review/custom','--','/remote/home/.herdr/worktrees/owner-repo/my-review','a'.repeat(40)]);assert.equal(add[0].options.on,'remote');
  assert.equal(h.opened[0].command,'space.new');assert.equal(h.opened[0].args.machine,'remote');assert.equal(h.opened[0].args.folder,add[0].args[5]);assert.equal(h.opened[0].args.tab,'my-review');assert.equal(h.opened[0].args.argv,undefined);
 });
+test('GitLab worktrees fetch the merge-request ref and nest the host in the folder name',async()=>{
+ const h=worktreeHarness();h.mod.repo='gitlab.com/group/sub/repo';h.mod.worktreeForm.repo='gitlab.com/group/sub/repo';
+ const original=h.context.exec;h.context.exec=async(cmd,args,options)=>args[0]==='remote'&&args.length>1?{code:0,stdout:'git@gitlab.com:group/sub/repo.git'}:original(cmd,args,options);
+ h.mod.createWorktree(h.cx);await h.flush();
+ const fetch=h.calls.find(c=>c.args[0]==='fetch');assert.equal(fetch.args[4],'refs/merge-requests/2/head');
+ const add=h.calls.find(c=>c.args[0]==='worktree');assert.equal(add.args[5],'/home/user/.herdr/worktrees/gitlab.com-group-sub-repo/my-review');
+ const bind=h.calls.find(c=>c.args[0]==='config'&&c.args[1]==='branch.review/custom.herdr-pr');assert.equal(bind.args[2],'gitlab.com/group/sub/repo#2');
+});
+test('pipeline checks group by runId and the detail header links to GitLab',()=>{
+ const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr=pr();h.mod.pr.checks=[{name:'test',status:'COMPLETED',conclusion:'FAILURE',detailsUrl:'https://gitlab.com/g/p/-/jobs/100',workflowName:'Pipeline #55',runId:'55'},{name:'lint',status:'COMPLETED',conclusion:'SUCCESS',detailsUrl:'https://gitlab.com/g/p/-/jobs/101',workflowName:'Pipeline #55',runId:'55'}];
+ h.mod.section='checks';const tree=h.mod.render();assert.ok(findElement(tree,'workflow-Pipeline #55:55'));assert.equal(findElement(tree,'workflow-Pipeline #55:external'),undefined);
+ h.mod.checkOpen[`${h.mod.pr.id}:0`]=true;assert.match(strings(findElement(h.mod.render(),'check-0')),/View on GitLab/);
+});
 test('worktree creation rejects invalid paths, existing branches and unrelated repositories',async()=>{
  for(const scenario of ['path','branch','repo','head','git']){
   const h=worktreeHarness(),original=h.context.exec;
@@ -352,7 +369,7 @@ test('public previews cannot create a worktree and terminal failures preserve th
 });
 test('Add to review starts a pending review for replies, appends general comments to its summary, shows Pending badges, and submits',async()=>{
  const h=harness();h.mod.pr=pr();h.mod.section='conversation';const calls=[];
- h.mod.api=async r=>{calls.push(r);if(r.action==='start-review')return{data:{addPullRequestReview:{pullRequestReview:{id:'rev1',state:'PENDING'}}}};if(r.action==='detail')return h.mod.pr;return{}};
+ h.mod.api=async r=>{calls.push(r);if(r.action==='start-review')return{addPullRequestReview:{pullRequestReview:{id:'rev1',state:'PENDING'}}};if(r.action==='detail')return h.mod.pr;return{}};
  h.mod.compose('reply','thread',null,h.cx,{entry:'thread'});h.mod.editor.set_value('hold this');
  findElement(h.mod.render(),'pr-pending').handlers.click({},h.cx);await h.flush();
  assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review??null,c.pullRequest??null,c.body??null]),[['start-review',null,'pr',null],['reply','rev1',null,'hold this']]);

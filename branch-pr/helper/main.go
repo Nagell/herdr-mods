@@ -37,7 +37,7 @@ type Request struct {
 	Event       string `json:"event"`
 }
 
-var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+var segmentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var runner = runCommand
 
 func runCommand(ctx context.Context, args []string, input []byte) ([]byte, error) {
@@ -309,10 +309,31 @@ func branchPRs(ctx context.Context, r Request) (any, error) {
 	return Obj{"items": items}, nil
 }
 
+// A repository is `owner/name` on GitHub or `host/group/project` elsewhere,
+// where the host segment contains a dot and the project may be nested.
+func splitRepo(repo string) (host, path string, err error) {
+	parts := strings.Split(repo, "/")
+	if strings.Contains(parts[0], ".") {
+		host, parts = parts[0], parts[1:]
+	}
+	if len(parts) < 2 || (host == "" && len(parts) != 2) {
+		return "", "", errors.New("repository must be owner/name or host/group/project")
+	}
+	for _, p := range parts {
+		if !segmentPattern.MatchString(p) || p == "." || p == ".." {
+			return "", "", errors.New("repository must be owner/name or host/group/project")
+		}
+	}
+	return host, strings.Join(parts, "/"), nil
+}
+
 func handle(ctx context.Context, r Request) (any, error) {
-	parts := strings.Split(r.Repo, "/")
-	if !repoPattern.MatchString(r.Repo) || len(parts) != 2 || parts[0] == "." || parts[0] == ".." || parts[1] == "." || parts[1] == ".." {
-		return nil, errors.New("repository must be owner/name")
+	host, path, err := splitRepo(r.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if host != "" {
+		return gitlabHandle(ctx, r, host, path)
 	}
 	switch r.Action {
 	case "branch":

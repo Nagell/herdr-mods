@@ -661,15 +661,15 @@ test("mod tabs get an icon from the layout map, else the shared registry, else n
     return h.context.div();
   };
   h.data["mod-icons"] = {
-    "github-pr": "mods/github-pr/pull-request.svg",
+    "branch-pr": "mods/branch-pr/pull-request.svg",
     "better-changes": "ignored.svg",
   };
   h.setPanes([
-    { tab: "t1", mod: "github-pr" },
+    { tab: "t1", mod: "branch-pr" },
     { tab: "t2", mod: "better-changes" },
   ]);
   h.tabs.render(h.cx);
-  assert.ok(paths.includes("mods/github-pr/pull-request.svg"));
+  assert.ok(paths.includes("mods/branch-pr/pull-request.svg"));
   assert.ok(paths.includes("mods/better-changes/file.svg"));
   assert.ok(!paths.includes("ignored.svg"));
   paths.length = 0;

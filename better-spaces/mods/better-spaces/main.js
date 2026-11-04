@@ -1,6 +1,6 @@
 // Better Spaces: a native spaces sidebar with right-aligned branches, nested
 // worktrees, and a PR status line. Repository facts follow each space's first
-// terminal. Agent attention and GitHub PR state remain separate concepts.
+// terminal. Agent attention and Branch PR state remain separate concepts.
 
 import { PRStatusObserver, prPlaceKey, prAppearance } from "./pr-status.js";
 import { em } from "./typography.js";

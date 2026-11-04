@@ -32,7 +32,7 @@ class InstallTests(unittest.TestCase):
 
             with patch.object(installer.shutil, "which", return_value="available"), patch.object(installer.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
                 installer.install(app)
-                target = app / "mods/github-pr"
+                target = app / "mods/branch-pr"
                 self.assertEqual((target / "bin/herdr-pr").read_text(), "built helper")
                 self.assertTrue((target / "main.js").exists())
                 self.assertEqual(calls[-1][0:2], ["herdr-app", "check"])
@@ -46,7 +46,7 @@ class InstallTests(unittest.TestCase):
     def test_unrelated_names_and_symlinks_are_never_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:
             app = Path(folder)
-            target = app / "mods/github-pr"
+            target = app / "mods/branch-pr"
             target.mkdir(parents=True)
             (target / "mod.json").write_text('{"title":"Personal"}')
             with self.assertRaises(RuntimeError):
@@ -61,7 +61,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.object(installer.shutil, "which", return_value=None):
             with self.assertRaises(RuntimeError):
                 installer.install(folder)
-            self.assertFalse((Path(folder) / "mods/github-pr").exists())
+            self.assertFalse((Path(folder) / "mods/branch-pr").exists())
 
 
 if __name__ == "__main__":

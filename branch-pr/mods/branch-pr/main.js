@@ -43,8 +43,8 @@ function activeSpace() {
   if (!sp) return null;
   const tab = sp.tabs?.find((t) => t.active)?.id;
   const candidates = panes().filter((p) => p.tab === tab && p.cwd);
-  const browser = panes().some((p) => p.tab === tab && p.mod === "github-pr");
-  const source = browser ? (shared("github-pr.browser-tabs") ?? {})[sp.id]?.source : null;
+  const browser = panes().some((p) => p.tab === tab && p.mod === "branch-pr");
+  const source = browser ? (shared("branch-pr.browser-tabs") ?? {})[sp.id]?.source : null;
   const cwd = candidates.find((p) => p.focused)?.cwd ?? candidates[0]?.cwd ?? source?.cwd;
   return {
     ...sp,
@@ -52,15 +52,27 @@ function activeSpace() {
     branch: candidates.find((p) => p.focused)?.branch ?? candidates[0]?.branch ?? sp.branch,
   };
 }
+// GitHub repositories are named `owner/name`; any other host is treated as
+// GitLab and named `host/group/project`, so the host travels with the name.
 function repositoryFromRemote(remote) {
   const match =
-    /^(?:(?:https?|git):\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/(?:git@)?github\.com(?::[0-9]+)?\/)([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(
+    /^(?:(?:https?|git|ssh):\/\/(?:[^@/]+@)?([^/:]+)(?::[0-9]+)?\/|git@([^:/]+):)(.+?)(?:\.git)?\/?$/.exec(
       remote.trim(),
     );
-  if (!match || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(match[1]))
-    throw new Error("The upstream remote must point to a GitHub repository.");
-  return match[1];
+  const host = (match?.[1] ?? match?.[2] ?? "").toLowerCase();
+  const path = match?.[3] ?? "";
+  const segments = path.split("/");
+  const valid =
+    segments.length >= 2 &&
+    segments.every((s) => /^[A-Za-z0-9_.-]+$/.test(s) && s !== "." && s !== "..");
+  if (!host || !valid || (host === "github.com" && segments.length !== 2))
+    throw new Error("The upstream remote must point to a GitHub or GitLab repository.");
+  return host === "github.com" ? path : `${host}/${path}`;
 }
+const hostOf = (repo) => (/^[^/]*\.[^/]*\//.test(repo ?? "") ? repo.split("/")[0] : "github.com");
+const siteName = (repo) => (hostOf(repo) === "github.com" ? "GitHub" : "GitLab");
+const siteIcon = (repo) => `mods/branch-pr/${hostOf(repo) === "github.com" ? "github" : "gitlab"}.svg`;
+const repoUrl = (repo) => (hostOf(repo) === "github.com" ? `https://github.com/${repo}` : `https://${repo}`);
 // A sidebar follows branch changes; a browser stays scoped to its repository.
 function spaceContextKey(space, mode) {
   if (!space) return "";
@@ -78,14 +90,14 @@ export default class PullRequests extends View {
     // Optional Better Tabs integration: lets its tab bar draw an icon on our mod tabs.
     setShared("mod-icons", {
       ...(shared("mod-icons") ?? {}),
-      "github-pr": "mods/github-pr/pull-request.svg",
+      "branch-pr": "mods/branch-pr/pull-request.svg",
     });
     this.branchPRs = [];
     this.source = props()?.source ?? _props?.source;
     this.browserSpace = props()?.space ?? _props?.space;
     if (this.mode === "browser" && this.source && this.browserSpace) {
-      setShared("github-pr.browser-tabs", {
-        ...(shared("github-pr.browser-tabs") ?? {}),
+      setShared("branch-pr.browser-tabs", {
+        ...(shared("branch-pr.browser-tabs") ?? {}),
         [this.browserSpace]: { source: this.source, pending: null },
       });
     }
@@ -187,7 +199,7 @@ export default class PullRequests extends View {
             space.tabs?.some(
               (tab) =>
                 tab.active &&
-                panes().some((pane) => pane.tab === tab.id && pane.mod === "github-pr"),
+                panes().some((pane) => pane.tab === tab.id && pane.mod === "branch-pr"),
             ),
         );
       const canRefresh =
@@ -237,20 +249,20 @@ export default class PullRequests extends View {
     const sp = this.currentSpace();
     if (!sp) return;
     const ids = new Set((sp.tabs ?? []).map((tab) => tab.id));
-    const tab = panes().find((p) => p.mod === "github-pr" && ids.has(p.tab))?.tab;
+    const tab = panes().find((p) => p.mod === "branch-pr" && ids.has(p.tab))?.tab;
     if (tab) {
       run("tab.select", { id: tab });
       return;
     }
-    const entries = shared("github-pr.browser-tabs") ?? {};
+    const entries = shared("branch-pr.browser-tabs") ?? {};
     if (entries[sp.id]?.pending && Date.now() - entries[sp.id].pending < TAB_OPEN_TIMEOUT_MS)
       return;
     const source = { cwd: sp.folder, on: sp.machine ?? null };
-    setShared("github-pr.browser-tabs", { ...entries, [sp.id]: { source, pending: Date.now() } });
+    setShared("branch-pr.browser-tabs", { ...entries, [sp.id]: { source, pending: Date.now() } });
     run("tab.new", {
       space: sp.id,
       name: "All PRs",
-      mod: "github-pr",
+      mod: "branch-pr",
       props: { mode: "browser", space: sp.id, source },
     });
     cx.notify();
@@ -504,7 +516,7 @@ export default class PullRequests extends View {
       }
       if (result.code !== 0) result = await remote("origin");
     }
-    if (result.code !== 0) throw new Error("No GitHub upstream remote found for this directory.");
+    if (result.code !== 0) throw new Error("No GitHub or GitLab upstream remote found for this directory.");
     return repositoryFromRemote(result.stdout);
   }
 
@@ -733,7 +745,7 @@ export default class PullRequests extends View {
       .text_color(t.muted)
       .when(Boolean(status), (el) =>
         el.child(
-          svg(`mods/github-pr/${status.icon}.svg`)
+          svg(`mods/branch-pr/${status.icon}.svg`)
             .size(14)
             .flex_none()
             .text_color(t[status.color])
@@ -750,7 +762,7 @@ export default class PullRequests extends View {
         el
           .cursor_pointer()
           .hover((s) => s.bg(t.hover))
-          .child(svg("mods/github-pr/chevron-down.svg").size(11)),
+          .child(svg("mods/branch-pr/chevron-down.svg").size(11)),
       );
     const menu = v_flex()
       .id("branch-pr-menu")
@@ -796,7 +808,7 @@ export default class PullRequests extends View {
               .gap(6)
               .items_center()
               .child(
-                svg(`mods/github-pr/${this.prStatus(pr).icon}.svg`)
+                svg(`mods/branch-pr/${this.prStatus(pr).icon}.svg`)
                   .size(14)
                   .flex_none()
                   .text_color(t[this.prStatus(pr).color])
@@ -920,7 +932,7 @@ export default class PullRequests extends View {
         }
       })
       .child(div().child(choices.find(([id]) => id === this.tab)[1]))
-      .child(svg("mods/github-pr/chevron-down.svg").size(11));
+      .child(svg("mods/branch-pr/chevron-down.svg").size(11));
     const menu = v_flex()
       .id("pr-scope-menu")
       .role("list")
@@ -1009,7 +1021,7 @@ export default class PullRequests extends View {
           .truncate()
           .child(this.remote || "Remote"),
       )
-      .child(svg("mods/github-pr/chevron-down.svg").size(11).flex_none());
+      .child(svg("mods/branch-pr/chevron-down.svg").size(11).flex_none());
     const menu = v_flex()
       .id("pr-remote-menu")
       .role("list")
@@ -1065,7 +1077,7 @@ export default class PullRequests extends View {
             div()
               .text_size(em(0.8))
               .truncate()
-              .child(remote.repo || "Not a GitHub remote"),
+              .child(remote.repo || "Not a GitHub or GitLab remote"),
           ),
       );
     return Popover.new("pr-remote")
@@ -1106,7 +1118,7 @@ export default class PullRequests extends View {
           remotes.find((r) => r.name === "upstream" && r.repo === defaultRepo) ??
           remotes.find((r) => r.repo && r.repo === defaultRepo) ??
           remotes.find((r) => r.repo);
-        if (!selected) throw new Error("No GitHub remote found for this directory.");
+        if (!selected) throw new Error("No GitHub or GitLab remote found for this directory.");
         if (preference && !remotes.some((r) => r.name === preference && r.repo))
           localStorage.removeItem(this.remotePreferenceKey());
         this.remote = selected.name;
@@ -1171,7 +1183,7 @@ export default class PullRequests extends View {
   async api(request, sp = this.sp) {
     // GitHub auth and the helper live on this computer, including for remote spaces.
     const result = await exec(
-      `${appHome()}/mods/github-pr/bin/herdr-pr`,
+      `${appHome()}/mods/branch-pr/bin/herdr-pr`,
       [JSON.stringify(request)],
       { cwd: sp?.machine ? undefined : sp?.folder },
     );
@@ -1179,10 +1191,10 @@ export default class PullRequests extends View {
     try {
       data = JSON.parse(result.stdout);
     } catch {
-      throw new Error(result.stderr || "GitHub helper returned invalid JSON");
+      throw new Error(result.stderr || "PR helper returned invalid JSON");
     }
     if (result.code !== 0 || data.error)
-      throw new Error(data.error || result.stderr || "GitHub request failed");
+      throw new Error(data.error || result.stderr || `${siteName(request.repo)} request failed`);
     return data;
   }
 
@@ -1346,9 +1358,9 @@ export default class PullRequests extends View {
               });
             cx.notify();
           })
-          .child(svg("mods/github-pr/checkout.svg").size(14).flex_none().text_color(t.muted))
+          .child(svg("mods/branch-pr/checkout.svg").size(14).flex_none().text_color(t.muted))
           .child(div().flex_none().text_size(em(0.9)).child(worktree.name))
-          .child(svg("mods/github-pr/branch.svg").size(12).flex_none().text_color(t.dim))
+          .child(svg("mods/branch-pr/branch.svg").size(12).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(em(0.85)).text_color(t.dim).child(worktree.branch))
           .child(
             div()
@@ -1465,13 +1477,17 @@ export default class PullRequests extends View {
             throw new Error("Could not find the remote home folder.");
           userHome = result.stdout.trim().replace(/\\/g, "/");
         }
-        const path = `${userHome}/.herdr/worktrees/${repo.replace("/", "-")}/${name}`;
+        const path = `${userHome}/.herdr/worktrees/${repo.replace(/\//g, "-")}/${name}`;
         // Pin the checkout to a verified commit, not a moving PR branch. If
         // GitHub and FETCH_HEAD disagree, stop rather than open the wrong code.
         const latest = await this.api({ action: "detail", repo, number: pr.number }, sp);
         if (!/^[0-9a-f]{40,64}$/i.test(latest.headRefOid ?? ""))
           throw new Error("The PR has no valid head commit.");
-        await git(["fetch", "--no-tags", "--", url, `refs/pull/${pr.number}/head`]);
+        const headRef =
+          hostOf(repo) === "github.com"
+            ? `refs/pull/${pr.number}/head`
+            : `refs/merge-requests/${pr.number}/head`;
+        await git(["fetch", "--no-tags", "--", url, headRef]);
         if ((await git(["rev-parse", "FETCH_HEAD"])) !== latest.headRefOid)
           throw new Error("The PR changed while fetching. Try again.");
         await git(["worktree", "add", "-b", branch, "--", path, latest.headRefOid]);
@@ -1546,7 +1562,7 @@ export default class PullRequests extends View {
         .gap(6)
         .border_b(1)
         .border_color(t.border)
-        .child(svg("mods/github-pr/checkout.svg").size(13).text_color(t.dim))
+        .child(svg("mods/branch-pr/checkout.svg").size(13).text_color(t.dim))
         .child(
           div()
             .flex_1()
@@ -1637,7 +1653,7 @@ export default class PullRequests extends View {
         .hover((s) => s.bg(t.hover))
         .child(div().text_color(t.dim).child("Open with"))
         .child(div().child(current.name))
-        .child(svg("mods/github-pr/chevron-down.svg").size(11).text_color(t.dim));
+        .child(svg("mods/branch-pr/chevron-down.svg").size(11).text_color(t.dim));
       row.child(
         Popover.new("pr-worktree-launch")
           .accessibility_label("Open the worktree with")
@@ -2035,7 +2051,7 @@ export default class PullRequests extends View {
       .border_color(t.border)
       .accessibility_label(`${label} options`)
       .when(!disabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
-      .child(svg("mods/github-pr/chevron-down.svg").size(11));
+      .child(svg("mods/branch-pr/chevron-down.svg").size(11));
     const dropdown = Popover.new(`${id}-dropdown`)
       .open(this.actionMenu === id)
       .when(Boolean(handles), (el) => el.track_focus(handles.list))
@@ -2350,8 +2366,8 @@ export default class PullRequests extends View {
           let review = existing?.id;
           if (!review) {
             const started = await this.api({ action: "start-review", repo, number, pullRequest });
-            review = started?.data?.addPullRequestReview?.pullRequestReview?.id;
-            if (!review) throw new Error("GitHub did not return the new review");
+            review = started?.addPullRequestReview?.pullRequestReview?.id;
+            if (!review) throw new Error(`${siteName(repo)} did not return the new review`);
           }
           await this.api({ action: "reply", repo, number, thread, body, review });
         } else if (pending && action === "comment") {
@@ -2386,7 +2402,7 @@ export default class PullRequests extends View {
           ? "Added to your pending review. Submit the review to publish it."
           : action === "submit"
             ? "Review submitted."
-            : "Saved to GitHub.";
+            : `Saved to ${siteName(repo)}.`;
         this.openPR(number, cx);
       } catch (e) {
         if (key === this.spaceKey)
@@ -2487,7 +2503,7 @@ export default class PullRequests extends View {
   }
 
   checkIcon(status, t) {
-    return svg(`mods/github-pr/check-${status.kind}.svg`)
+    return svg(`mods/branch-pr/check-${status.kind}.svg`)
       .size(15)
       .flex_none()
       .text_color(t[status.color])
@@ -2576,7 +2592,7 @@ export default class PullRequests extends View {
       root.child(div().text_size(em(0.95)).text_color(t.blocked).child(pr.checksError));
     const groups = new Map();
     for (const [index, check] of checks.entries()) {
-      const run = /\/actions\/runs\/(\d+)/.exec(check.detailsUrl ?? "")?.[1];
+      const run = check.runId ?? /\/actions\/runs\/(\d+)/.exec(check.detailsUrl ?? "")?.[1];
       const name = check.workflowName || (run ? "GitHub Actions" : "Other checks");
       const key = `${name}:${run ?? "external"}`;
       if (!groups.has(key)) groups.set(key, { key, name, run, checks: [] });
@@ -2681,7 +2697,7 @@ export default class PullRequests extends View {
           );
           if (expanded) {
             const content = v_flex().p(12).gap(8).bg(t.background).min_w(0);
-            content.child(this.link(check.detailsUrl || check.targetUrl, "View on GitHub ↗", t));
+            content.child(this.link(check.detailsUrl || check.targetUrl, `View on ${siteName(this.repo)} ↗`, t));
             const loaded = this.jobs[group.run];
             if (loaded?.loading)
               content.child(
@@ -2698,7 +2714,7 @@ export default class PullRequests extends View {
                 div()
                   .text_size(em(0.85))
                   .text_color(t.dim)
-                  .child("Step details are unavailable. View the workflow on GitHub."),
+                  .child(`Step details are unavailable. View the workflow on ${siteName(this.repo)}.`),
               );
             for (const job of jobs) {
               content.child(
@@ -2843,7 +2859,7 @@ export default class PullRequests extends View {
           .on_click((_e, cx) => action(cx)),
       )
       .when(Boolean(asset), (el) =>
-        el.child(svg(`mods/github-pr/${asset}.svg`).size(14).flex_none()),
+        el.child(svg(`mods/branch-pr/${asset}.svg`).size(14).flex_none()),
       )
       .when(!options.iconOnly, (el) => el.child(label));
   }
@@ -2867,7 +2883,7 @@ export default class PullRequests extends View {
     const busy = this.repoLoading || this.searchPending || this.loading || this.detailLoading;
     const space = spaces().find((s) => s.active);
     const activeTab = space?.tabs?.find((t) => t.active)?.id;
-    const centerOpen = panes().some((p) => p.tab === activeTab && p.mod === "github-pr");
+    const centerOpen = panes().some((p) => p.tab === activeTab && p.mod === "branch-pr");
     const icon = (id, path, label, action, disabled = false, active = false) =>
       div()
         .id(id)
@@ -2899,7 +2915,7 @@ export default class PullRequests extends View {
       .child(
         div()
           .font_semibold()
-          .child(this.mode === "branch" ? "PR" : "GitHub PR"),
+          .child(this.mode === "branch" ? "PR" : "Branch PR"),
       );
     if (this.preview)
       title.child(
@@ -2915,8 +2931,8 @@ export default class PullRequests extends View {
       );
     if (this.mode === "branch" && this.branchPRs.length) title.child(this.branchSelector(t));
     const actions = h_flex().gap(2).items_center().flex_none();
-    if (this.mode === "browser" && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(this.repo ?? "")) {
-      const url = `https://github.com/${this.repo}`;
+    if (this.mode === "browser" && /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/.test(this.repo ?? "")) {
+      const url = repoUrl(this.repo);
       actions.child(
         div()
           .id("pr-repo-url")
@@ -2955,16 +2971,16 @@ export default class PullRequests extends View {
             .accessibility_label("All PRs")
             .hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => this.openBrowser(cx))
-            .child(svg("mods/github-pr/pull-request.svg").size(14))
+            .child(svg("mods/branch-pr/pull-request.svg").size(14))
             .child("All PRs"),
         )
         .when(!this.pr, (el) =>
           el.child(
             icon(
               "pr-github",
-              "mods/github-pr/github.svg",
-              this.pr ? "Open pull request on GitHub" : "Open repository on GitHub",
-              (cx) => cx.open_url(this.pr?.url ?? `https://github.com/${this.repo}/pulls`),
+              siteIcon(this.repo),
+              `Open repository on ${siteName(this.repo)}`,
+              (cx) => cx.open_url(repoUrl(this.repo)),
               !this.repo,
             ),
           ),
@@ -2972,14 +2988,14 @@ export default class PullRequests extends View {
         .child(
           icon(
             "pr-refresh",
-            "mods/github-pr/refresh.svg",
+            "mods/branch-pr/refresh.svg",
             "Refresh pull requests",
             (cx) => this.refresh(cx),
             busy || this.mutating,
           ),
         );
     const root = v_flex()
-      .id("github-pr")
+      .id("pr-root")
       .size_full()
       .min_w(0)
       .min_h(0)
@@ -3114,7 +3130,7 @@ export default class PullRequests extends View {
           }
         })
         .child(div().child(states.find(([id]) => id === this.state)[1]))
-        .child(svg("mods/github-pr/chevron-down.svg").size(11));
+        .child(svg("mods/branch-pr/chevron-down.svg").size(11));
       const chooseState = (index, cx) => {
         this.state = states[index][0];
         this.stateOpen = false;
@@ -3215,7 +3231,7 @@ export default class PullRequests extends View {
               busy
                 ? "Loading pull requests…"
                 : !this.repo
-                  ? "Open a directory with a GitHub remote."
+                  ? "Open a directory with a GitHub or GitLab remote."
                   : "No matching pull requests.",
             ),
         );
@@ -3272,7 +3288,7 @@ export default class PullRequests extends View {
       detailHeader.child(
         icon(
           "pr-back",
-          "mods/github-pr/back.svg",
+          "mods/branch-pr/back.svg",
           "Back to pull requests",
           (cx) => this.backToList(cx),
           this.mutating,
@@ -3288,7 +3304,7 @@ export default class PullRequests extends View {
           .flex()
           .items_center()
           .justify_center()
-          .child(svg(`mods/github-pr/${status.icon}.svg`).size(15).text_color(t[status.color])),
+          .child(svg(`mods/branch-pr/${status.icon}.svg`).size(15).text_color(t[status.color])),
       )
       .child(
         div()
@@ -3302,7 +3318,7 @@ export default class PullRequests extends View {
           .child(div().min_w(0).whitespace_normal().child(`#${pr.number} ${pr.title}`)),
       )
       .child(
-        icon("pr-detail-github", "mods/github-pr/github.svg", "Open pull request on GitHub", (cx) =>
+        icon("pr-detail-github", siteIcon(this.repo), `Open on ${siteName(this.repo)}`, (cx) =>
           cx.open_url(pr.url),
         ),
       );
@@ -3452,7 +3468,7 @@ export default class PullRequests extends View {
         })
         .child(div().text_color(t.dim).child("Author"))
         .child(div().child(this.author || "All authors"))
-        .child(svg("mods/github-pr/chevron-down.svg").size(11));
+        .child(svg("mods/branch-pr/chevron-down.svg").size(11));
       const authorMenu = v_flex()
         .id("pr-author-menu")
         .role("list")
