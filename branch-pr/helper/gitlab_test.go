@@ -247,6 +247,10 @@ func TestGitLabStateChanges(t *testing.T) {
 	if c, err := run("squash"); err != nil || c.method() != "PUT" || !strings.HasSuffix(c.path(), "/merge_requests/7/merge") || c.body["squash"] != true || c.body["sha"] != "abc" {
 		t.Fatalf("squash %v %v", c, err)
 	}
+	before := len(*calls)
+	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: repo, Number: 7, Event: "squash", Head: "abc", Body: "Fix\n\nWhy"}); err != nil || (*calls)[before].body["squash_commit_message"] != "Fix\n\nWhy" {
+		t.Fatalf("squash message %v %v", *calls, err)
+	}
 	if c, err := run("merge"); err != nil || c.body["squash"] != false {
 		t.Fatalf("merge %v %v", c, err)
 	}

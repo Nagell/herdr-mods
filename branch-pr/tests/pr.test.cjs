@@ -512,9 +512,12 @@ test('merge, close and reopen ask first, follow the PR state and reload it',asyn
  tree=h.mod.render();assert.match(strings(findElement(tree,'pr-change-confirm')),/Squash and merge #2 from fix into main\? This cannot be undone/);
  findElement(tree,'pr-change-cancel').handlers.click({},h.cx);assert.equal(findElement(h.mod.render(),'pr-change-confirm'),undefined);
  findElement(h.mod.render(),'pr-change-main').handlers.click({},h.cx);
+ assert.ok(findElement(h.mod.render(),'pr-squash-message'));assert.equal(h.mod.squashMessage.value(),'Example (#2)\n\nDescription','prefilled from the PR');
+ h.mod.squashMessage.set_value('  ');findElement(h.mod.render(),'pr-change-yes').handlers.click?.({},h.cx);await h.flush();assert.equal(requests.length,0,'a blank message cannot be sent');
+ h.mod.squashMessage.set_value('Tidy up (#2)\n\nWhy');assert.equal(h.mod.editor.value(),'','a comment draft is untouched');
  h.mod.items=[{id:'old'}];
  findElement(h.mod.render(),'pr-change-yes').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].action,'change-state');assert.equal(requests[0].event,'squash');assert.equal(requests[0].head,'abc');assert.equal(requests[0].number,2);
+ assert.equal(requests[0].action,'change-state');assert.equal(requests[0].event,'squash');assert.equal(requests[0].head,'abc');assert.equal(requests[0].number,2);assert.equal(requests[0].body,'Tidy up (#2)\n\nWhy');
  assert.equal(requests[1].action,'detail');assert.equal(h.mod.items.length,0);assert.equal(h.mod.notice,'Squashed and merged.');assert.equal(h.mod.stateChange,null);
  assert.equal(findElement(h.mod.render(),'pr-change'),undefined,'a merged PR has no state action');
  h.mod.pr={...pr(),state:'CLOSED'};tree=h.mod.render();assert.equal(findElement(tree,'pr-change'),undefined);assert.ok(findElement(tree,'pr-change-reopen'));
@@ -523,6 +526,6 @@ test('merge, close and reopen ask first, follow the PR state and reload it',asyn
 });
 test('a failed merge keeps the confirmation and shows why',async()=>{
  const h=harness();h.mod.repo='o/r';h.mod.pr=pr();h.mod.api=async()=>{throw Error('GitHub: required checks have not passed')};
- h.mod.askStateChange('merge',h.cx);h.mod.changeState(h.cx);await h.flush();
+ h.mod.askStateChange('merge',h.cx);assert.equal(findElement(h.mod.render(),'pr-squash-message'),undefined,'only a squash has a message');h.mod.changeState(h.cx);await h.flush();
  assert.match(h.mod.error,/required checks/);assert.ok(h.mod.stateChange);assert.equal(h.mod.mutating,false);
 });

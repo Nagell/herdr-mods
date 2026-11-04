@@ -335,6 +335,11 @@ func changeState(ctx context.Context, r Request) (any, error) {
 	args := []string{"pr", r.Event, number, "--repo", r.Repo}
 	if r.Event != "close" && r.Event != "reopen" {
 		args = []string{"pr", "merge", number, "--repo", r.Repo, "--" + r.Event, "--match-head-commit", r.Head}
+		// The first line is the commit's subject and the rest its body, as in git.
+		if r.Event == "squash" && strings.TrimSpace(r.Body) != "" {
+			subject, body, _ := strings.Cut(strings.TrimSpace(r.Body), "\n")
+			args = append(args, "--subject", strings.TrimSpace(subject), "--body", strings.TrimSpace(body))
+		}
 	}
 	if _, err := runner(ctx, args, nil); err != nil {
 		return nil, err

@@ -168,6 +168,9 @@ export default class PullRequests extends View {
       if (this.draftKey) localStorage.setItem(this.draftKey, this.editor.value());
       cx.notify();
     });
+    // Its own state, so a squash message never mixes with a comment draft.
+    this.squashMessage = TextareaState.new({ placeholder: "Commit message", rows: 6 });
+    this.squashMessage.on("change", (_e, cx) => cx.notify());
     this.startPolling(cx);
     this.listenForCommands(cx);
 
@@ -2162,6 +2165,12 @@ export default class PullRequests extends View {
   // on the PR, and a merge cannot be taken back.
   askStateChange(event, cx) {
     this.stateChange = { event, repo: this.repo, number: this.pr.number, head: this.pr.headRefOid };
+    if (event === "squash") {
+      const { title, number, body } = this.pr;
+      const subject = siteName(this.repo) === "GitLab" ? title : `${title} (#${number})`;
+      this.squashMessage.set_value(body?.trim() ? `${subject}\n\n${body.trim()}` : subject);
+      this.squashMessage.focus();
+    }
     this.error = null;
     cx.notify();
   }
@@ -2185,42 +2194,57 @@ export default class PullRequests extends View {
     const change = this.stateChange;
     if (!change || change.repo !== this.repo || change.number !== pr.number) return null;
     const { label, question } = STATE_CHANGES[change.event];
-    return h_flex()
+    const squash = change.event === "squash";
+    return v_flex()
       .id("pr-change-confirm")
       .flex_none()
       .mx(14)
       .mb(10)
       .p(8)
       .gap(8)
-      .items_center()
       .rounded(6)
       .border_1()
       .border_color(t.border)
       .bg(t.raised)
-      .child(
-        div()
-          .flex_1()
-          .min_w(0)
-          .whitespace_normal()
-          .text_size(em(0.85))
-          .child(question(pr)),
-      )
-      .child(
-        this.button(
-          "pr-change-cancel",
-          "Cancel",
-          (cx) => {
-            this.stateChange = null;
-            cx.notify();
-          },
-          t,
-          this.mutating,
+      .child(div().min_w(0).whitespace_normal().text_size(em(0.85)).child(question(pr)))
+      .when(squash, (el) =>
+        el.child(
+          Textarea.new(this.squashMessage)
+            .id("pr-squash-message")
+            .h(130)
+            .px(8)
+            .rounded(5)
+            .bg(t.input)
+            .text_size(em(0.95))
+            .text_color(t.foreground),
         ),
       )
       .child(
-        this.button("pr-change-yes", label, (cx) => this.changeState(cx), t, this.mutating, {
-          primary: true,
-        }),
+        h_flex()
+          .gap(8)
+          .justify_end()
+          .child(
+            this.button(
+              "pr-change-cancel",
+              "Cancel",
+              (cx) => {
+                this.stateChange = null;
+                cx.notify();
+              },
+              t,
+              this.mutating,
+            ),
+          )
+          .child(
+            this.button(
+              "pr-change-yes",
+              label,
+              (cx) => this.changeState(cx),
+              t,
+              this.mutating || (squash && !this.squashMessage.value().trim()),
+              { primary: true },
+            ),
+          ),
       );
   }
 
@@ -2239,6 +2263,7 @@ export default class PullRequests extends View {
           number: change.number,
           event: change.event,
           head: change.head,
+          ...(change.event === "squash" ? { body: this.squashMessage.value().trim() } : {}),
         });
         if (key !== this.spaceKey) return;
         this.stateChange = null;

@@ -273,6 +273,15 @@ func TestChangeStateRunsTheMatchingGhCommand(t *testing.T) {
 			t.Fatalf("%s ran %v", event, got)
 		}
 	}
+	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "squash", Head: "abc", Body: "Fix it (#42)\n\nBecause.\nReally."}); err != nil {
+		t.Fatal(err)
+	}
+	if want := append(cases["squash"][:len(cases["squash"]):len(cases["squash"])], "--subject", "Fix it (#42)", "--body", "Because.\nReally."); !reflect.DeepEqual(got, want) {
+		t.Fatalf("squash message ran %v", got)
+	}
+	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "merge", Head: "abc", Body: "ignored"}); err != nil || !reflect.DeepEqual(got, cases["merge"]) {
+		t.Fatalf("a plain merge took a message: %v %v", got, err)
+	}
 	got = nil
 	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}} {
 		r.Action, r.Repo, r.Number = "change-state", "owner/repo", 42
