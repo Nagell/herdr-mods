@@ -95,6 +95,16 @@ function spaceContextKey(space, mode) {
 
 const who = (comment) => comment?.author?.login ?? "deleted user";
 
+const merged = (word) => (pr) =>
+  `${word} #${pr.number} from ${pr.headRefName} into ${pr.baseRefName}? This cannot be undone.`;
+const STATE_CHANGES = {
+  merge: { label: "Merge", question: merged("Merge"), done: "Merged." },
+  squash: { label: "Squash and merge", question: merged("Squash and merge"), done: "Squashed and merged." },
+  rebase: { label: "Rebase and merge", question: merged("Rebase and merge"), done: "Rebased and merged." },
+  close: { label: "Close", question: (pr) => `Close #${pr.number} without merging?`, done: "Closed." },
+  reopen: { label: "Reopen", question: (pr) => `Reopen #${pr.number}?`, done: "Reopened." },
+};
+
 export default class PullRequests extends View {
   // ── Lifecycle and background synchronization ─────────────────────────────
 
@@ -1431,16 +1441,18 @@ export default class PullRequests extends View {
 
   showWorktree(cx) {
     if (this.mode !== "browser" || !this.pr || !this.sp) return;
-    // The PR's own branch name and pr-<number>; a PR may already have
-    // checkouts, so each default skips the ones in use.
+    // The PR's own branch name and PR-<number>; a PR may already have
+    // checkouts, so each default skips the ones in use. Case is ignored because
+    // macOS folders treat pr-2 and PR-2 as the same name.
     const worktrees = this.currentWorktrees();
-    const free = (base, used) => {
+    const free = (base, taken) => {
+      const used = new Set(taken.map((value) => value?.toLowerCase()));
       let value = base;
-      for (let i = 2; used.has(value); i++) value = `${base}-${i}`;
+      for (let i = 2; used.has(value.toLowerCase()); i++) value = `${base}-${i}`;
       return value;
     };
-    const branch = free(this.pr.headRefName, new Set(worktrees.map((w) => w.branch)));
-    const name = free(`pr-${this.pr.number}`, new Set(worktrees.map((w) => w.name)));
+    const branch = free(this.pr.headRefName, worktrees.map((w) => w.branch));
+    const name = free(`PR-${this.pr.number}`, worktrees.map((w) => w.name));
     const form = {
       pr: this.pr,
       repo: this.repo,
@@ -2144,6 +2156,103 @@ export default class PullRequests extends View {
           .child(label),
       )
       .child(dropdown);
+  }
+
+  // Merge, close and reopen go through a confirmation row: they reach everyone
+  // on the PR, and a merge cannot be taken back.
+  askStateChange(event, cx) {
+    this.stateChange = { event, repo: this.repo, number: this.pr.number, head: this.pr.headRefOid };
+    this.error = null;
+    cx.notify();
+  }
+
+  stateAction(pr, t) {
+    if (this.preview || pr.state === "MERGED") return null;
+    const disabled = this.mutating;
+    const events =
+      pr.state === "CLOSED"
+        ? ["reopen"]
+        : [...(pr.isDraft ? [] : (pr.mergeMethods ?? ["merge"])), "close"];
+    const ask = (event) => (cx) => this.askStateChange(event, cx);
+    const [first, ...rest] = events;
+    const label = STATE_CHANGES[first].label;
+    if (!rest.length) return this.button(`pr-change-${first}`, label, ask(first), t, disabled);
+    const options = rest.map((id) => ({ id, label: STATE_CHANGES[id].label, action: ask(id) }));
+    return this.splitAction("pr-change", label, ask(first), options, t, disabled);
+  }
+
+  stateChangeView(pr, t) {
+    const change = this.stateChange;
+    if (!change || change.repo !== this.repo || change.number !== pr.number) return null;
+    const { label, question } = STATE_CHANGES[change.event];
+    return h_flex()
+      .id("pr-change-confirm")
+      .flex_none()
+      .mx(14)
+      .mb(10)
+      .p(8)
+      .gap(8)
+      .items_center()
+      .rounded(6)
+      .border_1()
+      .border_color(t.border)
+      .bg(t.raised)
+      .child(
+        div()
+          .flex_1()
+          .min_w(0)
+          .whitespace_normal()
+          .text_size(em(0.85))
+          .child(question(pr)),
+      )
+      .child(
+        this.button(
+          "pr-change-cancel",
+          "Cancel",
+          (cx) => {
+            this.stateChange = null;
+            cx.notify();
+          },
+          t,
+          this.mutating,
+        ),
+      )
+      .child(
+        this.button("pr-change-yes", label, (cx) => this.changeState(cx), t, this.mutating, {
+          primary: true,
+        }),
+      );
+  }
+
+  changeState(cx) {
+    const change = this.stateChange;
+    if (!change || this.mutating || this.preview) return;
+    const key = this.spaceKey;
+    this.mutating = true;
+    this.error = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        await this.api({
+          action: "change-state",
+          repo: change.repo,
+          number: change.number,
+          event: change.event,
+          head: change.head,
+        });
+        if (key !== this.spaceKey) return;
+        this.stateChange = null;
+        this.notice = STATE_CHANGES[change.event].done;
+        this.items = []; // the list shows this PR's old state until it reloads
+        this.openPR(change.number, cx);
+      } catch (e) {
+        if (key === this.spaceKey)
+          this.error = `${e.message}. Refresh before retrying if it may have gone through.`;
+      } finally {
+        this.mutating = false;
+        cx.notify();
+      }
+    });
   }
 
   threadActions(entry, comments, context, t) {
@@ -2975,7 +3084,7 @@ export default class PullRequests extends View {
       .child(
         div()
           .font_semibold()
-          .child(this.mode === "branch" ? "PR" : "Branch PR"),
+          .child(this.mode === "branch" ? "PR" : "Pull Requests"),
       );
     if (this.preview)
       title.child(
@@ -3396,6 +3505,7 @@ export default class PullRequests extends View {
       );
     root.child(detailHeader);
     const worktree = this.mode === "browser" ? this.worktreeView(t) : null;
+    const stateAction = this.stateAction(pr, t);
     root.child(
       h_flex()
         .px(14)
@@ -3417,11 +3527,14 @@ export default class PullRequests extends View {
             .tooltip(`${pr.headRefName} → ${pr.baseRefName}`)
             .child(`${pr.headRefName} → ${pr.baseRefName}`),
         )
-        // The button sits under the GitHub icon, on the row's right edge.
+        // The buttons sit under the GitHub icon, on the row's right edge.
         .when(this.mode === "browser" && !worktree, (el) =>
           el.child(button("pr-create-worktree", "New worktree", (cx) => this.showWorktree(cx))),
-        ),
+        )
+        .when(Boolean(stateAction), (el) => el.child(stateAction)),
     );
+    const stateConfirm = this.stateChangeView(pr, t);
+    if (stateConfirm) root.child(stateConfirm);
     if (this.mode === "browser") {
       const list = this.worktreeList(t);
       if (list) root.child(list);

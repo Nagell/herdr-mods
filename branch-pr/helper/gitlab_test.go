@@ -233,3 +233,30 @@ func TestGitLabMutationsRouteToNotesDraftsAndApprovals(t *testing.T) {
 		t.Fatalf("logs %v %v", out, err)
 	}
 }
+
+func TestGitLabStateChanges(t *testing.T) {
+	calls := mockGlab(t, map[string]any{"projects/group%2Fsub%2Fproject/merge_requests/7": Obj{"iid": 7.0}, "projects/group%2Fsub%2Fproject/merge_requests/7/merge": Obj{"iid": 7.0}})
+	run := func(event string) (glabCall, error) {
+		before := len(*calls)
+		_, err := handle(context.Background(), Request{Action: "change-state", Repo: repo, Number: 7, Event: event, Head: "abc"})
+		if err != nil {
+			return glabCall{}, err
+		}
+		return (*calls)[before], nil
+	}
+	if c, err := run("squash"); err != nil || c.method() != "PUT" || !strings.HasSuffix(c.path(), "/merge_requests/7/merge") || c.body["squash"] != true || c.body["sha"] != "abc" {
+		t.Fatalf("squash %v %v", c, err)
+	}
+	if c, err := run("merge"); err != nil || c.body["squash"] != false {
+		t.Fatalf("merge %v %v", c, err)
+	}
+	if c, err := run("close"); err != nil || !strings.HasSuffix(c.path(), "/merge_requests/7") || c.body["state_event"] != "close" {
+		t.Fatalf("close %v %v", c, err)
+	}
+	if c, err := run("reopen"); err != nil || c.body["state_event"] != "reopen" {
+		t.Fatalf("reopen %v %v", c, err)
+	}
+	if _, err := run("rebase"); err == nil {
+		t.Fatal("GitLab rebase was not refused")
+	}
+}

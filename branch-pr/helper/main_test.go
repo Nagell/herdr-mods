@@ -254,3 +254,37 @@ func TestGhErrorsAreExplained(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestChangeStateRunsTheMatchingGhCommand(t *testing.T) {
+	var got []string
+	mock(t, func(args []string, _ []byte) ([]byte, error) { got = args; return []byte("Merged\n"), nil })
+	cases := map[string][]string{
+		"merge":  {"pr", "merge", "42", "--repo", "owner/repo", "--merge", "--match-head-commit", "abc"},
+		"squash": {"pr", "merge", "42", "--repo", "owner/repo", "--squash", "--match-head-commit", "abc"},
+		"rebase": {"pr", "merge", "42", "--repo", "owner/repo", "--rebase", "--match-head-commit", "abc"},
+		"close":  {"pr", "close", "42", "--repo", "owner/repo"},
+		"reopen": {"pr", "reopen", "42", "--repo", "owner/repo"},
+	}
+	for event, want := range cases {
+		if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: event, Head: "abc"}); err != nil {
+			t.Fatal(event, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s ran %v", event, got)
+		}
+	}
+	got = nil
+	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}} {
+		r.Action, r.Repo, r.Number = "change-state", "owner/repo", 42
+		if _, err := handle(context.Background(), r); err == nil || got != nil {
+			t.Fatalf("%+v was not refused, ran %v", r, got)
+		}
+	}
+}
+
+func TestMergeMethodsFollowTheRepositorySettings(t *testing.T) {
+	got := mergeMethods(Obj{"mergeCommitAllowed": false, "squashMergeAllowed": true, "rebaseMergeAllowed": true})
+	if !reflect.DeepEqual(got, []any{"squash", "rebase"}) {
+		t.Fatal(got)
+	}
+}

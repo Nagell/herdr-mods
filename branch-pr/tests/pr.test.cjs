@@ -424,10 +424,10 @@ test('worktree form lists installed agents and opens the new space with the chos
  assert.equal(h.opened[0].command,'space.new');assert.deepEqual(h.opened[0].args.argv,['claude']);assert.equal(h.opened[0].args.tab,'my-review');assert.match(h.opened[0].args.folder,/my-review$/);assert.equal(h.mod.worktreeForm,null);
  assert.equal(findElement(h.mod.render(),'pr-worktree-launch-trigger'),undefined);
 });
-test('the form proposes the PR head branch and pr-<number> as the worktree',()=>{
+test('the form proposes the PR head branch and PR-<number> as the worktree',()=>{
  const h=harness();h.mod.pr=pr();h.mod.showWorktree(h.cx);const f=h.mod.worktreeForm;
- assert.equal(f.branch.value(),h.mod.pr.headRefName);assert.equal(f.name.value(),`pr-${h.mod.pr.number}`);
- f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),`pr-${h.mod.pr.number}`,'the worktree name is independent of the branch');
+ assert.equal(f.branch.value(),h.mod.pr.headRefName);assert.equal(f.name.value(),`PR-${h.mod.pr.number}`);
+ f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),`PR-${h.mod.pr.number}`,'the worktree name is independent of the branch');
 });
 test('PR detail lists existing worktrees and a click switches to their space or opens one',async()=>{
  const h=harness(),opened=[];h.mod.pr=pr();h.mod.mode='browser';h.context.run=(command,args)=>opened.push({command,args});
@@ -443,7 +443,7 @@ test('PR detail lists existing worktrees and a click switches to their space or 
  assert.match(strings(first),/pr-2[\s\S]*Open$/);assert.match(strings(second),/two[\s\S]*fix-2[\s\S]*Open space/);
  first.handlers.click({},h.cx);assert.equal(opened[0].command,'space.select');assert.equal(opened[0].args.id,'wt');
  second.handlers.click({},h.cx);assert.equal(opened[1].command,'space.new');assert.equal(opened[1].args.folder,'/wt/two');
- h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'fix-3');assert.equal(h.mod.worktreeForm.name.value(),'pr-2-2');
+ h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'fix-3');assert.equal(h.mod.worktreeForm.name.value(),'PR-2-2','an existing pr-2 folder is the same name on macOS');
 });
 
 test('GitLab checks load their pipeline jobs and match a job by its URL',async()=>{
@@ -498,4 +498,31 @@ test('settings from mod.json change list defaults, page size and worktree root, 
  const execs=[];h.context.exec=async(cmd,args)=>{execs.push(JSON.parse(args[0]));return{code:0,stdout:'{}'}};delete h.mod.api;await h.mod.api({action:'detail'});assert.equal(execs[0].tools.github,'gh');
  h.mod.pr=pr();h.mod.showWorktree(h.cx);assert.match(strings(h.mod.worktreeView({})),/~\/work\/o-r\//);
  assert.match(strings(h.mod.render()),/typo is not a setting/);
+});
+test('merge, close and reopen ask first, follow the PR state and reload it',async()=>{
+ const h=harness(),requests=[];h.mod.repo='o/r';const open={...pr(),mergeMethods:['squash','rebase']};h.mod.pr=open;
+ h.mod.api=async r=>{requests.push(r);return r.action==='detail'?{...pr(),state:'MERGED'}:{ok:true}};
+ let tree=h.mod.render();
+ assert.match(strings(findElement(tree,'pr-change')),/Squash and merge/);
+ h.mod.actionMenu='pr-change';tree=h.mod.render();
+ assert.ok(findElement(tree,'pr-change-option-rebase'));assert.ok(findElement(tree,'pr-change-option-close'));assert.equal(findElement(tree,'pr-change-option-merge'),undefined);
+ h.mod.actionMenu=null;
+ findElement(h.mod.render(),'pr-change-main').handlers.click({},h.cx);await h.flush();
+ assert.equal(requests.length,0,'choosing only asks');
+ tree=h.mod.render();assert.match(strings(findElement(tree,'pr-change-confirm')),/Squash and merge #2 from fix into main\? This cannot be undone/);
+ findElement(tree,'pr-change-cancel').handlers.click({},h.cx);assert.equal(findElement(h.mod.render(),'pr-change-confirm'),undefined);
+ findElement(h.mod.render(),'pr-change-main').handlers.click({},h.cx);
+ h.mod.items=[{id:'old'}];
+ findElement(h.mod.render(),'pr-change-yes').handlers.click({},h.cx);await h.flush();
+ assert.equal(requests[0].action,'change-state');assert.equal(requests[0].event,'squash');assert.equal(requests[0].head,'abc');assert.equal(requests[0].number,2);
+ assert.equal(requests[1].action,'detail');assert.equal(h.mod.items.length,0);assert.equal(h.mod.notice,'Squashed and merged.');assert.equal(h.mod.stateChange,null);
+ assert.equal(findElement(h.mod.render(),'pr-change'),undefined,'a merged PR has no state action');
+ h.mod.pr={...pr(),state:'CLOSED'};tree=h.mod.render();assert.equal(findElement(tree,'pr-change'),undefined);assert.ok(findElement(tree,'pr-change-reopen'));
+ h.mod.pr={...pr(),isDraft:true};tree=h.mod.render();assert.equal(findElement(tree,'pr-change'),undefined);assert.ok(findElement(tree,'pr-change-close'),'a draft cannot merge');
+ h.mod.pr=pr();h.mod.preview={repo:'o/r'};assert.equal(findElement(h.mod.render(),'pr-change'),undefined,'previews are read-only');
+});
+test('a failed merge keeps the confirmation and shows why',async()=>{
+ const h=harness();h.mod.repo='o/r';h.mod.pr=pr();h.mod.api=async()=>{throw Error('GitHub: required checks have not passed')};
+ h.mod.askStateChange('merge',h.cx);h.mod.changeState(h.cx);await h.flush();
+ assert.match(h.mod.error,/required checks/);assert.ok(h.mod.stateChange);assert.equal(h.mod.mutating,false);
 });

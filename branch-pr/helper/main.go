@@ -35,6 +35,7 @@ type Request struct {
 	Review      string `json:"review"`
 	Comment     string `json:"comment"`
 	Event       string `json:"event"`
+	Head        string `json:"head"`
 	// Preferences from the mod's settings.
 	PageSize int               `json:"pageSize"`
 	Tail     int               `json:"tail"`
@@ -219,7 +220,7 @@ func list(ctx context.Context, r Request) (any, error) {
 	return Obj{"items": result, "cursors": next, "viewer": login}, nil
 }
 
-const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision
+const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision
  comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt viewerCanUpdate author{login}}}
  reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state viewerDidAuthor viewerCanUpdate author{login}}}
  reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk viewerCanUpdate pullRequestReview{id state} author{login}}}}}
@@ -241,6 +242,7 @@ func detail(ctx context.Context, r Request) (any, error) {
 		}
 		if pr == nil {
 			pr = current
+			pr["mergeMethods"] = mergeMethods(object(data["repository"]))
 		}
 		for _, key := range []string{"comments", "reviews", "reviewThreads"} {
 			param := key
@@ -296,6 +298,50 @@ func detail(ctx context.Context, r Request) (any, error) {
 	}
 	return pr, nil
 }
+
+// The ways this repository's settings allow a merge, in GitHub's own order.
+func mergeMethods(repo Obj) []any {
+	methods := []any{}
+	for _, m := range []struct{ field, name string }{{"mergeCommitAllowed", "merge"}, {"squashMergeAllowed", "squash"}, {"rebaseMergeAllowed", "rebase"}} {
+		if repo[m.field] == true {
+			methods = append(methods, m.name)
+		}
+	}
+	return methods
+}
+
+// A merge names the head the person saw, so a push after that is refused rather than merged unseen.
+func checkStateChange(r Request) error {
+	if r.Number < 1 {
+		return errors.New("PR number required")
+	}
+	switch r.Event {
+	case "close", "reopen":
+		return nil
+	case "merge", "squash", "rebase":
+		if r.Head == "" {
+			return errors.New("head commit required to merge")
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown state change %q", r.Event)
+}
+
+func changeState(ctx context.Context, r Request) (any, error) {
+	if err := checkStateChange(r); err != nil {
+		return nil, err
+	}
+	number := strconv.Itoa(r.Number)
+	args := []string{"pr", r.Event, number, "--repo", r.Repo}
+	if r.Event != "close" && r.Event != "reopen" {
+		args = []string{"pr", "merge", number, "--repo", r.Repo, "--" + r.Event, "--match-head-commit", r.Head}
+	}
+	if _, err := runner(ctx, args, nil); err != nil {
+		return nil, err
+	}
+	return Obj{"ok": true}, nil
+}
+
 func branchPRs(ctx context.Context, r Request) (any, error) {
 	if strings.TrimSpace(r.Branch) == "" {
 		return nil, errors.New("branch is required")
@@ -395,6 +441,8 @@ func handle(ctx context.Context, r Request) (any, error) {
 			return nil, errors.New("invalid run")
 		}
 		return gh(ctx, "api", "--paginate", "--slurp", fmt.Sprintf("repos/%s/actions/runs/%d/jobs?per_page=100", r.Repo, r.Run))
+	case "change-state":
+		return changeState(ctx, r)
 	case "comment":
 		if r.Number < 1 || strings.TrimSpace(r.Body) == "" {
 			return nil, errors.New("PR number and body required")

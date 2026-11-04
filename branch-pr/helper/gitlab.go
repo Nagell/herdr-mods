@@ -324,6 +324,7 @@ func (g *gitlab) detail(iid int) (Obj, error) {
 	} else {
 		pr["checks"] = checks
 	}
+	pr["mergeMethods"] = []any{"merge", "squash"}
 	return pr, nil
 }
 
@@ -490,6 +491,17 @@ func gitlabHandle(ctx context.Context, r Request, host, path string) (any, error
 			b = b[len(b)-limit:]
 		}
 		return Obj{"text": string(b), "truncated": truncated}, nil
+	case "change-state":
+		if err := checkStateChange(r); err != nil {
+			return nil, err
+		}
+		switch r.Event {
+		case "close", "reopen":
+			return g.call("PUT", g.mrPath(r.Number, ""), Obj{"state_event": r.Event})
+		case "rebase":
+			return nil, errors.New("GitLab has no rebase merge here; use Merge or Squash and merge")
+		}
+		return g.call("PUT", g.mrPath(r.Number, "/merge"), Obj{"squash": r.Event == "squash", "sha": r.Head})
 	case "comment":
 		if r.Number < 1 || strings.TrimSpace(r.Body) == "" {
 			return nil, errors.New("merge request number and body required")
