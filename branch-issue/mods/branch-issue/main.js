@@ -1489,7 +1489,7 @@ export default class LinearIssues extends View {
       .child(
         div()
           .font_semibold()
-          .child(this.mode === "branch" ? "Issue" : "Linear"),
+          .child(this.mode === "branch" ? "Issue" : "Issues"),
       );
     if (this.mode === "branch" && this.branchIssues.length > 1)
       title.child(
