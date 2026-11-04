@@ -17,9 +17,9 @@ function harness(existingStorage) {
     shared:()=>null,setShared:(k,v)=>{context.sharedWrites.push([k,v])},sharedWrites:[],settings:()=>({font_size:14}),run:(command,args)=>{context.runs.push({command,args})},runs:[],props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),knownAgents:async()=>[{key:'claude',name:'Claude Code',run:['claude'],installed:true},{key:'codex',name:'Codex',run:['codex'],installed:false}],
     localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}, console };
   vm.createContext(context);
-  const typography=fs.readFileSync('mods/linear-issue/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
+  const typography=fs.readFileSync('mods/branch-issue/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
   vm.runInContext(typography,context);
-  const source=fs.readFileSync('mods/linear-issue/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class LinearIssues','globalThis.Mod = class LinearIssues').replaceAll('export function','function');
+  const source=fs.readFileSync('mods/branch-issue/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class LinearIssues','globalThis.Mod = class LinearIssues').replaceAll('export function','function');
   vm.runInContext(source,context);
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';mod.me={id:'me',name:'Me'};mod.teams=[{key:'ENG',name:'Engineering'}];
   return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};
@@ -160,5 +160,5 @@ test('worktree creation refuses bad names and existing branches, and a space-ope
 test('All issues opens one browser tab per space and reuses it',()=>{
  const h=harness();h.mod.mode='branch';h.live.spaces=[{active:true,id:'space',folder:'/repo',tabs:[{id:'tab',active:true}]}];
  h.mod.openBrowser(h.cx);assert.equal(h.context.runs[0].command,'tab.new');assert.equal(h.context.runs[0].args.name,'All issues');assert.equal(h.context.runs[0].args.props.mode,'browser');
- h.live.panes=[{tab:'tab',mod:'linear-issue'}];h.mod.openBrowser(h.cx);assert.equal(h.context.runs[1].command,'tab.select');
+ h.live.panes=[{tab:'tab',mod:'branch-issue'}];h.mod.openBrowser(h.cx);assert.equal(h.context.runs[1].command,'tab.select');
 });

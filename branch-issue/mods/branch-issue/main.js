@@ -1,4 +1,4 @@
-// Linear Issue: one view serves two roles.
+// Branch Issue: one view serves two roles.
 //
 //   mode "branch"   the sidebar, showing the issue bound to the current checkout
 //   mode "browser"  the "All issues" tab, with search, filters and issue details
@@ -85,8 +85,8 @@ function activeSpace() {
   if (!sp) return null;
   const tab = sp.tabs?.find((t) => t.active)?.id;
   const candidates = panes().filter((p) => p.tab === tab && p.cwd);
-  const browser = panes().some((p) => p.tab === tab && p.mod === "linear-issue");
-  const source = browser ? (shared("linear-issue.browser-tabs") ?? {})[sp.id]?.source : null;
+  const browser = panes().some((p) => p.tab === tab && p.mod === "branch-issue");
+  const source = browser ? (shared("branch-issue.browser-tabs") ?? {})[sp.id]?.source : null;
   const cwd = candidates.find((p) => p.focused)?.cwd ?? candidates[0]?.cwd ?? source?.cwd;
   return {
     ...sp,
@@ -132,13 +132,13 @@ export default class LinearIssues extends View {
     // Optional Better Tabs integration: lets its tab bar draw an icon on our mod tabs.
     setShared("mod-icons", {
       ...(shared("mod-icons") ?? {}),
-      "linear-issue": "mods/linear-issue/issue.svg",
+      "branch-issue": "mods/branch-issue/issue.svg",
     });
     this.source = props()?.source ?? _props?.source;
     this.browserSpace = props()?.space ?? _props?.space;
     if (this.mode === "browser" && this.source && this.browserSpace) {
-      setShared("linear-issue.browser-tabs", {
-        ...(shared("linear-issue.browser-tabs") ?? {}),
+      setShared("branch-issue.browser-tabs", {
+        ...(shared("branch-issue.browser-tabs") ?? {}),
         [this.browserSpace]: { source: this.source, pending: null },
       });
     }
@@ -210,7 +210,7 @@ export default class LinearIssues extends View {
             space.tabs?.some(
               (tab) =>
                 tab.active &&
-                panes().some((pane) => pane.tab === tab.id && pane.mod === "linear-issue"),
+                panes().some((pane) => pane.tab === tab.id && pane.mod === "branch-issue"),
             ),
         );
       const canRefresh =
@@ -281,23 +281,23 @@ export default class LinearIssues extends View {
     const sp = this.currentSpace();
     if (!sp) return;
     const ids = new Set((sp.tabs ?? []).map((tab) => tab.id));
-    const tab = panes().find((p) => p.mod === "linear-issue" && ids.has(p.tab))?.tab;
+    const tab = panes().find((p) => p.mod === "branch-issue" && ids.has(p.tab))?.tab;
     if (tab) {
       run("tab.select", { id: tab });
       return;
     }
-    const entries = shared("linear-issue.browser-tabs") ?? {};
+    const entries = shared("branch-issue.browser-tabs") ?? {};
     if (entries[sp.id]?.pending && Date.now() - entries[sp.id].pending < TAB_OPEN_TIMEOUT_MS)
       return;
     const source = { cwd: sp.folder, on: sp.machine ?? null };
-    setShared("linear-issue.browser-tabs", {
+    setShared("branch-issue.browser-tabs", {
       ...entries,
       [sp.id]: { source, pending: Date.now() },
     });
     run("tab.new", {
       space: sp.id,
       name: "All issues",
-      mod: "linear-issue",
+      mod: "branch-issue",
       props: { mode: "browser", space: sp.id, source },
     });
     cx.notify();
@@ -464,7 +464,7 @@ export default class LinearIssues extends View {
   async api(request, sp = this.sp) {
     // The key and the helper live on this computer, including for remote spaces.
     const result = await exec(
-      `${appHome()}/mods/linear-issue/bin/herdr-linear`,
+      `${appHome()}/mods/branch-issue/bin/herdr-linear`,
       [JSON.stringify(request)],
       { cwd: sp?.machine ? undefined : sp?.folder },
     );
@@ -1207,7 +1207,7 @@ export default class LinearIssues extends View {
       .when(!options.disabled, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
       .children(children)
       .when(!options.disabled, (el) =>
-        el.child(svg("mods/linear-issue/chevron-down.svg").size(11).text_color(t.dim)),
+        el.child(svg("mods/branch-issue/chevron-down.svg").size(11).text_color(t.dim)),
       );
   }
 
@@ -1253,7 +1253,7 @@ export default class LinearIssues extends View {
           .on_click((_e, cx) => action(cx)),
       )
       .when(Boolean(asset), (el) =>
-        el.child(svg(`mods/linear-issue/${asset}.svg`).size(14).flex_none()),
+        el.child(svg(`mods/branch-issue/${asset}.svg`).size(14).flex_none()),
       )
       .when(!options.iconOnly, (el) => el.child(label));
   }
@@ -1372,7 +1372,7 @@ export default class LinearIssues extends View {
   render() {
     const t = theme();
     const root = v_flex()
-      .id("linear-issue")
+      .id("branch-issue")
       .size_full()
       .min_w(0)
       .min_h(0)
@@ -1458,7 +1458,7 @@ export default class LinearIssues extends View {
     if (this.mode === "branch") {
       const space = spaces().find((s) => s.active);
       const activeTab = space?.tabs?.find((tab) => tab.active)?.id;
-      const browserOpen = panes().some((p) => p.tab === activeTab && p.mod === "linear-issue");
+      const browserOpen = panes().some((p) => p.tab === activeTab && p.mod === "branch-issue");
       actions
         .child(
           h_flex()
@@ -1476,13 +1476,13 @@ export default class LinearIssues extends View {
             .accessibility_label("All issues")
             .hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => this.openBrowser(cx))
-            .child(svg("mods/linear-issue/issue.svg").size(14))
+            .child(svg("mods/branch-issue/issue.svg").size(14))
             .child("All issues"),
         )
         .child(
           this.iconButton(
             "issue-refresh",
-            "mods/linear-issue/refresh.svg",
+            "mods/branch-issue/refresh.svg",
             "Refresh issues",
             (cx) => this.refresh(cx),
             t,
@@ -1672,7 +1672,7 @@ export default class LinearIssues extends View {
       header.child(
         this.iconButton(
           "issue-back",
-          "mods/linear-issue/back.svg",
+          "mods/branch-issue/back.svg",
           "Back to issues",
           (cx) => this.backToList(cx),
           t,
@@ -1706,7 +1706,7 @@ export default class LinearIssues extends View {
         el.child(
           this.iconButton(
             "issue-unlink",
-            "mods/linear-issue/unlink.svg",
+            "mods/branch-issue/unlink.svg",
             `Unlink ${issue.identifier} from ${this.branch}`,
             (cx) => this.unlinkIssue(issue.identifier, cx),
             t,
@@ -1717,7 +1717,7 @@ export default class LinearIssues extends View {
       .child(
         this.iconButton(
           "issue-detail-open",
-          "mods/linear-issue/external.svg",
+          "mods/branch-issue/external.svg",
           "Open issue in Linear",
           (cx) => cx.open_url(issue.url),
           t,
@@ -1849,7 +1849,7 @@ export default class LinearIssues extends View {
           "issue-assignee-trigger",
           t,
           [
-            svg("mods/linear-issue/user.svg").size(12).text_color(t.dim),
+            svg("mods/branch-issue/user.svg").size(12).text_color(t.dim),
             div().child(issue.assignee ? person(issue.assignee) : "Unassigned"),
           ],
           { disabled: this.mutating },
@@ -1900,7 +1900,7 @@ export default class LinearIssues extends View {
           )
           .child(this.dot(label.color, 7))
           .child(div().child(label.name))
-          .child(svg("mods/linear-issue/close.svg").size(9).text_color(t.dim)),
+          .child(svg("mods/branch-issue/close.svg").size(9).text_color(t.dim)),
       );
     // Group labels are containers in Linear and cannot be applied themselves.
     const addable = (issue.team?.labels ?? []).filter(
@@ -1984,7 +1984,7 @@ export default class LinearIssues extends View {
           .cursor_pointer()
           .hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => cx.open_url(a.url))
-          .child(svg("mods/linear-issue/link.svg").size(14).flex_none().text_color(t.muted))
+          .child(svg("mods/branch-issue/link.svg").size(14).flex_none().text_color(t.muted))
           .child(
             v_flex()
               .flex_1()
@@ -2281,9 +2281,9 @@ export default class LinearIssues extends View {
               });
             cx.notify();
           })
-          .child(svg("mods/linear-issue/checkout.svg").size(14).flex_none().text_color(t.muted))
+          .child(svg("mods/branch-issue/checkout.svg").size(14).flex_none().text_color(t.muted))
           .child(div().flex_none().text_size(em(0.9)).child(worktree.name))
-          .child(svg("mods/linear-issue/branch.svg").size(12).flex_none().text_color(t.dim))
+          .child(svg("mods/branch-issue/branch.svg").size(12).flex_none().text_color(t.dim))
           .child(
             div()
               .flex_1()
@@ -2335,7 +2335,7 @@ export default class LinearIssues extends View {
         .gap(6)
         .border_b(1)
         .border_color(t.border)
-        .child(svg("mods/linear-issue/checkout.svg").size(13).text_color(t.dim))
+        .child(svg("mods/branch-issue/checkout.svg").size(13).text_color(t.dim))
         .child(
           div()
             .flex_1()
@@ -2388,7 +2388,7 @@ export default class LinearIssues extends View {
             .hover((s) => s.bg(t.hover))
             .child(div().text_color(t.dim).child("Open with"))
             .child(div().child(current.name))
-            .child(svg("mods/linear-issue/chevron-down.svg").size(11).text_color(t.dim)),
+            .child(svg("mods/branch-issue/chevron-down.svg").size(11).text_color(t.dim)),
           choices.map((c) => ({ key: c.key, label: c.name })),
           (choice, cx) => {
             form.launch = choice.key;

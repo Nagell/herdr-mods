@@ -1,4 +1,4 @@
-# Linear Issue
+# Branch Issue
 
 A standalone native Linear issue sidebar and issue browser for a person's existing Herdr window, built as a sibling of GitHub PR. It talks to Linear's GraphQL API through a bundled helper that reads the personal API key only from the LINEAR_API_KEY environment variable (its own, then a login shell's); a missing or rejected key must surface as a plain panel message naming LINEAR_API_KEY with Retry, never a key field or a generic failure. The sidebar shows the issue bound to the active checkout; All issues opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow, Better Tabs, or GitHub PR dependency.
 
@@ -16,7 +16,7 @@ Linear states carry hex colours; draw them with a dot, never a mapped theme colo
 
 Branch discovery follows the active terminal cwd and machine. Read the symbolic branch, then union identifiers from `git config branch.<branch>.herdr-issue` (comma separated) with `TEAM-123` patterns in the branch name (uppercased, at most four candidates), confirm them with the helper's `resolve` action which drops unknown identifiers, prefer the binding's order, and remember the picked identifier per space. No match shows a Link issue field that confirms the identifier with Linear and appends it to the binding. An issue present only through the binding gets an Unlink icon in the detail header that removes it from the binding (unsetting the key when it empties); identifiers found in the branch name never get one.
 
-All issues opens one browser mod tab per space using tab.new; subsequent clicks select it with tab.select. Save source {cwd,on} and space in props; guard rapid repeated opens. On init write mod-icons["linear-issue"] = the package's issue.svg path, nothing else shared. Load viewer and teams once per panel; use the viewer id for Edit on own comments and the Me assignee choice.
+All issues opens one browser mod tab per space using tab.new; subsequent clicks select it with tab.select. Save source {cwd,on} and space in props; guard rapid repeated opens. On init write mod-icons["branch-issue"] = the package's issue.svg path, nothing else shared. Load viewer and teams once per panel; use the viewer id for Edit on own comments and the Me assignee choice.
 
 Debounce search 450ms; queries shorter than three characters clear server filtering. The helper builds an IssueFilter: assignee isMe for My issues, cycle isActive for Active cycle, state type sets for the state filter, team key for the team filter, and an `or` of title/description containsIgnoreCase plus a team-key/number match when the query looks like an identifier. Order by updatedAt with one cursor. Refresh roughly once per minute when visible and on explicit refresh.
 
@@ -28,7 +28,7 @@ Commands: open-browser/toggle, refresh, back, open:<identifier>, description/com
 
 ## Built from
 
-One package with mods/linear-issue/main.js, typography.js (identical to GitHub PR's), mod.json (place:none, title:Linear Issue), SVGs, helper/go.mod/main.go/main_test.go, install.py, tests, and docs. The dependency-free Go 1.23+ helper posts to https://api.linear.app/graphql with the key in the Authorization header, reads the key from LINEAR_API_KEY, falling back to `$SHELL -lic 'printf %s "$LINEAR_API_KEY"'`, and never stores it. Actions: viewer, list, detail (identifier or UUID), resolve, comment, edit-comment, update. Comment pagination is followed to the end.
+One package with mods/branch-issue/main.js, typography.js (identical to GitHub PR's), mod.json (place:none, title:Branch Issue), SVGs, helper/go.mod/main.go/main_test.go, install.py, tests, and docs. The dependency-free Go 1.23+ helper posts to https://api.linear.app/graphql with the key in the Authorization header, reads the key from LINEAR_API_KEY, falling back to `$SHELL -lic 'printf %s "$LINEAR_API_KEY"'`, and never stores it. Actions: viewer, list, detail (identifier or UUID), resolve, comment, edit-comment, update. Comment pagination is followed to the end.
 
 Native GPUI div/svg and gpui-base flex, input/textarea, Markdown, and Popover controls. One keyboard-navigable dropdown helper serves every picker. Herdr supplies spaces, panes, agents, props, shared/setShared, exec, hc, home/appHome, theme, nextCommand, run, knownAgents, timers, native URL opening, and localStorage.
 
@@ -36,7 +36,7 @@ Native GPUI div/svg and gpui-base flex, input/textarea, Markdown, and Popover co
 
 The key is a personal token with the person's full Linear access: say so before install and never log it. The login-shell fallback runs the person's shell startup files once per request. Linear's branchName follows the team's branch format, which may contain slashes; the worktree name is its slug. The assignee picker only lists active team members. Attachment rows open their URL; there is no cross-mod call into GitHub PR.
 
-Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Add a block `{ "mod": "linear-issue", "props": { "mode": "branch" } }` to the panel stack or replace one slot, preserving node IDs, dimensions, sibling panels, and keys. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
+Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Add a block `{ "mod": "branch-issue", "props": { "mode": "branch" } }` to the panel stack or replace one slot, preserving node IDs, dimensions, sibling panels, and keys. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
 
 ## Done when
 

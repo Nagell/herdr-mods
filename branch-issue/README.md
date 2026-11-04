@@ -1,8 +1,8 @@
-# Linear Issue
+# Branch Issue
 
 A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](https://herdr.dev/), built as a sibling of [GitHub PR](../github-pr/README.md).
 
-![Linear Issue](preview.png)
+![Branch Issue](preview.png)
 
 - **Branch sidebar:** the issue linked to the current checkout, found from a `branch.<name>.herdr-issue` binding or the identifier in the branch name (`me/eng-123-fix-login` → `ENG-123`). Several identifiers on one branch give a picker.
 - **All issues:** one reusable browser tab per space with search, **My issues / Active cycle / All** scopes, state and team filters, grouped by workflow state.
@@ -13,7 +13,7 @@ A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](h
 
 ## Install
 
-> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/linear-issue
+> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-issue
 
 Requirements: Herdr with native mod tabs, Python 3 for the installer, **Go 1.23+** to build the helper, Git on source machines, and a **Linear personal API key**. Agent actions additionally use `hc` and a live agent in the source space.
 
@@ -29,16 +29,16 @@ python3 install.py
 python3 install.py --update
 ```
 
-The installer builds the local helper without third-party Go dependencies, copies **only** `mods/linear-issue/` and the helper to `~/.config/herdr-app/mods/linear-issue/`, then runs `herdr-app check`. It does not edit layouts or keys. `HERDR_APP_HOME` or `--app-home` selects a different config home. It refuses an existing name unless `--update` is explicitly supplied for an existing Linear Issue manifest.
+The installer builds the local helper without third-party Go dependencies, copies **only** `mods/branch-issue/` and the helper to `~/.config/herdr-app/mods/branch-issue/`, then runs `herdr-app check`. It does not edit layouts or keys. `HERDR_APP_HOME` or `--app-home` selects a different config home. It refuses an existing name unless `--update` is explicitly supplied for an existing Branch Issue manifest.
 
-The helper is installed at `mods/linear-issue/bin/herdr-linear`. Go is needed only to build it, not at runtime.
+The helper is installed at `mods/branch-issue/bin/herdr-linear`. Go is needed only to build it, not at runtime.
 
 ### Place the sidebar
 
 Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or create a new layout. Add a block to the panel stack, or replace an existing slot's content preserving its ID and dimensions:
 
 ```json
-{ "mod": "linear-issue", "props": { "mode": "branch" } }
+{ "mod": "branch-issue", "props": { "mode": "branch" } }
 ```
 
 The manifest has `place: none`, so copying alone does not dock a sidebar. The **All issues** button opens/selects a browser tab directly; no toolbar integration is required.
@@ -46,7 +46,7 @@ The manifest has `place: none`, so copying alone does not dock a sidebar. The **
 ### Open a browser tab
 
 ```sh
-herdr-app do tab.new '{"name":"All issues","mod":"linear-issue","props":{"mode":"browser"}}'
+herdr-app do tab.new '{"name":"All issues","mod":"branch-issue","props":{"mode":"browser"}}'
 ```
 
 The sidebar's **All issues** action supplies `{mode:"browser",space,source:{cwd,on}}`, pinning the checkout and machine captured when opened. Repeated opens reuse the current space's existing tab.
@@ -59,8 +59,8 @@ On start the mod publishes its icon under the shared `mod-icons` map so a Better
 {
   "id": "issues",
   "label": "Issue",
-  "icon": "mods/linear-issue/issue.svg",
-  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "linear-issues" }
+  "icon": "mods/branch-issue/issue.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "branch-issues" }
 }
 ```
 
@@ -86,8 +86,8 @@ Comments open an editor with Markdown preview; nothing posts before an explicit 
 
 Commands reach shown mod copies:
 
-- `linear-issue.open-browser` (alias `toggle`): open/select the reusable browser tab.
-- `linear-issue.refresh`, `linear-issue.back`, `linear-issue.open:ENG-123` (browser), `linear-issue.description`, `linear-issue.comments`, `linear-issue.links`, `linear-issue.worktree`.
+- `branch-issue.open-browser` (alias `toggle`): open/select the reusable browser tab.
+- `branch-issue.refresh`, `branch-issue.back`, `branch-issue.open:ENG-123` (browser), `branch-issue.description`, `branch-issue.comments`, `branch-issue.links`, `branch-issue.worktree`.
 
 ## Development
 
@@ -95,7 +95,7 @@ Commands reach shown mod copies:
 node --test tests/*.test.cjs
 python3 -m unittest discover -s tests
 (cd helper && go test ./... && go vet ./...)
-herdr-app check "$HOME/.config/herdr-app/mods/linear-issue"
+herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"
 ```
 
 `main.js` owns native UI, branch and browser state, commands, and async invalidation. `typography.js` is shared with GitHub PR byte for byte. `helper/main.go` is the JSON bridge to Linear's GraphQL API with validated requests, key storage, and a 26-second timeout. Tests use mocked API calls, not live Linear writes.
