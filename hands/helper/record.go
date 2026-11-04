@@ -56,9 +56,22 @@ func alive(pid int) bool {
 	return err != nil || !strings.HasPrefix(strings.TrimSpace(string(state)), "Z")
 }
 
+// A pid alone may have been reused, so the process must also look like a recorder.
+func isRecorder(pid int) bool {
+	if !alive(pid) {
+		return false
+	}
+	command, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	return err == nil && (strings.Contains(string(command), "screencapture") || strings.Contains(string(command), "record-worker"))
+}
+
 func currentRecording() (Recording, bool) {
 	var r Recording
-	if err := readState("record.json", &r); err != nil || !alive(r.Pid) {
+	if err := readState("record.json", &r); err != nil {
+		return r, false
+	}
+	if !isRecorder(r.Pid) {
+		_ = os.Remove(filepath.Join(stateDir(), "record.json"))
 		return r, false
 	}
 	return r, true

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,9 @@ func resolveApp(spec string, apps []App) (App, error) {
 	}
 	return App{}, fmt.Errorf("no running app matches %q; run `hands apps`", spec)
 }
+
+// The keyboard layout APIs must be called on the process's main thread.
+func init() { runtime.LockOSThread() }
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -297,7 +301,7 @@ func run(args []string, out *os.File) error {
 		}
 		items := elementsFrom(raw)
 		snapshot := Snapshot{Pid: pid, App: name, Elements: items}
-		if err := writeState("snapshot.json", snapshot); err != nil {
+		if err := saveSnapshot(snapshot); err != nil {
 			return err
 		}
 		emit(snapshot, func() string {
@@ -338,7 +342,7 @@ func run(args []string, out *os.File) error {
 		if opts["right"] == "true" || clicks == 2 {
 			v, err = click(s.Pid, cx, cy, opts["right"] == "true", clicks)
 		} else {
-			v, err = act(s.Pid, cx, cy, e.Role, "press", "")
+			v, err = act(s.Pid, cx, cy, e, "press", "")
 		}
 		if err != nil {
 			return err
@@ -358,7 +362,7 @@ func run(args []string, out *os.File) error {
 		if rest[0] == "set" {
 			value = strings.Join(rest[2:], " ")
 		}
-		v, err := act(s.Pid, e.X+e.W/2, e.Y+e.H/2, e.Role, rest[0], value)
+		v, err := act(s.Pid, e.X+e.W/2, e.Y+e.H/2, e, rest[0], value)
 		if err != nil {
 			return err
 		}

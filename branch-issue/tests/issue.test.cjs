@@ -181,3 +181,12 @@ test('list defaults reload the list unless a saved view exists',async()=>{
  h=harness();h.context.readTextFile=settings;h.mod.mode='browser';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
  h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.scope,'mine');assert.equal(loads,0);
 });
+
+test('a refresh keeps loaded pages and their cursor',async()=>{
+ const h=harness();h.mod.mode='browser';h.mod.ensureViewer=async()=>{};
+ h.mod.items=[{id:'1'},{id:'2'},{id:'3'}];h.mod.cursor='next';
+ h.mod.api=async()=>({items:[{id:'1',title:'New'}],cursor:'first'});
+ h.mod.loadList(h.cx,false,true);await h.flush();
+ assert.equal(h.mod.items.length,3);assert.equal(h.mod.items[0].title,'New');assert.equal(h.mod.cursor,'next');
+ h.mod.loadList(h.cx);await h.flush();assert.equal(h.mod.items.length,1);assert.equal(h.mod.cursor,'first');
+});

@@ -393,7 +393,7 @@ export default class LinearIssues extends View {
   refresh(cx) {
     if (this.mode === "branch") this.loadBranchIssues(cx);
     else if (this.issue) this.openIssue(this.issue.identifier, cx);
-    else this.loadList(cx);
+    else this.loadList(cx, false, true);
   }
 
   // ── Saved navigation and drafts (localStorage) ───────────────────────────
@@ -695,7 +695,9 @@ export default class LinearIssues extends View {
     return `${this.spaceKey}:${this.scope}:${this.state}:${this.team}:${this.serverSearch ?? ""}`;
   }
 
-  loadList(cx, more = false) {
+  // A refresh re-reads page one and keeps any further pages already loaded.
+  // shortcut: an item that left the filter stays until the next full load.
+  loadList(cx, more = false, refresh = false) {
     if (this.mode !== "browser" || !this.sp?.folder) return;
     this.rememberView();
     const token = ++this.listToken;
@@ -715,10 +717,11 @@ export default class LinearIssues extends View {
         await this.ensureViewer();
         const data = await this.api(request);
         if (token !== this.listToken || key !== this.spaceKey) return;
-        const merged = new Map((more ? this.items : []).map((i) => [i.id, i]));
+        const keep = refresh && this.items.length > data.items.length;
+        const merged = new Map((more || keep ? this.items : []).map((i) => [i.id, i]));
         for (const item of data.items) merged.set(item.id, item);
         this.items = [...merged.values()];
-        this.cursor = data.cursor ?? "";
+        if (!keep) this.cursor = data.cursor ?? "";
         this.refreshed = Date.now();
         this.lastUpdated = Date.now();
         // Reopen the issue that was open when this tab was last shown.

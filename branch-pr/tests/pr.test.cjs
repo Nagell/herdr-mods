@@ -462,6 +462,32 @@ test('list defaults reload the list unless a saved view exists',async()=>{
  h=harness();h.context.readTextFile=settings;h.mod.mode='browser';h.mod.repo='o/r';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
  h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.state,'open');assert.equal(loads,0);
 });
+test('reloading the list on screen keeps loaded pages and their cursor',async()=>{
+ const h=harness();h.mod.repo='o/r';h.mod.settings={...h.mod.settings,list:{...h.mod.settings.list,page_size:2}};
+ const card=n=>({id:`p${n}`,number:n,updatedAt:`2026-01-0${9-n}`,reasons:[]});
+ h.mod.items=[1,2,3,4].map(card);h.mod.cursors={all:'next'};h.mod.cache[h.mod.listKey()]={items:h.mod.items,cursors:h.mod.cursors};
+ h.mod.api=async()=>({items:[{...card(1),title:'New'},card(2)],cursors:{all:'first'}});
+ h.mod.loadList(h.cx);await h.flush();
+ assert.equal(h.mod.items.length,4);assert.equal(h.mod.items[0].title,'New');assert.equal(h.mod.cursors.all,'next');
+ h.mod.state='draft';h.mod.loadList(h.cx);await h.flush();assert.equal(h.mod.items.length,2);assert.equal(h.mod.cursors.all,'first');
+});
+test('GitLab bindings read back and repository names match in any case',async()=>{
+ const h=harness();h.mod.mode='branch';const requests=[];
+ h.context.exec=async(cmd,args)=>args[0]==='config'?{code:0,stdout:'gitlab.com/g/sub/p#5\n'}:{code:0,stdout:'feature\n'};
+ h.mod.api=async r=>{requests.push(r);return{...pr(),number:r.number,id:'mr'}};
+ h.mod.loadBranchPRs(h.cx);await h.flush();
+ assert.equal(requests[0].repo,'gitlab.com/g/sub/p');assert.equal(requests[0].number,5);assert.equal(h.mod.branchPRs.length,1);
+ const k=harness();k.mod.mode='branch';k.mod.discoverRemotes=async()=>[{name:'origin',repo:'MyOrg/Repo'}];
+ k.context.exec=async(cmd,args)=>args[0]==='config'?{code:1,stdout:''}:{code:0,stdout:'feature\n'};
+ k.mod.api=async r=>r.action==='branch'?{items:[{id:'a',number:1,repository:'MyOrg/Repo',headRepository:{nameWithOwner:'myorg/repo'},state:'OPEN',updatedAt:'2026-01-02'}]}:{...pr(),number:1,id:'a'};
+ k.mod.loadBranchPRs(k.cx);await k.flush();assert.equal(k.mod.branchPRs.length,1);
+});
+test('SSH aliases for GitHub resolve and unknown aliases are refused',()=>{
+ const h=harness();
+ assert.equal(vm.runInContext('repositoryFromRemote("git@github-work:me/repo.git")',h.context),'me/repo');
+ assert.equal(vm.runInContext('repositoryFromRemote("git@github.com-work:me/repo.git")',h.context),'me/repo');
+ assert.throws(()=>vm.runInContext('repositoryFromRemote("git@work:me/repo.git")',h.context));
+});
 test('settings from mod.json change list defaults, page size and worktree root, and problems are shown',async()=>{
  const h=harness();h.context.readTextFile=async()=>JSON.stringify({settings:{list:{page_size:10,default:{state:'draft'}},worktrees:{root:'~/work'},refresh:{every:5},typo:1,logs:{keep_last:true}}});
  h.mod.applySettings(h.cx);await h.flush();

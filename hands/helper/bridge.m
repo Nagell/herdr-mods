@@ -4,6 +4,7 @@
 // focus are never taken.
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <Carbon/Carbon.h>
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
@@ -314,28 +315,62 @@ static bool focusedElementContains(int pid, double x, double y) {
     return inside;
 }
 
-char *hands_act(int pid, double x, double y, const char *role, const char *action, const char *value) {
+bool hands_layout_key(unsigned int character, int *code, int *shift, bool *available) {
+    *available = false;
+    TISInputSourceRef source = TISCopyCurrentKeyboardLayoutInputSource();
+    if (!source) return false;
+    CFDataRef data = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData);
+    bool found = false;
+    if (data) {
+        *available = true;
+        const UCKeyboardLayout *layout = (const UCKeyboardLayout *)CFDataGetBytePtr(data);
+        for (int level = 0; level < 2 && !found; level++) {
+            for (int key = 0; key < 128 && !found; key++) {
+                UInt32 dead = 0;
+                UniChar text[4];
+                UniCharCount length = 0;
+                // A dead key produces no text here, so it is never chosen.
+                OSStatus status = UCKeyTranslate(layout, key, kUCKeyActionDown, level ? shiftKey >> 8 : 0, LMGetKbdType(), 0, &dead, 4, &length, text);
+                if (status == noErr && length == 1 && text[0] == character) {
+                    *code = key;
+                    *shift = level;
+                    found = true;
+                }
+            }
+        }
+    }
+    CFRelease(source);
+    return found;
+}
+
+char *hands_act(int pid, double x, double y, const char *role, const char *title, const char *desc, const char *action, const char *value) {
     @autoreleasepool {
         if (!AXIsProcessTrusted()) return failure(@"Accessibility access is not granted. Run `hands permissions --ask`.");
         NSString *wantedRole = [NSString stringWithUTF8String:role];
         NSString *what = [NSString stringWithUTF8String:action];
         AXUIElementRef element = elementAt(pid, x, y, wantedRole);
-        NSString *foundRole = element ? attributeString(element, kAXRoleAttribute) : @"";
+        if (!element) return failure(@"Nothing is at that position any more. Run `hands see` again.");
+        NSString *foundRole = attributeString(element, kAXRoleAttribute);
+        // Never act on something other than the element the listing showed.
+        NSString *wantedTitle = [NSString stringWithUTF8String:title];
+        NSString *wantedDesc = [NSString stringWithUTF8String:desc];
+        if (![foundRole isEqualToString:wantedRole] ||
+            (wantedTitle.length && ![attributeString(element, kAXTitleAttribute) isEqualToString:wantedTitle]) ||
+            (wantedDesc.length && ![attributeString(element, kAXDescriptionAttribute) isEqualToString:wantedDesc])) {
+            CFRelease(element);
+            return failure(@"The element at that position has changed since the listing, so nothing was done. Run `hands see` again.");
+        }
         AXError error = kAXErrorFailure;
-        if ([what isEqualToString:@"focus"] && element) {
+        if ([what isEqualToString:@"focus"]) {
             error = AXUIElementSetAttributeValue(element, kAXFocusedAttribute, kCFBooleanTrue);
-        } else if ([what isEqualToString:@"set"] && element) {
-            if (![foundRole isEqualToString:wantedRole]) {
-                CFRelease(element);
-                return failure([NSString stringWithFormat:@"The element at that position is now %@, not %@. Run `hands see` again.", foundRole, wantedRole]);
-            }
+        } else if ([what isEqualToString:@"set"]) {
             Boolean settable = false;
             AXUIElementIsAttributeSettable(element, kAXValueAttribute, &settable);
             if (settable) {
                 NSString *text = [NSString stringWithUTF8String:value];
                 error = AXUIElementSetAttributeValue(element, kAXValueAttribute, (__bridge CFTypeRef)text);
             }
-        } else if (element) {
+        } else {
             error = AXUIElementPerformAction(element, kAXPressAction);
             // Rows and tabs have no press action; selecting them is the click.
             // Outlines act on their selected-rows list, so set that on the parent too.
@@ -351,8 +386,12 @@ char *hands_act(int pid, double x, double y, const char *role, const char *actio
                 }
             }
         }
-        if (element) CFRelease(element);
+        CFRelease(element);
         if (error == kAXErrorSuccess) return dupJSON(@{@"ok": @YES, @"via": @"ax", @"role": foundRole});
+        // Focusing must not turn into a click, which could activate the element.
+        if ([what isEqualToString:@"focus"]) return failure(@"This element does not accept focus, so nothing was done. Try `hands click N` if clicking it is safe.");
+        // The app may have acted without answering in time; a click could do it twice.
+        if (error == kAXErrorCannotComplete) return failure(@"The app did not answer. Run `hands see` to check whether it acted.");
         // Fallback: synthetic input, which also works for elements without AX actions.
         if ([what isEqualToString:@"set"]) {
             char *clicked = hands_click(pid, x, y, 0, 1);
@@ -360,15 +399,16 @@ char *hands_act(int pid, double x, double y, const char *role, const char *actio
             usleep(60000);
             // Select-all and type only land safely if the click focused this field.
             if (!focusedElementContains(pid, x, y)) return failure(@"The field refused the value and did not take focus, so nothing was typed. Try `hands click N`, then `hands type`.");
-            free(hands_key(pid, 0 /* a */, kCGEventFlagMaskCommand));
+            // The layout's own key for "a": a fixed keycode is Cmd-Q on AZERTY.
+            int selectAll = 0, shifted = 0;
+            bool available = false;
+            if (!hands_layout_key('a', &selectAll, &shifted, &available)) return failure(@"The field refused the value and this keyboard layout has no key for select-all, so nothing was typed.");
+            free(hands_key(pid, selectAll, kCGEventFlagMaskCommand));
             usleep(30000);
             sendUnicode(pid, [NSString stringWithUTF8String:value]);
             return dupJSON(@{@"ok": @YES, @"via": @"keyboard", @"role": foundRole});
         }
-        char *clicked = hands_click(pid, x, y, 0, 1);
-        NSString *note = [NSString stringWithFormat:@"%s", clicked];
-        free(clicked);
-        return dupJSON(@{@"ok": @YES, @"via": @"mouse", @"role": foundRole, @"detail": note});
+        return hands_click(pid, x, y, 0, 1);
     }
 }
 

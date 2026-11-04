@@ -69,13 +69,16 @@ function repositoryFromRemote(remote) {
     /^(?:(?:https?|git|ssh):\/\/(?:[^@/]+@)?([^/:]+)(?::[0-9]+)?\/|git@([^:/]+):)(.+?)(?:\.git)?\/?$/.exec(
       remote.trim(),
     );
-  const host = (match?.[1] ?? match?.[2] ?? "").toLowerCase();
+  let host = (match?.[1] ?? match?.[2] ?? "").toLowerCase();
   const path = match?.[3] ?? "";
+  // SSH aliases such as github-work name the real host only in ~/.ssh/config.
+  if (/^github(\.com)?-|^ssh\.github\.com$/.test(host)) host = "github.com";
   const segments = path.split("/");
   const valid =
     segments.length >= 2 &&
     segments.every((s) => /^[A-Za-z0-9_.-]+$/.test(s) && s !== "." && s !== "..");
-  if (!host || !valid || (host === "github.com" && segments.length !== 2))
+  // shortcut: other aliases have no dot and cannot be told apart, so they are refused.
+  if (!host.includes(".") || !valid || (host === "github.com" && segments.length !== 2))
     throw new Error("The upstream remote must point to a GitHub or GitLab repository.");
   return host === "github.com" ? path : `${host}/${path}`;
 }
@@ -684,7 +687,7 @@ export default class PullRequests extends View {
           cwd: sp.folder,
           on: sp.machine,
         });
-        const association = /^([\w.-]+\/[\w.-]+)#([1-9][0-9]*)$/.exec(binding.stdout?.trim() ?? "");
+        const association = /^((?:[\w.-]+\/)+[\w.-]+)#([1-9][0-9]*)$/.exec(binding.stdout?.trim() ?? "");
         if (association) {
           const linked = await this.api(
             { action: "detail", repo: association[1], number: Number(association[2]) },
@@ -704,10 +707,12 @@ export default class PullRequests extends View {
         );
         if (token !== this.repoToken || key !== this.spaceKey) return;
         const failures = results.filter((r) => r.status === "rejected");
+        // Remote URLs may differ in case from the name the host reports.
+        const ours = new Set(repositories.map((repo) => repo.toLowerCase()));
         const matches = results
           .filter((r) => r.status === "fulfilled")
           .flatMap((r) => r.value.items)
-          .filter((p) => repositories.includes(p.headRepository?.nameWithOwner));
+          .filter((p) => ours.has(p.headRepository?.nameWithOwner?.toLowerCase()));
         this.branchPRs = [...new Map(matches.map((p) => [p.id, p])).values()].sort(
           (a, b) =>
             (b.state === "OPEN") - (a.state === "OPEN") || b.updatedAt.localeCompare(a.updatedAt),
@@ -1253,7 +1258,13 @@ export default class PullRequests extends View {
     const key = this.listKey();
     this.loading = true;
     this.error = null;
-    if (!more) {
+    // Reloading the list on screen re-reads page one and keeps further pages.
+    // shortcut: an item that left the filter stays until the filter changes.
+    const keep =
+      !more &&
+      this.cache[key]?.items === this.items &&
+      this.items.length > this.settings.list.page_size;
+    if (!more && !keep) {
       const cached = this.cache[key];
       this.items = cached?.items ?? [];
       this.cursors = cached?.cursors ?? {};
@@ -1271,7 +1282,7 @@ export default class PullRequests extends View {
       try {
         const data = await this.api(request);
         if (token !== this.listToken) return;
-        const merged = new Map((more ? this.items : []).map((p) => [p.id, p]));
+        const merged = new Map((more || keep ? this.items : []).map((p) => [p.id, p]));
         for (const p of data.items) {
           const old = merged.get(p.id);
           merged.set(p.id, {
@@ -1280,7 +1291,7 @@ export default class PullRequests extends View {
           });
         }
         this.items = [...merged.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-        this.cursors = data.cursors;
+        if (!keep) this.cursors = data.cursors;
         this.cache[key] = { items: this.items, cursors: this.cursors };
         this.refreshed = Date.now();
         this.lastUpdated = Date.now();

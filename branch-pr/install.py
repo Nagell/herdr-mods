@@ -62,7 +62,10 @@ def install(app_home, update=False):
             if dropped:
                 print("Settings no longer used and dropped: " + ", ".join(dropped))
         (target / "bin").mkdir(exist_ok=True)
-        shutil.copy2(binary, target / "bin/herdr-pr")
+        # A new file, not a rewrite: macOS kills a signed binary changed in place.
+        fresh = target / "bin/.herdr-pr.new"
+        shutil.copy2(binary, fresh)
+        os.replace(fresh, target / "bin/herdr-pr")
     subprocess.run(["herdr-app", "check", str(target)], check=True)
     change = f" (was {previous or 'unversioned'})" if update else ""
     print(f"Installed Branch PR {version}{change}: {target}")

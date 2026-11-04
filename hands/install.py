@@ -62,7 +62,10 @@ def install(app_home, update=False, link_dir="~/.local/bin"):
             if dropped:
                 print("Settings no longer used and dropped: " + ", ".join(dropped))
         (target / "bin").mkdir(exist_ok=True)
-        shutil.copy2(binary, target / "bin/hands")
+        # A new file, not a rewrite: macOS kills a signed binary changed in place.
+        fresh = target / "bin/.hands.new"
+        shutil.copy2(binary, fresh)
+        os.replace(fresh, target / "bin/hands")
     subprocess.run(["herdr-app", "check", str(target)], check=True)
     change = f" (was {previous or 'unversioned'})" if update else ""
     print(f"Installed hands {version}{change}: {target}")

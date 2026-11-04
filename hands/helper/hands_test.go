@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+// Tests run off the main thread, where the layout APIs must not be called.
+func init() {
+	layoutLookup = func(rune) (int, bool, bool, bool) { return 0, false, false, false }
+}
+
 func sample() []Element {
 	return elementsFrom([]any{
 		map[string]any{"d": 0, "role": "AXApplication", "title": "Finder", "enabled": true},
@@ -140,10 +145,72 @@ func TestManifestIsFoundThroughASymlink(t *testing.T) {
 	}
 }
 
+func TestStateOfAFinishedOrUnrelatedRecorderIsCleared(t *testing.T) {
+	t.Setenv("HANDS_STATE_DIR", t.TempDir())
+	// This test process is alive but is not a recorder.
+	writeState("record.json", Recording{Pid: os.Getpid(), File: "/tmp/x.mov"})
+	if _, running := currentRecording(); running {
+		t.Fatal("an unrelated live pid must not count as a recording")
+	}
+	if _, err := os.Stat(filepath.Join(stateDir(), "record.json")); err == nil {
+		t.Fatal("stale state should be removed")
+	}
+}
+
+func TestEachTerminalKeepsItsOwnSnapshot(t *testing.T) {
+	t.Setenv("HANDS_STATE_DIR", t.TempDir())
+	t.Setenv("HC_TERMINAL_ID", "t1")
+	saveSnapshot(Snapshot{Pid: 1, App: "Safari"})
+	t.Setenv("HC_TERMINAL_ID", "t2")
+	saveSnapshot(Snapshot{Pid: 2, App: "Mail"})
+	t.Setenv("HC_TERMINAL_ID", "t1")
+	if s, err := loadSnapshot(); err != nil || s.Pid != 1 {
+		t.Fatalf("own snapshot: %+v %v", s, err)
+	}
+	t.Setenv("HC_TERMINAL_ID", "t3")
+	if s, err := loadSnapshot(); err != nil || s.Pid != 2 {
+		t.Fatalf("a terminal with no listing uses the latest: %+v %v", s, err)
+	}
+	t.Setenv("HC_TERMINAL_ID", "../evil")
+	if ownSnapshotFile() != "" {
+		t.Fatal("unsafe terminal ids must not name files")
+	}
+}
+
+func TestKeystrokesFollowTheActiveLayout(t *testing.T) {
+	old := layoutLookup
+	t.Cleanup(func() { layoutLookup = old })
+	// AZERTY: "a" is on the US "q" key, and "1" needs shift.
+	layoutLookup = func(r rune) (int, bool, bool, bool) {
+		switch r {
+		case 'a':
+			return 12, false, true, true
+		case '1':
+			return 18, true, true, true
+		}
+		return 0, false, false, true
+	}
+	if code, flags, ok := keystroke('a'); !ok || code != 12 || flags != 0 {
+		t.Fatalf("a: %d %x %v", code, flags, ok)
+	}
+	if code, flags, err := parseChord("cmd+a"); err != nil || code != 12 || flags != flagCommand {
+		t.Fatalf("cmd+a: %d %x %v", code, flags, err)
+	}
+	if code, flags, ok := keystroke('1'); !ok || code != 18 || flags != flagShift {
+		t.Fatalf("1: %d %x %v", code, flags, ok)
+	}
+	if _, _, ok := keystroke('z'); ok {
+		t.Fatal("a character the layout lacks must go as Unicode text")
+	}
+	if code, _, err := parseChord("enter"); err != nil || code != 36 {
+		t.Fatalf("named keys do not depend on the layout: %d %v", code, err)
+	}
+}
+
 func TestStopKeepsStateWhileTheRecorderLives(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HANDS_STATE_DIR", dir)
-	stubborn := filepath.Join(dir, "stubborn.sh")
+	stubborn := filepath.Join(dir, "stubborn-screencapture.sh")
 	os.WriteFile(stubborn, []byte("#!/bin/bash\ntrap '' INT\nwhile :; do sleep 0.05; done\n"), 0o755)
 	old := screencapture
 	screencapture = stubborn

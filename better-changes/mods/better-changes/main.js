@@ -754,6 +754,8 @@ export default class Changes extends View {
     this.commitFiles = [];
     this.commitFilesLoading = false;
     this.commitFilesError = null;
+    // History and the open commit load independently, so each has its own token.
+    this.commitsToken = (this.commitsToken ?? 0) + 1;
     this.commitToken = (this.commitToken ?? 0) + 1;
   }
 
@@ -773,7 +775,7 @@ export default class Changes extends View {
       return;
     }
     const context = this.context;
-    const token = ++this.commitToken;
+    const token = ++this.commitsToken;
     const page = this.settings.limits.commits_per_page || COMMIT_PAGE;
     const count = more ? page : Math.max(page, this.commits.length);
     const skip = more ? this.commits.length : 0;
@@ -790,16 +792,16 @@ export default class Changes extends View {
           "--skip",
           String(skip),
         ]);
-        if (token !== this.commitToken || context !== this.contextKey()) return;
+        if (token !== this.commitsToken || context !== this.contextKey()) return;
         if (result.code !== 0) throw Error(result.stderr || "Cannot read history");
         const page = parseLog(result.stdout);
         this.commits = more ? [...this.commits, ...page] : page;
         this.commitsDone = page.length < count;
         this.commitsError = null;
       } catch (error) {
-        if (token === this.commitToken) this.commitsError = error.message;
+        if (token === this.commitsToken) this.commitsError = error.message;
       } finally {
-        if (token === this.commitToken) {
+        if (token === this.commitsToken) {
           this.commitsLoading = false;
           cx.notify();
         }

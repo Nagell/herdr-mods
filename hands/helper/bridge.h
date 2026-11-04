@@ -12,7 +12,10 @@ int hands_frontmost_pid(void);
 // A flat pre-order list of accessibility elements for the app, with depth.
 char *hands_tree(int pid, const char *window_title, bool menus, int max_nodes, int max_depth);
 // Acts on the element at (x, y) whose role matches: action is press, set, focus.
-char *hands_act(int pid, double x, double y, const char *role, const char *action, const char *value);
+char *hands_act(int pid, double x, double y, const char *role, const char *title, const char *desc, const char *action, const char *value);
+// The key producing a character on the active layout. Returns false if it has none;
+// *available is false when the layout itself cannot be read.
+bool hands_layout_key(unsigned int character, int *code, int *shift, bool *available);
 char *hands_click(int pid, double x, double y, int button, int clicks);
 char *hands_type(int pid, const char *text);
 char *hands_key(int pid, int keycode, unsigned long long flags);

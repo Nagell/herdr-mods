@@ -978,3 +978,13 @@ test("settings from mod.json set the limits and the view default when nothing is
   assert.equal(h.mod.settings.limits.files, 2);
   assert.equal(h.mod.view, "flat");
 });
+
+test("opening a commit during a history load leaves neither loading state stuck", async () => {
+  const h = harness();
+  h.mod.root = "/repo";
+  h.mod.loadCommits(h.cx);
+  h.mod.openCommit({ hash: "a".repeat(40), short: "aaaaaaa" }, h.cx);
+  await h.flush();
+  assert.equal(h.mod.commitsLoading, false);
+  assert.equal(h.mod.commitFilesLoading, false);
+});

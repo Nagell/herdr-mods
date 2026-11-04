@@ -5,7 +5,7 @@ package main
 
 /*
 #cgo CFLAGS: -fobjc-arc -Wno-deprecated-declarations
-#cgo LDFLAGS: -framework AppKit -framework ApplicationServices -framework CoreGraphics -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers -framework Foundation
+#cgo LDFLAGS: -framework AppKit -framework Carbon -framework ApplicationServices -framework CoreGraphics -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework ImageIO -framework UniformTypeIdentifiers -framework Foundation
 #include <stdlib.h>
 #include "bridge.h"
 */
@@ -45,12 +45,14 @@ func tree(pid int, window string, menus bool, maxNodes, maxDepth int) (any, erro
 	return parse(C.hands_tree(C.int(pid), w, C.bool(menus), C.int(maxNodes), C.int(maxDepth)))
 }
 
-func act(pid int, x, y float64, role, action, value string) (any, error) {
-	r, a, v := cstr(role), cstr(action), cstr(value)
+func act(pid int, x, y float64, e Element, action, value string) (any, error) {
+	r, t, d, a, v := cstr(e.Role), cstr(e.Title), cstr(e.Desc), cstr(action), cstr(value)
+	defer C.free(unsafe.Pointer(t))
+	defer C.free(unsafe.Pointer(d))
 	defer C.free(unsafe.Pointer(r))
 	defer C.free(unsafe.Pointer(a))
 	defer C.free(unsafe.Pointer(v))
-	return parse(C.hands_act(C.int(pid), C.double(x), C.double(y), r, a, v))
+	return parse(C.hands_act(C.int(pid), C.double(x), C.double(y), r, t, d, a, v))
 }
 
 func click(pid int, x, y float64, right bool, clicks int) (any, error) {
@@ -91,3 +93,10 @@ func recordWindow(pid int, window, path string, seconds, fps int) (any, error) {
 }
 
 func stopRecordingWindow() { C.hands_record_stop() }
+
+func layoutKey(r rune) (code int, shift, found, available bool) {
+	var c, s C.int
+	var a C.bool
+	found = bool(C.hands_layout_key(C.uint(r), &c, &s, &a))
+	return int(c), s != 0, found, bool(a)
+}

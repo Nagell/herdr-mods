@@ -40,8 +40,11 @@ var shifted = map[rune]string{
 	'_': "-", '+': "=", '{': "[", '}': "]", '|': "\\", ':': ";", '"': "'", '<': ",", '>': ".", '?': "/", '~': "`",
 }
 
-// keystroke maps one character to a keycode and flags; ok is false for
-// characters outside the US layout, which are sent as Unicode text instead.
+var layoutLookup = layoutKey
+
+// keystroke maps one character to a keycode and flags on the active layout;
+// ok is false for characters it cannot type, which go as Unicode text instead.
+// The US table is only for when the layout cannot be read.
 func keystroke(r rune) (code int, flags uint64, ok bool) {
 	switch r {
 	case '\n':
@@ -50,6 +53,12 @@ func keystroke(r rune) (code int, flags uint64, ok bool) {
 		return keycodes["tab"], 0, true
 	case ' ':
 		return keycodes["space"], 0, true
+	}
+	if key, shift, found, available := layoutLookup(r); available {
+		if shift {
+			flags = flagShift
+		}
+		return key, flags, found
 	}
 	if r >= 'A' && r <= 'Z' {
 		return keycodes[string(r+32)], flagShift, true
@@ -77,6 +86,13 @@ func parseChord(chord string) (int, uint64, error) {
 		key = part
 	}
 	code, ok := keycodes[key]
+	// A single character is whichever key produces it on the active layout.
+	if runes := []rune(key); len(runes) == 1 {
+		var extra uint64
+		if code, extra, ok = keystroke(runes[0]); ok {
+			flags |= extra
+		}
+	}
 	if !ok {
 		return 0, 0, fmt.Errorf("unknown key %q; use a letter, digit, punctuation, enter, tab, space, esc, backspace, arrows, home/end, page keys or f1–f15", key)
 	}

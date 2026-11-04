@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -149,7 +150,20 @@ func writeState(name string, v any) error {
 		return err
 	}
 	b, _ := json.Marshal(v)
-	return os.WriteFile(filepath.Join(stateDir(), name), b, 0o644)
+	// Whole files only: another agent may be reading this one right now.
+	temp, err := os.CreateTemp(stateDir(), name+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name())
+	if _, err := temp.Write(b); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temp.Name(), filepath.Join(stateDir(), name))
 }
 
 func readState(name string, v any) error {
@@ -160,8 +174,31 @@ func readState(name string, v any) error {
 	return json.Unmarshal(b, v)
 }
 
+// Each terminal keeps its own snapshot, so agents running side by side never
+// act on each other's listing. The shared file serves callers that have not
+// listed anything themselves, such as a one-off `hc run`.
+func ownSnapshotFile() string {
+	id := os.Getenv("HC_TERMINAL_ID")
+	if !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(id) {
+		return ""
+	}
+	return "snapshot-" + id + ".json"
+}
+
+func saveSnapshot(s Snapshot) error {
+	if own := ownSnapshotFile(); own != "" {
+		if err := writeState(own, s); err != nil {
+			return err
+		}
+	}
+	return writeState("snapshot.json", s)
+}
+
 func loadSnapshot() (Snapshot, error) {
 	var s Snapshot
+	if own := ownSnapshotFile(); own != "" && readState(own, &s) == nil {
+		return s, nil
+	}
 	if err := readState("snapshot.json", &s); err != nil {
 		return s, fmt.Errorf("no snapshot yet: run `hands see --app <name>` first, then act on an element number")
 	}
