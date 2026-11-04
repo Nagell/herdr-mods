@@ -37,7 +37,7 @@ Write a title and optional body in the multiline **Commit message** field. **Ent
 
 ## Commits
 
-The **Changes / Commits** pill in the header switches the sidebar between uncommitted changes and history. The list shows each commit's subject, author, relative age, and short hash, newest first, and loads 50 at a time. Click a commit for its full message and the files it touched, with the same Tree / Flat toggle; click **Commits** at the top to go back. When `origin` points at GitHub, Cmd-click (Ctrl-click elsewhere) the short hash to open the commit on GitHub. Clicking a file opens its diff for that commit in the reusable diff tab. Merge commits are shown against their first parent. The commit footer is hidden on this tab.
+The **Changes / Commits** pill in the header switches the sidebar between uncommitted changes and history. The list shows each commit's subject, author, relative age, and short hash, newest first, and loads 50 at a time. A line labelled with the branch's upstream, such as `origin/main`, marks where the remote head is, and commits above it that are not on the remote have a dot. If the remote has commits you lack, the line sits where the two split and says how many are not pulled. This compares against the last fetch; the mod never fetches. Click a commit for its full message and the files it touched, with the same Tree / Flat toggle; click **Commits** at the top to go back. When `origin` points at GitHub, Cmd-click (Ctrl-click elsewhere) the short hash to open the commit on GitHub. Clicking a file opens its diff for that commit in the reusable diff tab. Merge commits are shown against their first parent. The commit footer is hidden on this tab.
 
 ## Limits
 

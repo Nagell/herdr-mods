@@ -747,6 +747,7 @@ export default class Changes extends View {
 
   resetCommits() {
     this.commits = [];
+    this.upstream = null;
     this.commitsDone = false;
     this.commitsLoading = false;
     this.commitsError = null;
@@ -767,6 +768,38 @@ export default class Changes extends View {
   }
 
   // Reload keeps the pages already shown; `more` appends the next page.
+  // Where the branch's remote head was at the last fetch: {name, unpushed, behind},
+  // or null when the branch tracks nothing. This never fetches.
+  async readUpstream() {
+    const name = await this.git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+    if (name.code !== 0) return null;
+    const sides = await this.git(["rev-list", "--left-right", "HEAD...@{u}"]);
+    if (sides.code !== 0) return null;
+    const lines = sides.stdout.split("\n");
+    return {
+      name: name.stdout.trim(),
+      unpushed: new Set(lines.filter((l) => l[0] === "<").map((l) => l.slice(1))),
+      behind: lines.filter((l) => l[0] === ">").length,
+    };
+  }
+
+  // The line under the commits that are not on the remote yet.
+  upstreamMarker(t) {
+    const { name, behind } = this.upstream;
+    const label = behind ? `${name} · ${behind} not pulled` : name;
+    return h_flex()
+      .id("commit-upstream")
+      .flex_none()
+      .px(8)
+      .py(4)
+      .gap(6)
+      .items_center()
+      .text_size(em(0.8))
+      .text_color(t.accent)
+      .child(div().flex_none().child(label))
+      .child(div().flex_1().h(1).bg(t.accent));
+  }
+
   loadCommits(cx, more = false) {
     if (this.commitsLoading || !this.root) return;
     if (!this.hasHead) {
@@ -795,6 +828,9 @@ export default class Changes extends View {
         if (token !== this.commitsToken || context !== this.contextKey()) return;
         if (result.code !== 0) throw Error(result.stderr || "Cannot read history");
         const page = parseLog(result.stdout);
+        const upstream = more ? this.upstream : await this.readUpstream();
+        if (token !== this.commitsToken || context !== this.contextKey()) return;
+        this.upstream = upstream;
         this.commits = more ? [...this.commits, ...page] : page;
         this.commitsDone = page.length < count;
         this.commitsError = null;
@@ -1204,7 +1240,25 @@ export default class Changes extends View {
 
   renderCommitList(t) {
     const list = v_flex().id("commit-list").flex_1().min_h(0).overflow_y_scrollbar().p(6);
-    for (const commit of this.commits)
+    const unpushed = this.upstream?.unpushed;
+    let marked = false;
+    if (this.commits.length && !this.upstream && !this.commitsLoading)
+      list.child(
+        div()
+          .id("commit-no-upstream")
+          .flex_none()
+          .px(8)
+          .py(4)
+          .text_size(em(0.8))
+          .text_color(t.dim)
+          .child("This branch has no remote to compare with"),
+      );
+    for (const commit of this.commits) {
+      const isNew = Boolean(unpushed?.has(commit.hash));
+      if (this.upstream && !isNew && !marked) {
+        marked = true;
+        list.child(this.upstreamMarker(t));
+      }
       list.child(
         v_flex()
           .id(`commit-${commit.hash}`)
@@ -1216,7 +1270,22 @@ export default class Changes extends View {
           .cursor_pointer()
           .hover((el) => el.bg(t.hover))
           .on_click((_e, cx) => this.openCommit(commit, cx))
-          .child(div().truncate().child(commit.subject || "(no message)"))
+          .child(
+            h_flex()
+              .gap(6)
+              .items_center()
+              .when(isNew, (el) =>
+                el.child(
+                  div()
+                    .size(6)
+                    .flex_none()
+                    .rounded(3)
+                    .bg(t.accent)
+                    .accessibility_label("Not pushed"),
+                ),
+              )
+              .child(div().flex_1().min_w(0).truncate().child(commit.subject || "(no message)")),
+          )
           .child(
             h_flex()
               .gap(6)
@@ -1226,6 +1295,7 @@ export default class Changes extends View {
               .child(div().child(commit.short)),
           ),
       );
+    }
     if (this.commitsError) list.child(div().p(10).text_color(t.ansi1).child(this.commitsError));
     else if (this.commitsLoading && !this.commits.length)
       list.child(div().p(10).text_color(t.dim).child("Loading commits…"));

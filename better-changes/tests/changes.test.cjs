@@ -979,6 +979,36 @@ test("settings from mod.json set the limits and the view default when nothing is
   assert.equal(h.mod.view, "flat");
 });
 
+test("commits show where the remote head is and which are new", async () => {
+  const h = harness();
+  const record = (i) => `h${i}\0s${i}\0Ann\0a@x\x00${i}\0Subject ${i}\0\x1e\n`;
+  let sides = "<h0\n<h1\n";
+  let tracking = true;
+  h.context.exec = async (cmd, args) => {
+    if (args.includes("log")) return { code: 0, stdout: [0, 1, 2].map(record).join("") };
+    if (args.includes("--symbolic-full-name")) return tracking ? { code: 0, stdout: "origin/main\n" } : { code: 128, stderr: "no upstream" };
+    if (args.includes("--left-right")) return { code: 0, stdout: sides };
+    return { code: 0, stdout: "" };
+  };
+  h.mod.root = "/repo";
+  h.mod.hasHead = true;
+  h.mod.tab = "commits";
+  const strings = (node) => (typeof node === "string" ? node : (node?.nodes ?? []).map(strings).join(""));
+  const load = async () => {
+    h.mod.loadCommits(h.cx);
+    await h.flush();
+    const list = find(h.mod.render(h.cx), "commit-list");
+    return list.nodes.map((n) => n.id).filter(Boolean);
+  };
+  assert.deepEqual([...(await load())], ["commit-h0", "commit-h1", "commit-upstream", "commit-h2"]);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /^origin\/main$/);
+  sides = ">r1\n>r2\n";
+  assert.deepEqual([...(await load())], ["commit-upstream", "commit-h0", "commit-h1", "commit-h2"]);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /origin\/main · 2 not pulled/);
+  tracking = false;
+  assert.deepEqual([...(await load())], ["commit-no-upstream", "commit-h0", "commit-h1", "commit-h2"]);
+});
+
 test("opening a commit during a history load leaves neither loading state stuck", async () => {
   const h = harness();
   h.mod.root = "/repo";
