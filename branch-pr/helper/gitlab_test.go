@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -262,5 +263,46 @@ func TestGitLabStateChanges(t *testing.T) {
 	}
 	if _, err := run("rebase"); err == nil {
 		t.Fatal("GitLab rebase was not refused")
+	}
+}
+
+func TestGitLabReviewers(t *testing.T) {
+	base := "projects/group%2Fsub%2Fproject/merge_requests/7"
+	calls := mockGlab(t, map[string]any{
+		base:                Obj{"iid": 7.0, "reviewers": []any{Obj{"id": 1.0, "username": "ann"}, Obj{"id": 2.0, "username": "bob"}}},
+		base + "/reviewers": []any{Obj{"state": "unreviewed", "user": Obj{"username": "ann"}}, Obj{"state": "requested_changes", "user": Obj{"username": "bob"}}},
+		base + "/notes":     Obj{},
+		"users?":            []any{Obj{"id": 9.0}},
+	})
+	g := &gitlab{ctx: context.Background(), host: "gitlab.com", repo: repo, project: "group%2Fsub%2Fproject"}
+	rows, err := g.reviewers(7, []any{Obj{"state": "APPROVED", "author": Obj{"login": "ann"}}, Obj{"state": "APPROVED", "author": Obj{"login": "cat"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, row := range rows {
+		got[text(object(row)["login"])] = text(object(row)["state"])
+	}
+	if !reflect.DeepEqual(got, map[string]string{"ann": "APPROVED", "bob": "CHANGES_REQUESTED", "cat": "APPROVED"}) {
+		t.Fatal(got)
+	}
+	last := func(event, who string) (glabCall, error) {
+		_, err := handle(context.Background(), Request{Action: "reviewer", Repo: repo, Number: 7, Event: event, Reviewer: who})
+		if err != nil {
+			return glabCall{}, err
+		}
+		return (*calls)[len(*calls)-1], nil
+	}
+	if c, err := last("add", "dan"); err != nil || c.method() != "PUT" || !reflect.DeepEqual(c.body["reviewer_ids"], []any{1.0, 2.0, 9.0}) {
+		t.Fatal(c, err)
+	}
+	if c, err := last("remove", "ann"); err != nil || !reflect.DeepEqual(c.body["reviewer_ids"], []any{2.0}) {
+		t.Fatal(c, err)
+	}
+	if c, err := last("rerequest", "bob"); err != nil || c.method() != "POST" || c.body["body"] != "/request_review @bob" {
+		t.Fatal(c, err)
+	}
+	if _, err := last("add", "group/team"); err == nil {
+		t.Fatal("a GitLab group was accepted")
 	}
 }

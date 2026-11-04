@@ -297,3 +297,62 @@ func TestMergeMethodsFollowTheRepositorySettings(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestMergeReviewersShowsEachPersonsCurrentStanding(t *testing.T) {
+	data := Obj{
+		"latestOpinionatedReviews": Obj{"nodes": []any{
+			Obj{"state": "APPROVED", "author": Obj{"login": "ann"}},
+			Obj{"state": "CHANGES_REQUESTED", "author": Obj{"login": "bob"}},
+			Obj{"state": "APPROVED", "author": Obj{"login": "cat"}},
+		}},
+		"reviewRequests": Obj{"nodes": []any{
+			Obj{"requestedReviewer": Obj{"login": "cat"}},
+			Obj{"requestedReviewer": Obj{"login": "dan"}},
+			Obj{"requestedReviewer": Obj{"combinedSlug": "org/core"}},
+			Obj{"requestedReviewer": Obj{}},
+		}},
+	}
+	reviews := []any{
+		Obj{"state": "COMMENTED", "author": Obj{"login": "eve"}},
+		Obj{"state": "COMMENTED", "author": Obj{"login": "ann"}},
+		Obj{"state": "COMMENTED", "author": Obj{"login": "owner"}},
+	}
+	got := map[string]string{}
+	for _, row := range mergeReviewers(data, reviews, "owner") {
+		got[text(object(row)["login"])] = text(object(row)["state"])
+	}
+	want := map[string]string{"ann": "APPROVED", "bob": "CHANGES_REQUESTED", "cat": "REQUESTED", "dan": "REQUESTED", "org/core": "REQUESTED", "eve": "COMMENTED"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal(got)
+	}
+}
+
+func TestChangeReviewerUsesRequestedReviewers(t *testing.T) {
+	var args []string
+	var input Obj
+	mock(t, func(a []string, in []byte) ([]byte, error) {
+		args = a
+		input = Obj{}
+		_ = json.Unmarshal(in, &input)
+		return []byte("{}"), nil
+	})
+	run := func(event, who string) error {
+		_, err := handle(context.Background(), Request{Action: "reviewer", Repo: "owner/repo", Number: 42, Event: event, Reviewer: who})
+		return err
+	}
+	if err := run("add", "ann"); err != nil || args[1] != "repos/owner/repo/pulls/42/requested_reviewers" || args[3] != "POST" || !reflect.DeepEqual(input["reviewers"], []any{"ann"}) {
+		t.Fatal(args, input, err)
+	}
+	if err := run("rerequest", "ann"); err != nil || args[3] != "POST" {
+		t.Fatal(args, err)
+	}
+	if err := run("remove", "org/core"); err != nil || args[3] != "DELETE" || !reflect.DeepEqual(input["team_reviewers"], []any{"core"}) {
+		t.Fatal(args, input, err)
+	}
+	args = nil
+	for _, bad := range [][2]string{{"add", ""}, {"add", "ann\n/close"}, {"add", "@ann me"}, {"approve", "ann"}} {
+		if err := run(bad[0], bad[1]); err == nil || args != nil {
+			t.Fatalf("%v was not refused, ran %v", bad, args)
+		}
+	}
+}

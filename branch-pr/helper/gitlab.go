@@ -325,7 +325,80 @@ func (g *gitlab) detail(iid int) (Obj, error) {
 		pr["checks"] = checks
 	}
 	pr["mergeMethods"] = []any{"merge", "squash"}
+	if rows, err := g.reviewers(iid, reviews); err != nil {
+		pr["reviewersError"] = err.Error()
+		pr["reviewers"] = []any{}
+	} else {
+		pr["reviewers"] = rows
+	}
 	return pr, nil
+}
+
+var gitlabReviewStates = map[string]string{"approved": "APPROVED", "requested_changes": "CHANGES_REQUESTED", "reviewed": "COMMENTED"}
+
+// Assigned reviewers with their state, plus anyone who approved without being assigned.
+func (g *gitlab) reviewers(iid int, reviews []any) ([]any, error) {
+	assigned, err := g.pages(g.mrPath(iid, "/reviewers"))
+	if err != nil {
+		return nil, err
+	}
+	rows, seen := []any{}, map[string]Obj{}
+	for _, a := range assigned {
+		state := gitlabReviewStates[text(object(a)["state"])]
+		if state == "" {
+			state = "REQUESTED"
+		}
+		login := text(object(object(a)["user"])["username"])
+		seen[login] = Obj{"login": login, "state": state, "team": false}
+		rows = append(rows, seen[login])
+	}
+	for _, n := range reviews {
+		if text(object(n)["state"]) != "APPROVED" {
+			continue
+		}
+		login := text(object(object(n)["author"])["login"])
+		if row := seen[login]; row != nil {
+			row["state"] = "APPROVED"
+		} else {
+			rows = append(rows, Obj{"login": login, "state": "APPROVED", "team": false})
+		}
+	}
+	return rows, nil
+}
+
+// GitLab sets reviewers as a whole list of ids, so a change rewrites the list.
+func (g *gitlab) changeReviewer(r Request) (any, error) {
+	if err := checkReviewer(r); err != nil {
+		return nil, err
+	}
+	if strings.Contains(r.Reviewer, "/") {
+		return nil, errors.New("GitLab reviewers are people, not groups")
+	}
+	if r.Event == "rerequest" {
+		return g.call("POST", g.mrPath(r.Number, "/notes"), Obj{"body": "/request_review @" + r.Reviewer})
+	}
+	m, err := g.call("GET", g.mrPath(r.Number, ""), nil)
+	if err != nil {
+		return nil, err
+	}
+	ids := []any{}
+	for _, reviewer := range array(object(m)["reviewers"]) {
+		if text(object(reviewer)["username"]) != r.Reviewer {
+			ids = append(ids, object(reviewer)["id"])
+		}
+	}
+	if r.Event == "add" {
+		found, err := g.call("GET", "users?username="+url.QueryEscape(r.Reviewer), nil)
+		if err != nil {
+			return nil, err
+		}
+		users := array(found)
+		if len(users) == 0 {
+			return nil, fmt.Errorf("no GitLab user %s", r.Reviewer)
+		}
+		ids = append(ids, object(users[0])["id"])
+	}
+	return g.call("PUT", g.mrPath(r.Number, ""), Obj{"reviewer_ids": ids})
 }
 
 func (g *gitlab) list(r Request) (any, error) {
@@ -491,6 +564,8 @@ func gitlabHandle(ctx context.Context, r Request, host, path string) (any, error
 			b = b[len(b)-limit:]
 		}
 		return Obj{"text": string(b), "truncated": truncated}, nil
+	case "reviewer":
+		return g.changeReviewer(r)
 	case "change-state":
 		if err := checkStateChange(r); err != nil {
 			return nil, err

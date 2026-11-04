@@ -95,6 +95,19 @@ function spaceContextKey(space, mode) {
 
 const who = (comment) => comment?.author?.login ?? "deleted user";
 
+const REVIEW_STATES = {
+  APPROVED: { label: "Approved", icon: "check-success", color: "ansi2" },
+  CHANGES_REQUESTED: { label: "Changes requested", icon: "check-failure", color: "ansi1" },
+  COMMENTED: { label: "Commented", icon: "comment", color: "dim" },
+  DISMISSED: { label: "Dismissed", icon: "check-skipped", color: "dim" },
+  REQUESTED: { label: "Review requested", icon: "check-pending", color: "ansi3" },
+};
+const REVIEW_DECISIONS = {
+  APPROVED: { label: "Approved", color: "ansi2" },
+  CHANGES_REQUESTED: { label: "Changes requested", color: "ansi1" },
+  REVIEW_REQUIRED: { label: "Review required", color: "ansi3" },
+};
+
 const merged = (word) => (pr) =>
   `${word} #${pr.number} from ${pr.headRefName} into ${pr.baseRefName}? This cannot be undone.`;
 const STATE_CHANGES = {
@@ -168,6 +181,9 @@ export default class PullRequests extends View {
       if (this.draftKey) localStorage.setItem(this.draftKey, this.editor.value());
       cx.notify();
     });
+    this.reviewerInput = InputState.new({ placeholder: "login or org/team" });
+    this.reviewerInput.on("change", (_e, cx) => cx.notify());
+    this.reviewerInput.on("submit", (_e, cx) => this.addReviewer(cx));
     // Its own state, so a squash message never mixes with a comment draft.
     this.squashMessage = TextareaState.new({ placeholder: "Commit message", rows: 6 });
     this.squashMessage.on("change", (_e, cx) => cx.notify());
@@ -2280,6 +2296,163 @@ export default class PullRequests extends View {
     });
   }
 
+  // Who approved, who asked for changes and who is still to review, with
+  // re-request, add and remove while the PR is open and not a preview.
+  reviewersView(pr, t, icon) {
+    const editable = pr.state === "OPEN" && !this.preview;
+    const gitlab = siteName(this.repo) === "GitLab";
+    const decision = REVIEW_DECISIONS[pr.reviewDecision];
+    const view = v_flex().id("pr-reviewers").flex_none().px(14).pb(10).gap(4).text_size(em(0.85));
+    view.child(
+      h_flex()
+        .gap(6)
+        .items_center()
+        .child(div().font_medium().child("Reviewers"))
+        .when(Boolean(decision), (el) =>
+          el.child(div().text_color(t[decision.color]).child(decision.label)),
+        )
+        .child(div().flex_1())
+        .when(editable && !this.reviewerForm, (el) =>
+          el.child(
+            this.button(
+              "pr-reviewer-add",
+              "Add",
+              (cx) => {
+                this.reviewerForm = true;
+                this.reviewerInput.set_value("");
+                this.reviewerInput.focus();
+                cx.notify();
+              },
+              t,
+              this.mutating,
+            ),
+          ),
+        ),
+    );
+    if (pr.reviewersError)
+      view.child(div().text_color(t.dim).whitespace_normal().child("Could not read reviewers."));
+    else if (!pr.reviewers?.length && !this.reviewerForm)
+      view.child(div().text_color(t.dim).child("No reviewers yet."));
+    for (const reviewer of pr.reviewers ?? []) {
+      const state = REVIEW_STATES[reviewer.state] ?? REVIEW_STATES.REQUESTED;
+      // GitHub only takes back a request that is still waiting; a review stays on record.
+      const removable = editable && (gitlab || reviewer.state === "REQUESTED");
+      view.child(
+        h_flex()
+          .id(`pr-reviewer-${reviewer.login}`)
+          .min_h(26)
+          .gap(6)
+          .items_center()
+          .child(
+            svg(`mods/branch-pr/${state.icon}.svg`)
+              .size(14)
+              .flex_none()
+              .text_color(t[state.color])
+              .accessibility_label(state.label),
+          )
+          .child(div().flex_1().min_w(0).truncate().tooltip(reviewer.login).child(reviewer.login))
+          .child(div().flex_none().text_color(t.dim).child(state.label))
+          .when(editable && reviewer.state !== "REQUESTED", (el) =>
+            el.child(
+              icon(
+                `pr-reviewer-rerequest-${reviewer.login}`,
+                "mods/branch-pr/refresh.svg",
+                `Ask ${reviewer.login} to review again`,
+                (cx) => this.changeReviewer("rerequest", reviewer.login, cx),
+                this.mutating,
+              ),
+            ),
+          )
+          .when(removable, (el) =>
+            el.child(
+              icon(
+                `pr-reviewer-remove-${reviewer.login}`,
+                "mods/branch-pr/close.svg",
+                `Remove ${reviewer.login} as a reviewer`,
+                (cx) => this.changeReviewer("remove", reviewer.login, cx),
+                this.mutating,
+              ),
+            ),
+          ),
+      );
+    }
+    if (editable && this.reviewerForm)
+      view.child(
+        h_flex()
+          .gap(6)
+          .items_center()
+          .child(
+            Input.new(this.reviewerInput)
+              .id("pr-reviewer-input")
+              .flex_1()
+              .min_w(0)
+              .h(28)
+              .px(8)
+              .rounded(6)
+              .border_1()
+              .border_color(t.border)
+              .bg(t.input)
+              .text_size(em(0.9))
+              .text_color(t.foreground),
+          )
+          .child(
+            this.button(
+              "pr-reviewer-save",
+              "Add",
+              (cx) => this.addReviewer(cx),
+              t,
+              this.mutating || !this.reviewerInput.value().trim(),
+            ),
+          )
+          .child(
+            this.button(
+              "pr-reviewer-cancel",
+              "Cancel",
+              (cx) => {
+                this.reviewerForm = false;
+                cx.notify();
+              },
+              t,
+              this.mutating,
+            ),
+          ),
+      );
+    return view;
+  }
+
+  addReviewer(cx) {
+    const login = this.reviewerInput.value().trim().replace(/^@/, "");
+    if (login && this.reviewerForm) this.changeReviewer("add", login, cx);
+  }
+
+  changeReviewer(event, reviewer, cx) {
+    if (this.mutating || this.preview || !this.pr) return;
+    const key = this.spaceKey;
+    const repo = this.repo;
+    const number = this.pr.number;
+    this.mutating = true;
+    this.error = null;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        await this.api({ action: "reviewer", repo, number, event, reviewer });
+        if (key !== this.spaceKey) return;
+        if (event === "add") this.reviewerForm = false;
+        this.notice = {
+          add: `Asked ${reviewer} to review.`,
+          rerequest: `Asked ${reviewer} to review again.`,
+          remove: `Removed ${reviewer} as a reviewer.`,
+        }[event];
+        this.openPR(number, cx);
+      } catch (e) {
+        if (key === this.spaceKey) this.error = e.message;
+      } finally {
+        this.mutating = false;
+        cx.notify();
+      }
+    });
+  }
+
   threadActions(entry, comments, context, t) {
     const thread = entry.thread;
     const last = comments[comments.length - 1];
@@ -3560,6 +3733,7 @@ export default class PullRequests extends View {
     );
     const stateConfirm = this.stateChangeView(pr, t);
     if (stateConfirm) root.child(stateConfirm);
+    root.child(this.reviewersView(pr, t, icon));
     if (this.mode === "browser") {
       const list = this.worktreeList(t);
       if (list) root.child(list);

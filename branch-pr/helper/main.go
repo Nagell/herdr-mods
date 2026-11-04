@@ -36,6 +36,7 @@ type Request struct {
 	Comment     string `json:"comment"`
 	Event       string `json:"event"`
 	Head        string `json:"head"`
+	Reviewer    string `json:"reviewer"`
 	// Preferences from the mod's settings.
 	PageSize int               `json:"pageSize"`
 	Tail     int               `json:"tail"`
@@ -289,6 +290,13 @@ func detail(ctx context.Context, r Request) (any, error) {
 	pr["reviews"] = reviews
 	pr["threads"] = threads
 	delete(pr, "reviewThreads")
+	// Its own query: reading a team reviewer can need more access than the PR, and that must not cost the whole view.
+	if data, e := gql(ctx, reviewersQuery, Obj{"owner": parts[0], "name": parts[1], "number": r.Number}); e != nil {
+		pr["reviewersError"] = e.Error()
+		pr["reviewers"] = []any{}
+	} else {
+		pr["reviewers"] = mergeReviewers(object(object(data["repository"])["pullRequest"]), reviews, text(object(pr["author"])["login"]))
+	}
 	checks, e := gh(ctx, "pr", "view", strconv.Itoa(r.Number), "--repo", r.Repo, "--json", "statusCheckRollup")
 	if e != nil {
 		pr["checksError"] = e.Error()
@@ -297,6 +305,83 @@ func detail(ctx context.Context, r Request) (any, error) {
 		pr["checks"] = object(checks)["statusCheckRollup"]
 	}
 	return pr, nil
+}
+
+const reviewersQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){
+ reviewRequests(first:50){nodes{requestedReviewer{... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{combinedSlug}}}}
+ latestOpinionatedReviews(first:50){nodes{state author{login}}}
+}}}`
+
+// One row per person: their latest opinion, a comment if that is all they left,
+// and a waiting request over either, since that is what they owe now.
+func mergeReviewers(data Obj, reviews []any, author string) []any {
+	rows := []any{}
+	seen := map[string]Obj{}
+	set := func(login, state string, team bool) {
+		if login == "" {
+			return
+		}
+		if row := seen[login]; row != nil {
+			row["state"] = state
+			return
+		}
+		seen[login] = Obj{"login": login, "state": state, "team": team}
+		rows = append(rows, seen[login])
+	}
+	for _, n := range connection(data["latestOpinionatedReviews"]) {
+		set(text(object(object(n)["author"])["login"]), text(object(n)["state"]), false)
+	}
+	for _, n := range reviews {
+		login := text(object(object(n)["author"])["login"])
+		if text(object(n)["state"]) == "COMMENTED" && login != author && seen[login] == nil {
+			set(login, "COMMENTED", false)
+		}
+	}
+	for _, n := range connection(data["reviewRequests"]) {
+		reviewer := object(object(n)["requestedReviewer"])
+		if slug := text(reviewer["combinedSlug"]); slug != "" {
+			set(slug, "REQUESTED", true)
+		} else {
+			set(text(reviewer["login"]), "REQUESTED", false)
+		}
+	}
+	return rows
+}
+
+// A login reaches a REST body and, on GitLab, a quick action, so it can only be a name.
+var reviewerPattern = regexp.MustCompile(`^[A-Za-z0-9_.\[\]-]+(/[A-Za-z0-9_.-]+)*$`)
+
+func checkReviewer(r Request) error {
+	if r.Number < 1 {
+		return errors.New("PR number required")
+	}
+	if !reviewerPattern.MatchString(r.Reviewer) {
+		return fmt.Errorf("%q is not a login or team", r.Reviewer)
+	}
+	if r.Event != "add" && r.Event != "remove" && r.Event != "rerequest" {
+		return fmt.Errorf("unknown reviewer change %q", r.Event)
+	}
+	return nil
+}
+
+// Asking someone who has already reviewed is the same call as adding them.
+func changeReviewer(ctx context.Context, r Request) (any, error) {
+	if err := checkReviewer(r); err != nil {
+		return nil, err
+	}
+	body := Obj{"reviewers": []string{r.Reviewer}}
+	if _, team, ok := strings.Cut(r.Reviewer, "/"); ok {
+		body = Obj{"team_reviewers": []string{team}}
+	}
+	method := "POST"
+	if r.Event == "remove" {
+		method = "DELETE"
+	}
+	_, err := runner(ctx, []string{"api", fmt.Sprintf("repos/%s/pulls/%d/requested_reviewers", r.Repo, r.Number), "--method", method, "--input", "-"}, mustJSON(body))
+	if err != nil {
+		return nil, err
+	}
+	return Obj{"ok": true}, nil
 }
 
 // The ways this repository's settings allow a merge, in GitHub's own order.
@@ -448,6 +533,8 @@ func handle(ctx context.Context, r Request) (any, error) {
 		return gh(ctx, "api", "--paginate", "--slurp", fmt.Sprintf("repos/%s/actions/runs/%d/jobs?per_page=100", r.Repo, r.Run))
 	case "change-state":
 		return changeState(ctx, r)
+	case "reviewer":
+		return changeReviewer(ctx, r)
 	case "comment":
 		if r.Number < 1 || strings.TrimSpace(r.Body) == "" {
 			return nil, errors.New("PR number and body required")

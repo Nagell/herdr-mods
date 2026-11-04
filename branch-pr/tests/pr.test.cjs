@@ -529,3 +529,35 @@ test('a failed merge keeps the confirmation and shows why',async()=>{
  h.mod.askStateChange('merge',h.cx);assert.equal(findElement(h.mod.render(),'pr-squash-message'),undefined,'only a squash has a message');h.mod.changeState(h.cx);await h.flush();
  assert.match(h.mod.error,/required checks/);assert.ok(h.mod.stateChange);assert.equal(h.mod.mutating,false);
 });
+test('reviewers show who stands where and can be re-requested, added and removed',async()=>{
+ const h=harness(),requests=[];h.mod.repo='o/r';
+ const rows=[{login:'ann',state:'APPROVED'},{login:'bob',state:'CHANGES_REQUESTED'},{login:'dan',state:'REQUESTED'},{login:'org/core',state:'REQUESTED',team:true}];
+ h.mod.pr={...pr(),reviewDecision:'CHANGES_REQUESTED',reviewers:rows};
+ h.mod.api=async r=>{requests.push(r);return r.action==='detail'?h.mod.pr:{ok:true}};
+ let tree=h.mod.render();
+ assert.match(strings(findElement(tree,'pr-reviewers')),/Reviewers[\s\S]*Changes requested/);
+ assert.match(strings(findElement(tree,'pr-reviewer-ann')),/ann[\s\S]*Approved/);
+ assert.match(strings(findElement(tree,'pr-reviewer-bob')),/bob[\s\S]*Changes requested/);
+ assert.match(strings(findElement(tree,'pr-reviewer-dan')),/dan[\s\S]*Review requested/);
+ assert.ok(findElement(tree,'pr-reviewer-rerequest-ann'));assert.equal(findElement(tree,'pr-reviewer-remove-ann'),undefined,'a submitted GitHub review cannot be removed');
+ assert.ok(findElement(tree,'pr-reviewer-remove-dan'));assert.equal(findElement(tree,'pr-reviewer-rerequest-dan'),undefined,'a waiting reviewer has nothing to re-request');
+ findElement(tree,'pr-reviewer-rerequest-bob').handlers.click({},h.cx);await h.flush();
+ assert.deepEqual({...requests[0]},{action:'reviewer',repo:'o/r',number:2,event:'rerequest',reviewer:'bob'});assert.equal(requests[1].action,'detail');assert.match(h.mod.notice,/bob to review again/);
+ requests.length=0;
+ findElement(h.mod.render(),'pr-reviewer-remove-org/core').handlers.click({},h.cx);await h.flush();
+ assert.equal(requests[0].event,'remove');assert.equal(requests[0].reviewer,'org/core');
+ requests.length=0;
+ findElement(h.mod.render(),'pr-reviewer-add').handlers.click({},h.cx);
+ tree=h.mod.render();assert.ok(findElement(tree,'pr-reviewer-input'));assert.equal(findElement(tree,'pr-reviewer-add'),undefined);
+ h.mod.reviewerInput.set_value(' @eve ');findElement(h.mod.render(),'pr-reviewer-save').handlers.click({},h.cx);await h.flush();
+ assert.equal(requests[0].event,'add');assert.equal(requests[0].reviewer,'eve');assert.equal(findElement(h.mod.render(),'pr-reviewer-input'),undefined);
+ for(const closed of [{state:'MERGED'},{state:'CLOSED'}]){h.mod.pr={...pr(),...closed,reviewers:rows};tree=h.mod.render();assert.match(strings(findElement(tree,'pr-reviewers')),/ann/);assert.equal(findElement(tree,'pr-reviewer-add'),undefined);assert.equal(findElement(tree,'pr-reviewer-rerequest-ann'),undefined);}
+ h.mod.pr={...pr(),reviewers:rows};h.mod.preview={repo:'o/r'};tree=h.mod.render();assert.equal(findElement(tree,'pr-reviewer-add'),undefined);assert.equal(findElement(tree,'pr-reviewer-remove-dan'),undefined);
+});
+test('GitLab reviewers can be removed after reviewing, and an unreadable list says so',async()=>{
+ const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr={...pr(),reviewers:[{login:'ann',state:'APPROVED'}]};
+ assert.ok(findElement(h.mod.render(),'pr-reviewer-remove-ann'));
+ h.mod.repo='o/r';h.mod.pr={...pr(),reviewers:[],reviewersError:'needs read:org'};assert.match(strings(findElement(h.mod.render(),'pr-reviewers')),/Could not read reviewers/);
+ h.mod.pr={...pr(),reviewers:[]};assert.match(strings(findElement(h.mod.render(),'pr-reviewers')),/No reviewers yet/);
+ h.mod.pr={...pr(),reviewers:[]};h.mod.api=async()=>{throw Error('GitHub: not a collaborator')};h.mod.changeReviewer('add','eve',h.cx);await h.flush();assert.match(h.mod.error,/not a collaborator/);assert.equal(h.mod.mutating,false);
+});
