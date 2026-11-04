@@ -1364,12 +1364,16 @@ export default class PullRequests extends View {
 
   showWorktree(cx) {
     if (this.mode !== "browser" || !this.pr || !this.sp) return;
-    // Each PR may have several checkouts; the default name skips the existing ones.
-    const taken = new Set(this.currentWorktrees().map((w) => w.branch));
-    const base = `pr-${this.pr.number}-${this.pr.headRefName}`;
-    let branch = base;
-    for (let i = 2; taken.has(branch); i++) branch = `${base}-${i}`;
-    const name = branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+    // The PR's own branch name and pr-<number>; a PR may already have
+    // checkouts, so each default skips the ones in use.
+    const worktrees = this.currentWorktrees();
+    const free = (base, used) => {
+      let value = base;
+      for (let i = 2; used.has(value); i++) value = `${base}-${i}`;
+      return value;
+    };
+    const branch = free(this.pr.headRefName, new Set(worktrees.map((w) => w.branch)));
+    const name = free(`pr-${this.pr.number}`, new Set(worktrees.map((w) => w.name)));
     const form = {
       pr: this.pr,
       repo: this.repo,
@@ -1380,16 +1384,8 @@ export default class PullRequests extends View {
       agents: [],
     };
     this.worktreeForm = form;
-    // The worktree name follows the branch until the person edits it themselves.
-    const slug = (text) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-    form.branch.on("change", (_e, cx) => {
-      if (!form.nameEdited) form.name.set_value(slug(form.branch.value().trim()));
-      cx.notify();
-    });
-    form.name.on("change", (_e, cx) => {
-      form.nameEdited = form.name.value() !== slug(form.branch.value().trim());
-      cx.notify();
-    });
+    form.branch.on("change", (_e, cx) => cx.notify());
+    form.name.on("change", (_e, cx) => cx.notify());
     form.branch.on("submit", (_e, cx) => this.createWorktree(cx));
     form.name.on("submit", (_e, cx) => this.createWorktree(cx));
     form.branch.focus();

@@ -405,25 +405,24 @@ test('worktree form lists installed agents and opens the new space with the chos
  assert.equal(h.opened[0].command,'space.new');assert.deepEqual(h.opened[0].args.argv,['claude']);assert.equal(h.opened[0].args.tab,'my-review');assert.match(h.opened[0].args.folder,/my-review$/);assert.equal(h.mod.worktreeForm,null);
  assert.equal(findElement(h.mod.render(),'pr-worktree-launch-trigger'),undefined);
 });
-test('worktree name follows the branch until it is edited by hand',()=>{
+test('the form proposes the PR head branch and pr-<number> as the worktree',()=>{
  const h=harness();h.mod.pr=pr();h.mod.showWorktree(h.cx);const f=h.mod.worktreeForm;
- f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),'feature-one-two');
- f.name.type('custom',h.cx);f.branch.type('feature/three',h.cx);assert.equal(f.name.value(),'custom');
- f.name.type('feature-three',h.cx);f.branch.type('feature/four',h.cx);assert.equal(f.name.value(),'feature-four');
+ assert.equal(f.branch.value(),h.mod.pr.headRefName);assert.equal(f.name.value(),`pr-${h.mod.pr.number}`);
+ f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),`pr-${h.mod.pr.number}`,'the worktree name is independent of the branch');
 });
 test('PR detail lists existing worktrees and a click switches to their space or opens one',async()=>{
  const h=harness(),opened=[];h.mod.pr=pr();h.mod.mode='browser';h.context.run=(command,args)=>opened.push({command,args});
  h.context.exec=async(cmd,args)=>{
-  if(args[0]==='config')return{code:0,stdout:'branch.pr-2-fix.herdr-pr owner/repo#2\nbranch.pr-2-fix-2.herdr-pr owner/repo#2\nbranch.other.herdr-pr owner/repo#9\n'};
-  if(args[0]==='worktree')return{code:0,stdout:'worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /wt/pr-2-fix\nHEAD bbb\nbranch refs/heads/pr-2-fix\n\nworktree /wt/two\nHEAD ccc\nbranch refs/heads/pr-2-fix-2\n\nworktree /wt/other\nHEAD ddd\nbranch refs/heads/other\n'};
+  if(args[0]==='config')return{code:0,stdout:'branch.fix.herdr-pr owner/repo#2\nbranch.fix-2.herdr-pr owner/repo#2\nbranch.other.herdr-pr owner/repo#9\n'};
+  if(args[0]==='worktree')return{code:0,stdout:'worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /wt/pr-2\nHEAD bbb\nbranch refs/heads/fix\n\nworktree /wt/two\nHEAD ccc\nbranch refs/heads/fix-2\n\nworktree /wt/other\nHEAD ddd\nbranch refs/heads/other\n'};
   return{code:0,stdout:''};
  };
- h.live.spaces=[{id:'wt',folder:'/wt/pr-2-fix',machine:null,tabs:[]}];
+ h.live.spaces=[{id:'wt',folder:'/wt/pr-2',machine:null,tabs:[]}];
  h.mod.loadWorktrees(h.cx);await h.flush();
- assert.equal(h.mod.currentWorktrees().map(w=>w.name).join(','),'pr-2-fix,two');
+ assert.equal(h.mod.currentWorktrees().map(w=>w.name).join(','),'pr-2,two');
  const tree=h.mod.render();const first=findElement(tree,'pr-worktree-row-0'),second=findElement(tree,'pr-worktree-row-1');
- assert.match(strings(first),/pr-2-fix[\s\S]*Open$/);assert.match(strings(second),/two[\s\S]*pr-2-fix-2[\s\S]*Open space/);
+ assert.match(strings(first),/pr-2[\s\S]*Open$/);assert.match(strings(second),/two[\s\S]*fix-2[\s\S]*Open space/);
  first.handlers.click({},h.cx);assert.equal(opened[0].command,'space.select');assert.equal(opened[0].args.id,'wt');
  second.handlers.click({},h.cx);assert.equal(opened[1].command,'space.new');assert.equal(opened[1].args.folder,'/wt/two');
- h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'pr-2-fix-3');
+ h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'fix-3');assert.equal(h.mod.worktreeForm.name.value(),'pr-2-2');
 });
