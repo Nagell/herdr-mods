@@ -19,6 +19,8 @@ function harness(existingStorage) {
   vm.createContext(context);
   const typography=fs.readFileSync('mods/branch-issue/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
   vm.runInContext(typography,context);
+  const settingsSource=fs.readFileSync('mods/branch-issue/settings.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function').replaceAll('export async function','async function');
+  vm.runInContext(settingsSource,context);
   const source=fs.readFileSync('mods/branch-issue/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class LinearIssues','globalThis.Mod = class LinearIssues').replaceAll('export function','function');
   vm.runInContext(source,context);
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';mod.me={id:'me',name:'Me'};mod.teams=[{key:'ENG',name:'Engineering'}];
@@ -161,4 +163,21 @@ test('All issues opens one browser tab per space and reuses it',()=>{
  const h=harness();h.mod.mode='branch';h.live.spaces=[{active:true,id:'space',folder:'/repo',tabs:[{id:'tab',active:true}]}];
  h.mod.openBrowser(h.cx);assert.equal(h.context.runs[0].command,'tab.new');assert.equal(h.context.runs[0].args.name,'All issues');assert.equal(h.context.runs[0].args.props.mode,'browser');
  h.live.panes=[{tab:'tab',mod:'branch-issue'}];h.mod.openBrowser(h.cx);assert.equal(h.context.runs[1].command,'tab.select');
+});
+
+test('settings from mod.json set list defaults, worktree defaults and report problems',async()=>{
+ const h=harness();h.context.readTextFile=async()=>JSON.stringify({settings:{list:{default:{scope:'all',state:'started'}},worktrees:{root:'~/wt',move_to_started:true,open_with:'claude'},tracker:'jira',nope:1}});
+ h.mod.applySettings(h.cx);await h.flush();
+ assert.equal(h.mod.scope,'all');assert.equal(h.mod.state,'started');
+ assert.equal(JSON.stringify(h.mod.settingsProblems),JSON.stringify(['nope is not a setting','tracker "jira" is not supported yet; using linear']));
+ h.mod.mode='browser';h.mod.adoptIssue(issue());h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.start,true);assert.equal(h.mod.worktreeForm.launch,'claude');
+ assert.match(strings(h.mod.render()),/~\/wt\//);assert.match(strings(h.mod.render()),/nope is not a setting/);
+});
+
+test('list defaults reload the list unless a saved view exists',async()=>{
+ const settings=async()=>JSON.stringify({settings:{list:{default:{scope:'all'}}}});
+ let h=harness();h.context.readTextFile=settings;h.mod.mode='browser';let loads=0;h.mod.loadList=()=>loads++;
+ h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.scope,'all');assert.equal(loads,1);
+ h=harness();h.context.readTextFile=settings;h.mod.mode='browser';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
+ h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.scope,'mine');assert.equal(loads,0);
 });

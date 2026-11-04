@@ -89,6 +89,22 @@ Commands reach shown mod copies:
 - `branch-issue.open-browser` (alias `toggle`): open/select the reusable browser tab.
 - `branch-issue.refresh`, `branch-issue.back`, `branch-issue.open:ENG-123` (browser), `branch-issue.description`, `branch-issue.comments`, `branch-issue.links`, `branch-issue.worktree`.
 
+## Settings
+
+The installed `mods/branch-issue/mod.json` has a `settings` block, kept across `python3 install.py --update`:
+
+```json
+"settings": {
+  "refresh": { "every": "60s", "search_debounce": "450ms" },
+  "branch": { "max_identifiers": 4 },
+  "list": { "default": { "scope": "mine", "state": "active", "team": "" } },
+  "worktrees": { "root": "~/.herdr/worktrees", "open_with": "terminal", "move_to_started": false },
+  "tracker": "linear"
+}
+```
+
+`refresh.every` is how often a visible browser re-reads; `search_debounce` the pause after typing. `branch.max_identifiers` caps how many identifiers one branch may carry. `list.default` picks the scope, state and team until a saved view exists. `worktrees.root` is where Start work creates checkouts, `~` meaning the source machine's home; `open_with` is `terminal` or an installed agent's key; `move_to_started` preselects the checkbox. `tracker` is `linear`; other values are reported and ignored until another tracker exists. Unknown keys and wrong types are reported at the top of the panel. Layout block `props` override these for one copy.
+
 ## Development
 
 ```sh

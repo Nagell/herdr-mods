@@ -35,13 +35,33 @@ type Request struct {
 	Review      string `json:"review"`
 	Comment     string `json:"comment"`
 	Event       string `json:"event"`
+	// Preferences from the mod's settings.
+	PageSize int               `json:"pageSize"`
+	Tail     int               `json:"tail"`
+	Tools    map[string]string `json:"tools"`
+}
+
+var ghBinary = "gh"
+
+func pageSize(r Request) int {
+	if r.PageSize < 1 || r.PageSize > 100 {
+		return 25
+	}
+	return r.PageSize
+}
+
+func tailBytes(r Request) int {
+	if r.Tail < 1 {
+		return 60000
+	}
+	return r.Tail
 }
 
 var segmentPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var runner = runCommand
 
 func runCommand(ctx context.Context, args []string, input []byte) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd := exec.CommandContext(ctx, ghBinary, args...)
 	cmd.Stdin = bytes.NewReader(input)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
@@ -164,7 +184,7 @@ func list(ctx context.Context, r Request) (any, error) {
 		if len(r.Cursors) > 0 && r.Cursors[reason] == "" {
 			continue
 		}
-		data, e := gql(ctx, `query($q:String!,$cursor:String){search(type:ISSUE,query:$q,first:25,after:$cursor){`+pageInfo+` nodes {... on PullRequest {`+cardFields+`}}}}`, Obj{"q": scope + " " + filters[reason], "cursor": nullCursor(r.Cursors[reason])})
+		data, e := gql(ctx, `query($q:String!,$cursor:String){search(type:ISSUE,query:$q,first:`+strconv.Itoa(pageSize(r))+`,after:$cursor){`+pageInfo+` nodes {... on PullRequest {`+cardFields+`}}}}`, Obj{"q": scope + " " + filters[reason], "cursor": nullCursor(r.Cursors[reason])})
 		if e != nil {
 			return nil, e
 		}
@@ -332,6 +352,12 @@ func handle(ctx context.Context, r Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if tool := r.Tools["github"]; tool != "" {
+		ghBinary = tool
+	}
+	if tool := r.Tools["gitlab"]; tool != "" {
+		glabBinary = tool
+	}
 	if host != "" {
 		return gitlabHandle(ctx, r, host, path)
 	}
@@ -358,9 +384,10 @@ func handle(ctx context.Context, r Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		truncated := len(b) > 60000
+		limit := tailBytes(r)
+		truncated := len(b) > limit
 		if truncated {
-			b = b[len(b)-60000:]
+			b = b[len(b)-limit:]
 		}
 		return Obj{"text": string(b), "truncated": truncated}, nil
 	case "jobs":

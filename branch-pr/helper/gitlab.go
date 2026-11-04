@@ -20,10 +20,11 @@ import (
 )
 
 var glabRunner = runGlab
+var glabBinary = "glab"
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|section_(?:start|end):[0-9]+:[A-Za-z0-9_]+`)
 
 func runGlab(ctx context.Context, args []string, input []byte) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "glab", args...)
+	cmd := exec.CommandContext(ctx, glabBinary, args...)
 	cmd.Stdin = bytes.NewReader(input)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
@@ -331,7 +332,7 @@ func (g *gitlab) list(r Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	params := url.Values{"scope": {"all"}, "order_by": {"updated_at"}, "sort": {"desc"}, "per_page": {"25"}}
+	params := url.Values{"scope": {"all"}, "order_by": {"updated_at"}, "sort": {"desc"}, "per_page": {strconv.Itoa(pageSize(r))}}
 	switch r.State {
 	case "draft":
 		params.Set("state", "opened")
@@ -380,7 +381,7 @@ func (g *gitlab) list(r Request) (any, error) {
 			return nil, err
 		}
 		batch := array(data)
-		if len(batch) == 25 {
+		if len(batch) == pageSize(r) {
 			next[reason] = strconv.Itoa(page + 1)
 		}
 		for _, item := range batch {
@@ -483,9 +484,10 @@ func gitlabHandle(ctx context.Context, r Request, host, path string) (any, error
 		}
 		// Traces carry terminal colours and section markers; the panel shows plain text.
 		b = ansiPattern.ReplaceAll(bytes.ReplaceAll(b, []byte("\r"), nil), nil)
-		truncated := len(b) > 60000
+		limit := tailBytes(r)
+		truncated := len(b) > limit
 		if truncated {
-			b = b[len(b)-60000:]
+			b = b[len(b)-limit:]
 		}
 		return Obj{"text": string(b), "truncated": truncated}, nil
 	case "comment":

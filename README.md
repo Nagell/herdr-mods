@@ -48,6 +48,10 @@ For example, to install Better Spaces:
 
 Each mod's README covers its features and requirements; its `RECIPE.md` guides installation. Installing one mod does not install the others.
 
+## Versions and settings
+
+Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with an `install.py` keep your settings and print the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
+
 ## Test
 
 Requires Node.js for development tests:

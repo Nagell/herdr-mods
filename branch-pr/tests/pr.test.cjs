@@ -19,6 +19,8 @@ function harness(existingStorage) {
   vm.createContext(context);
   const typography=fs.readFileSync('mods/branch-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
   vm.runInContext(typography,context);
+  const settingsSource=fs.readFileSync('mods/branch-pr/settings.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function').replaceAll('export async function','async function');
+  vm.runInContext(settingsSource,context);
   const source=fs.readFileSync('mods/branch-pr/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
   vm.runInContext(source,context);
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.repo='owner/repo';mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';
@@ -442,4 +444,32 @@ test('PR detail lists existing worktrees and a click switches to their space or 
  first.handlers.click({},h.cx);assert.equal(opened[0].command,'space.select');assert.equal(opened[0].args.id,'wt');
  second.handlers.click({},h.cx);assert.equal(opened[1].command,'space.new');assert.equal(opened[1].args.folder,'/wt/two');
  h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'fix-3');assert.equal(h.mod.worktreeForm.name.value(),'pr-2-2');
+});
+
+test('GitLab checks load their pipeline jobs and match a job by its URL',async()=>{
+ const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr=pr();h.mod.section='checks';const requests=[];
+ h.mod.pr.checks=[{name:'test',status:'COMPLETED',conclusion:'FAILURE',detailsUrl:'https://gitlab.com/g/p/-/jobs/100',workflowName:'Pipeline #55',runId:'55'}];
+ h.mod.api=async r=>{requests.push(r);return[{jobs:[{id:100,name:'test',conclusion:'failure',steps:[]},{id:101,name:'lint',conclusion:'success',steps:[]}]}]};
+ h.mod.workflowOpen['Pipeline #55:55']=true;
+ findElement(h.mod.render(),'check-toggle-0').handlers.click({},h.cx);await h.flush();
+ assert.equal(requests[0].action,'jobs');assert.equal(requests[0].run,55);
+ const row=findElement(h.mod.render(),'check-0');assert.ok(findElement(row,'pr-log-100'));assert.equal(findElement(row,'pr-log-101'),undefined);
+});
+test('list defaults reload the list unless a saved view exists',async()=>{
+ const settings=async()=>JSON.stringify({settings:{list:{default:{state:'draft'}}}});
+ let h=harness();h.context.readTextFile=settings;h.mod.mode='browser';h.mod.repo='o/r';let loads=0;h.mod.loadList=()=>loads++;
+ h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.state,'draft');assert.equal(loads,1);
+ h=harness();h.context.readTextFile=settings;h.mod.mode='browser';h.mod.repo='o/r';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
+ h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.state,'open');assert.equal(loads,0);
+});
+test('settings from mod.json change list defaults, page size and worktree root, and problems are shown',async()=>{
+ const h=harness();h.context.readTextFile=async()=>JSON.stringify({settings:{list:{page_size:10,default:{state:'draft'}},worktrees:{root:'~/work'},refresh:{every:5},typo:1,logs:{keep_last:true}}});
+ h.mod.applySettings(h.cx);await h.flush();
+ assert.equal(h.mod.settings.list.page_size,10);assert.equal(h.mod.state,'draft');assert.equal(h.mod.settings.refresh.every,5);
+ assert.equal(JSON.stringify(h.mod.settingsProblems),JSON.stringify(['typo is not a setting','logs.keep_last should be a string']));
+ h.mod.repo='o/r';h.mod.mode='browser';const requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};h.mod.loadList(h.cx);await h.flush();
+ assert.equal(requests[0].pageSize,10);
+ const execs=[];h.context.exec=async(cmd,args)=>{execs.push(JSON.parse(args[0]));return{code:0,stdout:'{}'}};delete h.mod.api;await h.mod.api({action:'detail'});assert.equal(execs[0].tools.github,'gh');
+ h.mod.pr=pr();h.mod.showWorktree(h.cx);assert.match(strings(h.mod.worktreeView({})),/~\/work\/o-r\//);
+ assert.match(strings(h.mod.render()),/typo is not a setting/);
 });

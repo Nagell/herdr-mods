@@ -128,6 +128,22 @@ herdr-app do 'branch-pr.preview-browser:off'
 
 Preview settings are shared and persist until disabled. They do not change remotes. There is no merge, checkout-discard, or automatic GitHub write action.
 
+## Settings
+
+The installed `mods/branch-pr/mod.json` has a `settings` block, kept across `python3 install.py --update`:
+
+```json
+"settings": {
+  "refresh": { "every": "60s", "search_debounce": "450ms" },
+  "list": { "page_size": 25, "default": { "tab": "all", "state": "open" } },
+  "worktrees": { "root": "~/.herdr/worktrees", "open_with": "terminal" },
+  "logs": { "keep_last": "60KB" },
+  "tools": { "github": "gh", "gitlab": "glab" }
+}
+```
+
+`refresh.every` is how often a visible browser re-reads; `search_debounce` the pause after typing. `list.default` picks the first tab and state filter until a saved view exists. `worktrees.root` is where New worktree creates checkouts, `~` meaning the source machine's home; `open_with` is `terminal` or an installed agent's key. `logs.keep_last` caps failed-step output. `tools` are the paths of the two CLIs. Durations take `ms`, `s`, `m` or `h`; sizes `B`, `KB` or `MB`. Unknown keys and wrong types are reported at the top of the panel and ignored. Layout block `props` override these for one copy.
+
 ## Development
 
 ```sh

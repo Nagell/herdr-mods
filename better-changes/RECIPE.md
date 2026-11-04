@@ -52,6 +52,9 @@ Limit the list to 1,000 files, preview to 1,500 lines, and each line to 4,000 ch
 
 Split replacements are paired positionally inside each contiguous block, without crossing hunk or context boundaries. Use a single virtual list to keep vertical scrolling aligned. Clip long text inside equal-width cells and move both text viewports horizontally while retaining gutters.
 
+
+A `settings` block in the installed `mods/better-changes/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+
 ## Done when
 
 - `node --test tests/*.test.cjs` passes from this package folder, including real Git tests in temporary repositories.

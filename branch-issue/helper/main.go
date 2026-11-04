@@ -76,9 +76,15 @@ func loadKey() (string, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	out, err := exec.Command(shell, "-lic", `printf %s "$LINEAR_API_KEY"`).Output()
-	if err == nil && strings.TrimSpace(string(out)) != "" {
-		return strings.TrimSpace(string(out)), nil
+	// Startup files may print a greeting or wait for input: take the last line, within a limit.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, shell, "-lic", `printf '\n%s' "$LINEAR_API_KEY"`).Output()
+	if err == nil {
+		lines := strings.Split(string(out), "\n")
+		if key := strings.TrimSpace(lines[len(lines)-1]); key != "" {
+			return key, nil
+		}
 	}
 	return "", missingKey
 }

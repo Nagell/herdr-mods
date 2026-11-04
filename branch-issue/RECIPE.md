@@ -38,6 +38,9 @@ The key is a personal token with the person's full Linear access: say so before 
 
 Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Add a block `{ "mod": "branch-issue", "props": { "mode": "branch" } }` to the panel stack or replace one slot, preserving node IDs, dimensions, sibling panels, and keys. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
 
+
+A `settings` block in the installed `mods/branch-issue/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+
 ## Done when
 
 - Node tests, Python installer tests, Go tests/vet, and herdr-app check pass.

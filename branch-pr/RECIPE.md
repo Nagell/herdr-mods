@@ -50,6 +50,9 @@ Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restore
 
 Repositories are `owner/name` on github.com and `host/group/project` on any other host, which the helper serves as GitLab; the host prefix travels in bindings and keys. The GitLab backend reshapes REST responses into the GitHub-shaped objects the UI renders: notes to comments, positioned discussions to threads, approvals to APPROVED reviews, draft notes to the PENDING review (ids `draft-note:<id>` for the summary and `draft:<id>` for replies, published by bulk_publish and optionally approve), pipeline jobs to checks with `runId`, and job traces with ANSI stripped to failed logs. REQUEST_CHANGES is refused on GitLab. GitHub Enterprise is unsupported. Search indexing is eventually consistent. Herdr native initial checks do not cover every deferred render/async result. Conversation pagination is bounded and fails visibly rather than silently truncating; large failed logs are limited. A new mod identity may require copying old local state to retain drafts during migration; never overwrite existing personal state blindly.
 
+
+A `settings` block in the installed `mods/branch-pr/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+
 ## Done when
 
 - Node tests, Python installer tests, Go tests/vet, and herdr-app check pass.

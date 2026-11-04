@@ -1,6 +1,7 @@
 // Sidebar status/commit controls and a reusable diff-tab view share this class.
 // Pure Git-output parsing and diff-row transformations live in model.js.
 import { em, codeFont } from "./typography.js";
+import { loadSettings, duration } from "./settings.js";
 import { changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo } from "./model.js";
 import { View, div, svg } from "gpui-kit";
 import {
@@ -44,6 +45,12 @@ const CONTEXT_POLL_MS = 300;
 const STATUS_POLL_MS = 10000;
 const TAB_OPEN_TIMEOUT_MS = 1500;
 const COMMIT_PAGE = 50;
+// Preferences a person may change in the installed mod.json under `settings`.
+const DEFAULT_SETTINGS = {
+  refresh: { status: "10s" },
+  limits: { files: 1000, diff_lines: 1500, line_length: 4000, commits_per_page: 50 },
+  default: { view: "tree", diff: "inline" },
+};
 const LOG_FORMAT = "--format=%H%x00%h%x00%an%x00%ae%x00%at%x00%s%x00%b%x1e";
 
 // Follow the active terminal unless the active tab is our diff viewer. Mod panes
@@ -76,6 +83,7 @@ export default class Changes extends View {
     this.diffSpace = props()?.space ?? _props?.space;
     this.source = props()?.source ?? _props?.source;
     this.restoreDiffSelection(_props);
+    this.settings = DEFAULT_SETTINGS;
     this.view = localStorage.getItem("better-changes.view") === "flat" ? "flat" : "tree";
     // Optional Better Tabs integration: an icon for the diff tab.
     setShared("mod-icons", {
@@ -171,7 +179,7 @@ export default class Changes extends View {
         this.refresh(cx);
       }
     });
-    cx.timer.every(STATUS_POLL_MS, (cx) => this.refresh(cx));
+    this.applySettings(cx);
   }
 
   listenForCommands(cx) {
@@ -298,7 +306,7 @@ export default class Changes extends View {
         this.stagedCount = files.filter((f) => f.staged).length;
         this.unstagedCount = files.filter((f) => f.unstaged).length;
         this.conflicts = files.some((f) => f.conflict);
-        this.files = files.slice(0, MAX_FILES);
+        this.files = files.slice(0, this.settings.limits.files || MAX_FILES);
         this.error = null;
         this.watch(root, cx);
         if (this.mode === "sidebar" && this.tab === "commits") this.loadCommits(cx);
@@ -442,7 +450,7 @@ export default class Changes extends View {
     this.note = null;
     if (!file) {
       this.rows = [];
-      this.note = "This file has no remaining changes, or is outside the first 1,000 listed files.";
+      this.note = `This file has no remaining changes, or is outside the first ${(this.settings.limits.files || MAX_FILES).toLocaleString()} listed files.`;
       this.diffLoading = false;
       cx.notify();
       return;
@@ -513,12 +521,14 @@ export default class Changes extends View {
         }
         // A later click or repository switch may have overtaken this request.
         if (token !== this.diffToken || context !== this.contextKey()) return;
+        const maxLines = this.settings.limits.diff_lines || MAX_DIFF_LINES;
+        const maxLength = this.settings.limits.line_length || MAX_LINE_LENGTH;
         this.truncated =
-          lines.length > MAX_DIFF_LINES || lines.some((line) => line.length > MAX_LINE_LENGTH);
+          lines.length > maxLines || lines.some((line) => line.length > maxLength);
         const visible = lines
-          .slice(0, MAX_DIFF_LINES)
+          .slice(0, maxLines)
           .map((line) =>
-            line.length > MAX_LINE_LENGTH ? line.slice(0, MAX_LINE_LENGTH) + "…" : line,
+            line.length > maxLength ? line.slice(0, maxLength) + "…" : line,
           );
         this.rows = diffRows(visible);
         this.width = Math.max(300, ...visible.map((line) => line.length * em(0.7) + 110));
@@ -535,6 +545,30 @@ export default class Changes extends View {
       }
     });
   }
+  // Read the installed mod.json once, then start the status poll at its pace.
+  // The view and diff defaults apply only where nothing was chosen before.
+  applySettings(cx) {
+    cx.spawn(async (cx) => {
+      const { settings, problems } = await loadSettings("better-changes", DEFAULT_SETTINGS);
+      this.settings = settings;
+      for (const problem of problems) console.warn(`better-changes mod.json settings: ${problem}`);
+      if (localStorage.getItem("better-changes.view") === null && ["tree", "flat"].includes(settings.default.view))
+        this.view = settings.default.view;
+      if (
+        this.mode === "sidebar" &&
+        localStorage.getItem("better-changes.diff-layout") === null &&
+        ["inline", "split"].includes(settings.default.diff)
+      ) {
+        this.diffLayout = settings.default.diff;
+        setShared("better-changes.diff-layout", this.diffLayout);
+      }
+      // A floor, so a bare number read as milliseconds cannot spin Git.
+      const every = Math.max(1000, duration(settings.refresh.status, STATUS_POLL_MS));
+      cx.timer.every(every, (cx) => this.refresh(cx));
+      cx.notify();
+    });
+  }
+
   // ── Git mutations (sidebar only) ──────────────────────────────────────────
 
   // Never reset working files. Unstage changes only the index; before the first
@@ -740,7 +774,8 @@ export default class Changes extends View {
     }
     const context = this.context;
     const token = ++this.commitToken;
-    const count = more ? COMMIT_PAGE : Math.max(COMMIT_PAGE, this.commits.length);
+    const page = this.settings.limits.commits_per_page || COMMIT_PAGE;
+    const count = more ? page : Math.max(page, this.commits.length);
     const skip = more ? this.commits.length : 0;
     this.commitsLoading = true;
     cx.notify();
@@ -1506,8 +1541,13 @@ export default class Changes extends View {
                   : "Commit includes staged changes only",
           ),
       )
-      .when(this.total > MAX_FILES, (el) =>
-        el.child(div().text_size(em(0.8)).text_color(t.dim).child("First 1,000 files shown")),
+      .when(this.total > (this.settings.limits.files || MAX_FILES), (el) =>
+        el.child(
+          div()
+            .text_size(em(0.8))
+            .text_color(t.dim)
+            .child(`First ${(this.settings.limits.files || MAX_FILES).toLocaleString()} files shown`),
+        ),
       );
   }
 

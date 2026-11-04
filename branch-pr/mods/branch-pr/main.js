@@ -1,6 +1,7 @@
 // One view serves the current-branch sidebar and the full PR browser tab.
 // Git follows the checkout's machine; authenticated GitHub requests use a local helper.
 import { em, codeFont } from "./typography.js";
+import { loadSettings, duration, size } from "./settings.js";
 import { View, div, svg } from "gpui-kit";
 import {
   v_flex,
@@ -33,6 +34,15 @@ import {
 const CONTEXT_POLL_MS = 1000;
 const REFRESH_INTERVAL_MS = 60000;
 const SEARCH_DEBOUNCE_MS = 450;
+const LOG_TAIL_BYTES = 60000;
+// Preferences a person may change in the installed mod.json under `settings`.
+const DEFAULT_SETTINGS = {
+  refresh: { every: "60s", search_debounce: "450ms" },
+  list: { page_size: 25, default: { tab: "all", state: "open" } },
+  worktrees: { root: "~/.herdr/worktrees", open_with: "terminal" },
+  logs: { keep_last: "60KB" },
+  tools: { github: "gh", gitlab: "glab" },
+};
 const TAB_OPEN_TIMEOUT_MS = 1500;
 const PROPOSAL_POLL_MS = 3000;
 
@@ -126,8 +136,11 @@ export default class PullRequests extends View {
     this.actionHandles = {};
     this.workflowOpen = {};
     this.checkOpen = {};
-    this.tab = "all";
-    this.state = "open";
+    this.settings = DEFAULT_SETTINGS;
+    this.settingsProblems = [];
+    this.tab = DEFAULT_SETTINGS.list.default.tab;
+    this.state = DEFAULT_SETTINGS.list.default.state;
+    this.applySettings(cx);
     this.items = [];
     this.cursors = {};
     this.author = "";
@@ -147,6 +160,28 @@ export default class PullRequests extends View {
 
     const space = this.currentSpace();
     this.changeSpace(space, spaceContextKey(space, this.mode), cx);
+  }
+
+  // Read the installed mod.json once; list defaults apply until a saved view exists.
+  applySettings(cx) {
+    cx.spawn(async (cx) => {
+      const { settings, problems } = await loadSettings("branch-pr", DEFAULT_SETTINGS);
+      this.settings = settings;
+      this.settingsProblems = problems;
+      // Only while nothing has been chosen yet, by a saved view or a click.
+      const untouched =
+        !this.viewWasSaved &&
+        this.tab === DEFAULT_SETTINGS.list.default.tab &&
+        this.state === DEFAULT_SETTINGS.list.default.state;
+      const { tab, state } = settings.list.default;
+      if (untouched && (tab !== this.tab || state !== this.state)) {
+        this.tab = tab;
+        this.state = state;
+        // The first load may already have used the shipped defaults.
+        if (this.mode === "browser" && this.repo) this.loadList(cx);
+      }
+      cx.notify();
+    });
   }
 
   startPolling(cx) {
@@ -209,7 +244,8 @@ export default class PullRequests extends View {
         !this.loading &&
         !this.detailLoading &&
         !this.mutating;
-      if (browserVisible && canRefresh && Date.now() - (this.refreshed ?? 0) > REFRESH_INTERVAL_MS)
+      if (browserVisible && canRefresh && Date.now() - (this.refreshed ?? 0) >
+          duration(this.settings.refresh.every, REFRESH_INTERVAL_MS))
         this.refresh(cx);
     });
   }
@@ -332,10 +368,16 @@ export default class PullRequests extends View {
     this.browseKey = key;
     const saved = this.readStored(key);
     if (this.mode !== "browser") return;
-    this.tab = ["all", "mine", "involved"].includes(saved.tab) ? saved.tab : "all";
-    this.state = ["open", "draft", "merged", "closed", "all"].includes(saved.state)
+    this.viewWasSaved = Boolean(saved.tab || saved.state);
+    const tabs = ["all", "mine", "involved"];
+    const states = ["open", "draft", "merged", "closed", "all"];
+    const wanted = this.settings.list.default;
+    this.tab = tabs.includes(saved.tab) ? saved.tab : tabs.includes(wanted.tab) ? wanted.tab : "all";
+    this.state = states.includes(saved.state)
       ? saved.state
-      : "open";
+      : states.includes(wanted.state)
+        ? wanted.state
+        : "open";
     // Restoring text fires the same change event as typing. Suppress the
     // debounce path here; the caller is already about to load this view.
     this.restoringSearch = true;
@@ -1166,7 +1208,7 @@ export default class PullRequests extends View {
     // Invalidate older search responses immediately, including while waiting to debounce.
     this.listToken++;
     this.loading = false;
-    cx.timer.after(SEARCH_DEBOUNCE_MS, (cx) => {
+    cx.timer.after(duration(this.settings.refresh.search_debounce, SEARCH_DEBOUNCE_MS), (cx) => {
       if (token !== this.searchToken) return;
       const text = this.search.value().trim();
       const query = text.length >= 3 ? text : "";
@@ -1181,6 +1223,7 @@ export default class PullRequests extends View {
   }
 
   async api(request, sp = this.sp) {
+    request = { tools: this.settings.tools, ...request };
     // GitHub auth and the helper live on this computer, including for remote spaces.
     const result = await exec(
       `${appHome()}/mods/branch-pr/bin/herdr-pr`,
@@ -1222,6 +1265,7 @@ export default class PullRequests extends View {
       state: this.state,
       search: this.serverSearch ?? "",
       cursors: more ? this.cursors : {},
+      pageSize: this.settings.list.page_size,
     };
     cx.spawn(async (cx) => {
       try {
@@ -1392,7 +1436,7 @@ export default class PullRequests extends View {
       sp: { ...this.sp },
       branch: InputState.new({ value: branch }),
       name: InputState.new({ value: name }),
-      launch: "terminal", // or an installed agent's program key
+      launch: this.settings.worktrees.open_with, // terminal or an installed agent's program key
       agents: [],
     };
     this.worktreeForm = form;
@@ -1477,7 +1521,8 @@ export default class PullRequests extends View {
             throw new Error("Could not find the remote home folder.");
           userHome = result.stdout.trim().replace(/\\/g, "/");
         }
-        const path = `${userHome}/.herdr/worktrees/${repo.replace(/\//g, "-")}/${name}`;
+        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, userHome);
+        const path = `${root}/${repo.replace(/\//g, "-")}/${name}`;
         // Pin the checkout to a verified commit, not a moving PR branch. If
         // GitHub and FETCH_HEAD disagree, stop rather than open the wrong code.
         const latest = await this.api({ action: "detail", repo, number: pr.number }, sp);
@@ -1542,7 +1587,7 @@ export default class PullRequests extends View {
     const current = choices.find((c) => c.key === form.launch) ?? choices[0];
     const location = form.path
       ? form.path
-      : `~/.herdr/worktrees/${form.repo.replace("/", "-")}/${form.name.value().trim()}`;
+      : `${this.settings.worktrees.root}/${form.repo.replace(/\//g, "-")}/${form.name.value().trim()}`;
     // A titled card: stacked labelled fields, the path they produce, then one
     // footer with the launch choice and a single primary action.
     const box = v_flex()
@@ -2705,7 +2750,7 @@ export default class PullRequests extends View {
               );
             if (loaded?.error)
               content.child(div().text_size(em(0.85)).text_color(t.blocked).child(loaded.error));
-            const jobId = /\/job\/(\d+)/.exec(check.detailsUrl ?? "")?.[1];
+            const jobId = /\/jobs?\/(\d+)/.exec(check.detailsUrl ?? "")?.[1];
             const jobs = (loaded?.jobs ?? []).filter((job) =>
               jobId ? String(job.id) === jobId : job.name === check.name,
             );
@@ -2784,9 +2829,8 @@ export default class PullRequests extends View {
   }
 
   loadJobs(check, cx) {
-    const match = /\/actions\/runs\/(\d+)/.exec(check.detailsUrl ?? "");
-    if (!match) return;
-    const id = match[1];
+    const id = check.runId ?? /\/actions\/runs\/(\d+)/.exec(check.detailsUrl ?? "")?.[1];
+    if (!id) return;
     const key = this.spaceKey;
     this.jobs[id] = { loading: true };
     cx.notify();
@@ -2807,7 +2851,12 @@ export default class PullRequests extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const data = await this.api({ action: "logs", repo: this.repo, job: job.id });
+        const data = await this.api({
+          action: "logs",
+          repo: this.repo,
+          job: job.id,
+          tail: size(this.settings.logs.keep_last, LOG_TAIL_BYTES),
+        });
         if (key === this.spaceKey) this.logs[job.id] = data;
       } catch (e) {
         if (key === this.spaceKey) this.logs[job.id] = { error: e.message };
@@ -3078,6 +3127,18 @@ export default class PullRequests extends View {
     if (this.notice)
       root.child(
         div().flex_none().px(14).py(5).text_size(em(0.95)).text_color(t.done).child(this.notice),
+      );
+    if (this.settingsProblems.length)
+      root.child(
+        div()
+          .id("pr-settings-problems")
+          .flex_none()
+          .px(14)
+          .py(5)
+          .text_size(em(0.85))
+          .text_color(t.blocked)
+          .whitespace_normal()
+          .child(`mod.json settings: ${this.settingsProblems.join("; ")}`),
       );
     if (!this.pr && this.mode === "branch")
       return root

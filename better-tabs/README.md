@@ -161,6 +161,16 @@ export const hooks = {
 
 Configure `{ "type": "hook", "name": "newNamedTab", "args": { "name": "Review" } }`. Handlers receive `(args, { space, tab, cx })`; use `cx.spawn(async cx => ...)` for async work, never retain callback contexts, and never import another mod's source. Reinstalling upstream files can overwrite local hook edits; retain them separately. Exceptions and returned promise rejections become notifications.
 
+## Settings
+
+The installed `mods/better-tabs/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+
+```json
+"settings": { "tabs": { "max_width": 170 }, "menu": { "width": 240 } }
+```
+
+`tabs.max_width` caps a tab's width in pixels, overridden by a layout block's `tabMaxWidth` prop; `menu.width` sizes the overflow and action menus. Buttons, panel memory and mod icons stay in the layout block's props, since they describe one tab bar. Problems with the block are logged, not shown.
+
 ## Development
 
 ```sh

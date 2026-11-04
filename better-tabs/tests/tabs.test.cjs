@@ -85,11 +85,14 @@ function harness(config = {}) {
     fs
       .readFileSync(path.join(root, name), "utf8")
       .replace(/^import\s+[\s\S]*?;\n/gm, "")
+      .replaceAll("export async function ", "async function ")
       .replaceAll("export function ", "function ")
       .replace("export const hooks", "const hooks")
       .replace("export default class Tabs", "globalThis.Tabs = class Tabs");
   vm.runInContext(
-    load("hooks.js") +
+    load("settings.js") +
+      "\n" +
+      load("hooks.js") +
       "\n" +
       load("actions.js") +
       "\n" +

@@ -93,7 +93,7 @@ function harness() {
     },
   };
   vm.createContext(context);
-  for (const file of ["typography.js", "pr-status.js", "main.js"]) {
+  for (const file of ["typography.js", "settings.js", "pr-status.js", "main.js"]) {
     const source = fs
       .readFileSync(path.join(runtime, file), "utf8")
       .replace(/^import\s+[\s\S]*?;\n/gm, "")
@@ -502,4 +502,18 @@ test("package is standalone with local icons and no layout or helper dependency"
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, "mod.json"))).place, "none");
   assert.equal(fs.existsSync(path.join(__dirname, "../layouts")), false);
+});
+
+test("pull request status can be turned off in the settings", async () => {
+  const h = harness();
+  h.context.readTextFile = async () => JSON.stringify({ settings: { pull_request_status: false } });
+  h.context.appHome = () => "/app";
+  h.mod.applySettings(h.cx);
+  await h.flush();
+  const calls = [];
+  h.mod.prObserver.refresh = (...args) => calls.push(args);
+  h.mod.checkNew(h.cx);
+  await h.flush();
+  assert.equal(h.mod.settings.pull_request_status, false);
+  assert.equal(calls.length, 0);
 });

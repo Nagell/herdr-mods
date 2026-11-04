@@ -6,6 +6,7 @@
 // Git runs on the checkout's machine. Linear requests go through a local helper
 // binary that reads the API key from LINEAR_API_KEY; the mod never sees the key.
 import { em } from "./typography.js";
+import { loadSettings, duration } from "./settings.js";
 import { View, div, svg } from "gpui-kit";
 import {
   v_flex,
@@ -40,6 +41,18 @@ const SEARCH_DEBOUNCE_MS = 450;
 const TAB_OPEN_TIMEOUT_MS = 1500;
 // A branch name rarely carries more identifiers than this; each one costs a request.
 const MAX_BRANCH_CANDIDATES = 4;
+// Preferences a person may change in the installed mod.json under `settings`.
+const DEFAULT_SETTINGS = {
+  refresh: { every: "60s", search_debounce: "450ms" },
+  branch: { max_identifiers: 4 },
+  list: { default: { scope: "mine", state: "active", team: "" } },
+  worktrees: { root: "~/.herdr/worktrees", open_with: "terminal", move_to_started: false },
+  tracker: "linear",
+};
+
+// The first element of each choice is the key a saved view or a setting may name.
+const valid = (choices, value, fallback) =>
+  choices.some(([key]) => key === value) ? value : fallback;
 
 const SCOPES = [
   ["mine", "My issues"],
@@ -153,9 +166,12 @@ export default class LinearIssues extends View {
     this.branchIssues = [];
     this.items = [];
     this.cursor = "";
-    this.scope = "mine";
-    this.state = "active";
-    this.team = "";
+    this.settings = DEFAULT_SETTINGS;
+    this.settingsProblems = [];
+    this.scope = DEFAULT_SETTINGS.list.default.scope;
+    this.state = DEFAULT_SETTINGS.list.default.state;
+    this.team = DEFAULT_SETTINGS.list.default.team;
+    this.applySettings(cx);
     this.section = "description";
     this.search = InputState.new({ placeholder: "Search issues · title, text or ENG-123" });
     this.search.on("change", (_e, cx) => {
@@ -183,6 +199,30 @@ export default class LinearIssues extends View {
       menu.list = cx.focus_handle();
     }
     return menu;
+  }
+
+  // Read the installed mod.json once; list defaults apply until something is chosen.
+  applySettings(cx) {
+    cx.spawn(async (cx) => {
+      const { settings, problems } = await loadSettings("branch-issue", DEFAULT_SETTINGS);
+      if (settings.tracker !== "linear") {
+        problems.push(`tracker "${settings.tracker}" is not supported yet; using linear`);
+        settings.tracker = "linear";
+      }
+      this.settings = settings;
+      this.settingsProblems = problems;
+      const d = DEFAULT_SETTINGS.list.default;
+      // Only while nothing has been chosen yet, by a saved view or a click.
+      if (!this.viewWasSaved && this.scope === d.scope && this.state === d.state && this.team === d.team) {
+        this.scope = valid(SCOPES, settings.list.default.scope, d.scope);
+        this.state = valid(STATES, settings.list.default.state, d.state);
+        this.team = settings.list.default.team;
+        // The first load may already have used the shipped defaults.
+        const changed = this.scope !== d.scope || this.state !== d.state || this.team !== d.team;
+        if (changed && this.mode === "browser") this.loadList(cx);
+      }
+      cx.notify();
+    });
   }
 
   startPolling(cx) {
@@ -219,7 +259,8 @@ export default class LinearIssues extends View {
         !this.loading &&
         !this.detailLoading &&
         !this.mutating;
-      if (browserVisible && canRefresh && Date.now() - (this.refreshed ?? 0) > REFRESH_INTERVAL_MS)
+      if (browserVisible && canRefresh && Date.now() - (this.refreshed ?? 0) >
+          duration(this.settings.refresh.every, REFRESH_INTERVAL_MS))
         this.refresh(cx);
     });
   }
@@ -395,11 +436,11 @@ export default class LinearIssues extends View {
   restoreView() {
     if (this.mode !== "browser") return;
     const saved = this.readStored(this.viewKey());
-    const valid = (choices, value, fallback) =>
-      choices.some(([key]) => key === value) ? value : fallback;
-    this.scope = valid(SCOPES, saved.scope, "mine");
-    this.state = valid(STATES, saved.state, "active");
-    this.team = typeof saved.team === "string" ? saved.team : "";
+    this.viewWasSaved = Boolean(saved.scope || saved.state);
+    const wanted = this.settings.list.default;
+    this.scope = valid(SCOPES, saved.scope, valid(SCOPES, wanted.scope, "mine"));
+    this.state = valid(STATES, saved.state, valid(STATES, wanted.state, "active"));
+    this.team = typeof saved.team === "string" ? saved.team : wanted.team;
     // Restoring text fires the same change event as typing. Suppress the
     // debounce path here; the caller is already about to load this view.
     this.restoringSearch = true;
@@ -521,7 +562,7 @@ export default class LinearIssues extends View {
         const bound = identifiersIn(binding.stdout ?? "");
         const candidates = [...new Set([...bound, ...identifiersIn(this.branch)])].slice(
           0,
-          Math.max(bound.length, MAX_BRANCH_CANDIDATES),
+          Math.max(bound.length, this.settings.branch.max_identifiers || MAX_BRANCH_CANDIDATES),
         );
         await this.ensureViewer();
         const found = candidates.length
@@ -636,7 +677,7 @@ export default class LinearIssues extends View {
     this.searchPending = true;
     this.listToken++;
     this.loading = false;
-    cx.timer.after(SEARCH_DEBOUNCE_MS, (cx) => {
+    cx.timer.after(duration(this.settings.refresh.search_debounce, SEARCH_DEBOUNCE_MS), (cx) => {
       if (token !== this.searchToken) return;
       const text = this.search.value().trim();
       const query = text.length >= 3 ? text : "";
@@ -937,9 +978,9 @@ export default class LinearIssues extends View {
       branch: InputState.new({ value: branch }),
       name: InputState.new({ value: slug(branch) }),
       base: InputState.new({ value: "main" }),
-      launch: "terminal", // or an installed agent's program key
+      launch: this.settings.worktrees.open_with, // terminal or an installed agent's program key
       agents: [],
-      start: false, // move the issue to the team's started state after creation
+      start: this.settings.worktrees.move_to_started, // move the issue to started after creation
     };
     this.worktreeForm = form;
     // The worktree name follows the branch until the person edits it themselves.
@@ -1018,7 +1059,8 @@ export default class LinearIssues extends View {
           throw new Error("That branch already exists. Choose a new branch name.");
         if (existing.code !== 1)
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
-        const path = `${await this.homeOf(sp)}/.herdr/worktrees/${folderName(sp.folder)}/${name}`;
+        const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, await this.homeOf(sp));
+        const path = `${root}/${folderName(sp.folder)}/${name}`;
         // Start from the remote's base so the branch is not behind before work begins.
         await git(["fetch", "--no-tags", "origin", base]);
         await git(["worktree", "add", "-b", branch, "--", path, "FETCH_HEAD"]);
@@ -1415,6 +1457,18 @@ export default class LinearIssues extends View {
     if (this.notice)
       root.child(
         div().flex_none().px(14).py(5).text_size(em(0.95)).text_color(t.done).child(this.notice),
+      );
+    if (this.settingsProblems.length)
+      root.child(
+        div()
+          .id("issue-settings-problems")
+          .flex_none()
+          .px(14)
+          .py(5)
+          .text_size(em(0.85))
+          .text_color(t.blocked)
+          .whitespace_normal()
+          .child(`mod.json settings: ${this.settingsProblems.join("; ")}`),
       );
     if (this.issue) this.detailView(root, t);
     else if (this.mode === "branch") root.child(this.noIssueView(t));
@@ -2317,7 +2371,8 @@ export default class LinearIssues extends View {
     const choices = this.launchChoices(form);
     const current = choices.find((c) => c.key === form.launch) ?? choices[0];
     const location =
-      form.path ?? `~/.herdr/worktrees/${folderName(form.sp.folder)}/${form.name.value().trim()}`;
+      form.path ??
+      `${this.settings.worktrees.root}/${folderName(form.sp.folder)}/${form.name.value().trim()}`;
     const box = v_flex()
       .id("issue-worktree-form")
       .mx(14)

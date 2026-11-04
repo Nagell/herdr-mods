@@ -44,6 +44,16 @@ PR results refresh at most once a minute per checkout, with immediate lookups wh
 
 The PR badge has no merge or review controls. Selecting its row selects the space; Cmd-clicking the number opens the PR in your default browser. Space menus continue to use Herdr's shipped `menu` mod. Worktree grouping is for **open spaces**, not every checkout on disk. A worktree without an open main-checkout space remains a top-level row.
 
+## Settings
+
+The installed `mods/better-spaces/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+
+```json
+"settings": { "git": { "retry_after": "15s" }, "pull_request_status": true }
+```
+
+`git.retry_after` is how long a failed Git read waits before it is tried again. `pull_request_status` set to `false` turns off the `gh` calls that colour pull-request state, for people without the GitHub CLI. Problems with the block are logged, not shown.
+
 ## Development
 
 - `mods/better-spaces/main.js` — space navigation, Git metadata, worktree/machine grouping, and native rendering.

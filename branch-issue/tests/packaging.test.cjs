@@ -12,7 +12,7 @@ test('package owns its helper and has no custom-mod or layout dependency', () =>
   assert.match(source, /run\("tab.new"/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))).title, 'Branch Issue');
   assert.equal(fs.readFileSync(path.join(runtime, 'typography.js'), 'utf8'), fs.readFileSync(path.join(root, '../branch-pr/mods/branch-pr/typography.js'), 'utf8'));
-  for (const file of ['main.js', 'typography.js', 'mod.json', 'issue.svg', 'refresh.svg', 'back.svg', 'chevron-down.svg', 'checkout.svg', 'branch.svg', 'terminal.svg', 'comment.svg', 'close.svg', 'link.svg', 'unlink.svg', 'external.svg', 'user.svg'])
+  for (const file of ['main.js', 'typography.js', 'settings.js', 'mod.json', 'issue.svg', 'refresh.svg', 'back.svg', 'chevron-down.svg', 'checkout.svg', 'branch.svg', 'terminal.svg', 'comment.svg', 'close.svg', 'link.svg', 'unlink.svg', 'external.svg', 'user.svg'])
     assert.ok(fs.existsSync(path.join(runtime, file)), file);
   for (const file of ['helper/go.mod', 'helper/main.go', 'helper/main_test.go', 'install.py', 'README.md', 'RECIPE.md'])
     assert.ok(fs.existsSync(path.join(root, file)), file);

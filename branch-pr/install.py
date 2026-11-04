@@ -11,14 +11,39 @@ import tempfile
 ROOT = Path(__file__).resolve().parent
 
 
+def keep_settings(manifest, kept, prefix=""):
+    """Write a person's settings into the new manifest; keys the new version lacks are returned."""
+    fresh = json.loads(manifest.read_text())
+    dropped = []
+
+    def merge(defaults, given, path):
+        for key, value in given.items():
+            name = f"{path}.{key}" if path else key
+            if key not in defaults:
+                dropped.append(name)
+            elif isinstance(defaults[key], dict) and isinstance(value, dict):
+                merge(defaults[key], value, name)
+            else:
+                defaults[key] = value
+
+    merge(fresh.setdefault("settings", {}), kept, prefix)
+    manifest.write_text(json.dumps(fresh, indent=2) + "\n")
+    return dropped
+
+
 def install(app_home, update=False):
     app_home = Path(app_home).expanduser()
     target = app_home / "mods/branch-pr"
+    version = json.loads((ROOT / "mods/branch-pr/mod.json").read_text()).get("version", "?")
+    previous = None
+    installed = {}
     if target.is_symlink():
         raise RuntimeError(f"Refusing to overwrite a symlink: {target}")
     if target.exists():
         try:
-            ours = json.loads((target / "mod.json").read_text()).get("title") == "Branch PR"
+            installed = json.loads((target / "mod.json").read_text())
+            ours = installed.get("title") == "Branch PR"
+            previous = installed.get("version")
         except (OSError, ValueError):
             ours = False
         if not update or not ours:
@@ -30,11 +55,17 @@ def install(app_home, update=False):
     with tempfile.TemporaryDirectory(prefix="branch-pr-build-") as build:
         binary = Path(build) / "herdr-pr"
         subprocess.run(["go", "build", "-o", str(binary), "."], cwd=ROOT / "helper", check=True)
+        kept = installed.get("settings") if update else None
         shutil.copytree(ROOT / "mods/branch-pr", target, dirs_exist_ok=update)
+        if kept:
+            dropped = keep_settings(target / "mod.json", kept)
+            if dropped:
+                print("Settings no longer used and dropped: " + ", ".join(dropped))
         (target / "bin").mkdir(exist_ok=True)
         shutil.copy2(binary, target / "bin/herdr-pr")
     subprocess.run(["herdr-app", "check", str(target)], check=True)
-    print(f"Installed Branch PR: {target}")
+    change = f" (was {previous or 'unversioned'})" if update else ""
+    print(f"Installed Branch PR {version}{change}: {target}")
     print('Point your sidebar at branch-pr with props {"mode":"branch"}. No layout or keys were changed.')
 
 

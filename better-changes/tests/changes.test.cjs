@@ -107,11 +107,12 @@ function harness(mode = "sidebar") {
     },
   };
   vm.createContext(context);
-  for (const file of ["typography.js", "model.js", "main.js"])
+  for (const file of ["typography.js", "settings.js", "model.js", "main.js"])
     vm.runInContext(
       fs
         .readFileSync(`mods/better-changes/${file}`, "utf8")
         .replace(/^import\s+[\s\S]*?;\n/gm, "")
+        .replaceAll("export async function", "async function")
         .replaceAll("export function", "function")
         .replace("export default class Changes", "globalThis.Changes=class Changes"),
       context,
@@ -966,4 +967,14 @@ test("commits tab pages history, opens a commit's files, and diffs a file agains
   assert.equal(d.mod.rows.length, 3);
   rendered = d.mod.render(d.cx);
   assert.ok(JSON.stringify(rendered).includes("Commit s7 · Subject 7"));
+});
+
+test("settings from mod.json set the limits and the view default when nothing is stored", async () => {
+  const h = harness();
+  h.context.readTextFile = async () => JSON.stringify({ settings: { limits: { files: 2 }, default: { view: "flat" } } });
+  h.context.appHome = () => "/app";
+  h.mod.applySettings(h.cx);
+  await h.flush();
+  assert.equal(h.mod.settings.limits.files, 2);
+  assert.equal(h.mod.view, "flat");
 });

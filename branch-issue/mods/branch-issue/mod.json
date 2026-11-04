@@ -1,1 +1,27 @@
-{ "place": "none", "title": "Branch Issue" }
+{
+  "version": "1.1.0",
+  "place": "none",
+  "title": "Branch Issue",
+  "settings": {
+    "refresh": {
+      "every": "60s",
+      "search_debounce": "450ms"
+    },
+    "branch": {
+      "max_identifiers": 4
+    },
+    "list": {
+      "default": {
+        "scope": "mine",
+        "state": "active",
+        "team": ""
+      }
+    },
+    "worktrees": {
+      "root": "~/.herdr/worktrees",
+      "open_with": "terminal",
+      "move_to_started": false
+    },
+    "tracker": "linear"
+  }
+}

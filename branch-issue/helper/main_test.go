@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -130,5 +132,18 @@ func TestMutationsAndKeyErrors(t *testing.T) {
 	transport = func(context.Context, string, []byte) (int, []byte, error) { return 401, []byte(`{}`), nil }
 	if _, err := handle(context.Background(), Request{Action: "viewer"}); err == nil || !strings.Contains(err.Error(), "rejected") {
 		t.Fatalf("expected rejected key, got %v", err)
+	}
+}
+
+func TestLoadKeyIgnoresAShellGreeting(t *testing.T) {
+	shell := filepath.Join(t.TempDir(), "shell.sh")
+	script := "#!/bin/sh\nLINEAR_API_KEY=secret\necho Welcome back\neval \"$2\"\n"
+	if err := os.WriteFile(shell, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LINEAR_API_KEY", "")
+	t.Setenv("SHELL", shell)
+	if key, err := loadKey(); err != nil || key != "secret" {
+		t.Fatalf("got %q %v", key, err)
 	}
 }

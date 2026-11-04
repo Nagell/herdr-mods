@@ -1,4 +1,13 @@
 {
+  "version": "1.1.0",
   "place": "none",
-  "title": "Better Tabs"
+  "title": "Better Tabs",
+  "settings": {
+    "tabs": {
+      "max_width": 170
+    },
+    "menu": {
+      "width": 240
+    }
+  }
 }

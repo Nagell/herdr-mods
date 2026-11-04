@@ -30,7 +30,7 @@ class InstallTests(unittest.TestCase):
                 if args[0] == "go":
                     Path(args[3]).write_text("built helper")
 
-            with patch.object(installer.shutil, "which", return_value="available"), patch.object(installer.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(installer.shutil, "which", return_value="available"), patch.object(installer.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()) as out:
                 installer.install(app)
                 target = app / "mods/branch-pr"
                 self.assertEqual((target / "bin/herdr-pr").read_text(), "built helper")
@@ -39,9 +39,32 @@ class InstallTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     installer.install(app)
                 installer.install(app, update=True)
+            self.assertRegex(out.getvalue(), r"Installed .* \d+\.\d+\.\d+ \(was \d+\.\d+\.\d+\)")
             self.assertEqual((app / "layouts/personal.json").read_text(), '{"personal":true}')
             self.assertEqual(json.loads((app / "keys.json").read_text())["global"]["cmd-p"], "custom")
             self.assertEqual(other.read_text(), "// personal")
+
+    def test_update_keeps_edited_settings_and_reports_stale_keys(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = Path(folder) / "app"
+            target = app / "mods/branch-pr"
+            target.mkdir(parents=True)
+            shipped = json.loads((ROOT / "mods/branch-pr/mod.json").read_text())
+            first = next(iter(shipped.get("settings", {"x": 1})))
+            edited = dict(shipped, version="0.0.1", settings={first: "edited", "gone": True})
+            (target / "mod.json").write_text(json.dumps(edited))
+
+            def run(args, **kwargs):
+                if args[0] == "go":
+                    Path(args[3]).write_text("built helper")
+
+            with patch.object(installer.shutil, "which", return_value="available"), patch.object(installer.subprocess, "run", side_effect=run), contextlib.redirect_stdout(io.StringIO()) as out:
+                installer.install(app, update=True)
+            manifest = json.loads((target / "mod.json").read_text())
+            self.assertEqual(manifest["version"], shipped["version"])
+            self.assertEqual(manifest["settings"][first], "edited")
+            self.assertNotIn("gone", manifest["settings"])
+            self.assertIn("dropped: gone", out.getvalue())
 
     def test_unrelated_names_and_symlinks_are_never_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -1,6 +1,7 @@
 // Native tab bar, persistent action toolbar, and a separate overflow-popup view.
 // Keep layout commands in event handlers or synchronization tasks, never render.
 import { em } from "./typography.js";
+import { loadSettings } from "./settings.js";
 import { find, buttons, execute, matches, isActive } from "./actions.js";
 import {
   toolbarPreferences,
@@ -33,7 +34,8 @@ const DRAG_KEY = "better-tabs.action-drag";
 const PREFERENCES_KEY = "better-tabs.toolbar";
 const DRAG_THRESHOLD = 5; // Small pointer movements must remain ordinary clicks.
 const DRAG_TIMEOUT_MS = 15000;
-const MENU_WIDTH = 240;
+// Preferences a person may change in the installed mod.json under `settings`.
+const DEFAULT_SETTINGS = { tabs: { max_width: 170 }, menu: { width: 240 } };
 
 // Each row is 32px, with 2px gaps and 5px padding on each edge.
 const menuHeight = (count) => Math.min(420, Math.max(1, count) * 34 + 8);
@@ -82,6 +84,13 @@ export default class Tabs extends View {
   }
 
   init(_props, cx) {
+    this.settings = DEFAULT_SETTINGS;
+    cx.spawn(async (cx) => {
+      const { settings, problems } = await loadSettings("better-tabs", DEFAULT_SETTINGS);
+      this.settings = settings;
+      for (const problem of problems) console.warn(`better-tabs mod.json settings: ${problem}`);
+      cx.notify();
+    });
     this.tabDrag = null;
     this.panels = {};
     try {
@@ -248,14 +257,14 @@ export default class Tabs extends View {
       ...(bounds
         ? {
             at: {
-              x: Math.max(0, bounds.x + bounds.width - MENU_WIDTH),
+              x: Math.max(0, bounds.x + bounds.width - this.settings.menu.width),
               y: bounds.y + bounds.height + 6,
             },
           }
         : {}),
       mod: "better-tabs",
       kind: "popup",
-      width: MENU_WIDTH,
+      width: this.settings.menu.width,
       height: menuHeight(entries.length),
       props: {
         ...this.config(),
@@ -570,7 +579,7 @@ export default class Tabs extends View {
     list.children(entries.map((entry) => this.actionButton(entry, cx, true)));
     return v_flex()
       .id("actions-menu")
-      .w(MENU_WIDTH)
+      .w(this.settings.menu.width)
       .h(menuHeight(entries.length))
       .p(5)
       .text_color(t.foreground)
@@ -636,7 +645,7 @@ export default class Tabs extends View {
       )
       .child(
         div()
-          .max_w(config.tabMaxWidth ?? 170)
+          .max_w(config.tabMaxWidth ?? this.settings.tabs.max_width)
           .truncate()
           .tooltip(tab.name)
           .child(tab.zoomed ? `${tab.name} Z` : tab.name),

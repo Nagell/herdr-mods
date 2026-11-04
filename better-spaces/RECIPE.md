@@ -44,6 +44,9 @@ Replace only the existing spaces block's mod reference in the person's layout, p
 
 Herdr is native GPUI, not HTML/Node/CSS. Do not retain callback contexts, notify during render, or use timers for animation. Missing gh or authentication is a status error, not a reason to break space navigation. GitHub Enterprise and non-GitHub hosts are unsupported. A minute-old result is not real-time CI. Same-named fork branches must not be mistaken for the checkout. The badge links to GitHub, but is not a PR browser or merge control.
 
+
+A `settings` block in the installed `mods/better-spaces/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+
 ## Done when
 
 - All tests pass and herdr-app check succeeds for the runtime folder.

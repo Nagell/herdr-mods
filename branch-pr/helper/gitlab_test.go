@@ -129,6 +129,29 @@ func TestGitLabDetailReshapesDiscussionsDraftsApprovalsAndJobs(t *testing.T) {
 	}
 }
 
+func TestSettingsFieldsReachTheRequests(t *testing.T) {
+	calls := mockGlab(t, map[string]any{"user": Obj{"username": "me"}})
+	if _, err := handle(context.Background(), Request{Action: "list", Repo: repo, PageSize: 10, Tools: map[string]string{"gitlab": "/opt/glab"}}); err != nil {
+		t.Fatal(err)
+	}
+	if glabBinary != "/opt/glab" {
+		t.Fatalf("tool path not applied: %s", glabBinary)
+	}
+	glabBinary = "glab"
+	last := (*calls)[len(*calls)-1].path()
+	if !strings.Contains(last, "per_page=10") {
+		t.Fatalf("page size missing in %s", last)
+	}
+	glabRunner = func(_ context.Context, _ []string, _ []byte) ([]byte, error) { return []byte("0123456789"), nil }
+	out, err := handle(context.Background(), Request{Action: "logs", Repo: repo, Job: 1, Tail: 4})
+	if err != nil || out.(Obj)["text"] != "6789" || out.(Obj)["truncated"] != true {
+		t.Fatalf("tail %v %v", out, err)
+	}
+	if pageSize(Request{PageSize: 500}) != 25 || tailBytes(Request{}) != 60000 {
+		t.Fatal("defaults")
+	}
+}
+
 func TestGitLabListFiltersAndPagesByNumber(t *testing.T) {
 	calls := mockGlab(t, map[string]any{"user": Obj{"username": "me"}})
 	if _, err := handle(context.Background(), Request{Action: "list", Repo: repo, Tab: "involved", State: "draft", Search: "login", Cursors: map[string]string{"Assigned": "3"}}); err != nil {

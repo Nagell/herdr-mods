@@ -46,6 +46,9 @@ Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restore
 
 No callback contexts retained. No side effects from render. Animation uses spin(), not timers. Native initial checks do not exercise overflow/deferred elements. Give the overflow popup an explicit width and height, with an inner flexing scroll list; putting overflow scrolling on an intrinsically sized popup root collapses it and hides the actions. Shared contributed commands cannot reach hidden mod copies. Panel memory is local to this mod copy and one configured container/stack pair. A layout switch creates a fresh toolbar instance.
 
+
+A `settings` block in the installed `mods/better-tabs/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+
 ## Done when
 
 - node --test tests/*.test.cjs and herdr-app check pass.

@@ -4,6 +4,7 @@
 
 import { PRStatusObserver, prPlaceKey, prAppearance } from "./pr-status.js";
 import { em } from "./typography.js";
+import { loadSettings, duration } from "./settings.js";
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import {
@@ -46,6 +47,8 @@ const basename = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Watches and terminal events handle most changes. Poll visible repositories
 // occasionally to catch edits and commits made outside Herdr.
 const GIT_FALLBACK_MS = 15000;
+// Preferences a person may change in the installed mod.json under `settings`.
+const DEFAULT_SETTINGS = { git: { retry_after: "15s" }, pull_request_status: true };
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -72,6 +75,8 @@ export default class Spaces extends View {
 
   init(_props, cx) {
     this.prObserver = new PRStatusObserver();
+    this.settings = DEFAULT_SETTINGS;
+    this.applySettings(cx);
     // Repository caches are keyed by [machine, folder], so equal paths on
     // different machines cannot share Git or PR state. null means not a repo.
     this.git = Object.create(null);
@@ -103,6 +108,16 @@ export default class Spaces extends View {
     cx.timer.every(250, (cx) => this.checkNew(cx));
   }
 
+  // Read the installed mod.json once; Herdr restarts the mod when it changes.
+  applySettings(cx) {
+    cx.spawn(async (cx) => {
+      const { settings, problems } = await loadSettings("better-spaces", DEFAULT_SETTINGS);
+      this.settings = settings;
+      for (const problem of problems) console.warn(`better-spaces mod.json settings: ${problem}`);
+      cx.notify();
+    });
+  }
+
   checkNew(cx) {
     const now = Date.now();
     const sp = spaces();
@@ -120,7 +135,7 @@ export default class Spaces extends View {
           this.git[prPlaceKey(s.machine, folder)]?.branch,
       };
     });
-    this.prObserver.refresh(places, cx);
+    if (this.settings.pull_request_status) this.prObserver.refresh(places, cx);
     const due = this.due(now, sp, ps);
     if (due.size) this.refreshGit(due, cx);
     if (sp.some((s) => !this.shown.has(s.id))) cx.notify();
@@ -192,7 +207,7 @@ export default class Spaces extends View {
         if (
           needsPolling &&
           !this.folded.has(JSON.parse(key)[0]) &&
-          now - (this.checked[key] ?? 0) > GIT_FALLBACK_MS
+          now - (this.checked[key] ?? 0) > duration(this.settings.git.retry_after, GIT_FALLBACK_MS)
         ) {
           dueKeys.add(key);
         }

@@ -47,6 +47,20 @@ Colors indicate additions/removals, not whether an AI or human edited the lines.
 
 The sidebar reads repository status on a timer and uses local folder watches. Remote repositories refresh through polling. Explicit `source: { cwd, on }` props can pin the mod to a repository; normally it follows the active terminal.
 
+## Settings
+
+The installed `mods/better-changes/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+
+```json
+"settings": {
+  "refresh": { "status": "10s" },
+  "limits": { "files": 1000, "diff_lines": 1500, "line_length": 4000, "commits_per_page": 50 },
+  "default": { "view": "tree", "diff": "inline" }
+}
+```
+
+`refresh.status` is the Git status poll interval. `limits` bound the file list, the lines and line length shown in a diff, and the commits loaded per page. `default.view` (`tree` or `flat`) and `default.diff` (`inline` or `split`) apply until you have chosen one, which is remembered. Problems with the block are logged, not shown.
+
 ## Development
 
 ### Code map
