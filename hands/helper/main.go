@@ -17,7 +17,7 @@ import (
 
 const usage = `hands: a coding agent's hands on the Mac
 
-  hands permissions [--ask]            Accessibility and Screen Recording state; --ask prompts
+  hands permissions [--ask[=accessibility|screen]]   permission state; --ask prompts for both or one
   hands apps                           running apps with pid, bundle id, frontmost
   hands windows [--app A]              on-screen windows with their frames
   hands see --app A [--window T]       numbered accessibility tree; saves the snapshot actions use
@@ -32,7 +32,8 @@ const usage = `hands: a coding agent's hands on the Mac
   hands shot --app A [--window T] out.png   screenshot one window
   hands record start out.mov [--seconds N] [--clicks]   full-screen recording via screencapture
   hands record start out.mov --app A [--window T]       record one window via ScreenCaptureKit
-  hands record stop | status
+           [--note "what this shows"]                   a summary kept with the recording
+  hands record stop | status | list
 
   --app takes a name, bundle id or pid. --json prints machine-readable output.
   --delay MS waits that long after click, set, focus, key, scroll and type
@@ -208,7 +209,11 @@ func run(args []string, out *os.File) error {
 
 	switch rest[0] {
 	case "permissions":
-		v, err := permissions(opts["ask"] == "true")
+		ask := opts["ask"]
+		if ask != "" && ask != "true" && ask != "accessibility" && ask != "screen" {
+			return fmt.Errorf("--ask takes accessibility or screen, got %q", ask)
+		}
+		v, err := permissions(ask == "true" || ask == "accessibility", ask == "true" || ask == "screen")
 		if err != nil {
 			return err
 		}
@@ -485,7 +490,7 @@ func run(args []string, out *os.File) error {
 		})
 	case "record":
 		if len(rest) < 2 {
-			return errors.New("record needs start <file.mov>, stop or status")
+			return errors.New("record needs start <file.mov>, stop, status or list")
 		}
 		switch rest[1] {
 		case "start":
@@ -506,7 +511,7 @@ func run(args []string, out *os.File) error {
 					return err
 				}
 			}
-			r, err := startRecording(file, seconds, opts["clicks"] == "true", pid, app, opts["window"])
+			r, err := startRecording(file, seconds, opts["clicks"] == "true", pid, app, opts["window"], opts["note"])
 			if err != nil {
 				return err
 			}
@@ -531,6 +536,25 @@ func run(args []string, out *os.File) error {
 					return fmt.Sprintf("Recording %s to %s since %s (pid %d).", map[bool]string{true: r.App, false: "the screen"}[r.App != ""], r.File, r.Started, r.Pid)
 				}
 				return "Not recording."
+			})
+		case "list":
+			past := pastRecordings()
+			emit(past, func() string {
+				if len(past) == 0 {
+					return "No recordings yet."
+				}
+				lines := []string{}
+				for _, p := range past {
+					line := fmt.Sprintf("%s  %.0fs  %d KB  %s", p.Started, p.Seconds, p.Bytes/1024, p.File)
+					if p.Missing {
+						line += "  (movie is gone)"
+					}
+					if p.Note != "" {
+						line += "  " + p.Note
+					}
+					lines = append(lines, line)
+				}
+				return strings.Join(lines, "\n")
 			})
 		default:
 			return fmt.Errorf("unknown record action %q", rest[1])

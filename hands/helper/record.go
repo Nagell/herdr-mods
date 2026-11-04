@@ -23,6 +23,59 @@ type Recording struct {
 	File    string `json:"file"`
 	Started string `json:"started"`
 	App     string `json:"app,omitempty"` // set for a window recording
+	Window  string `json:"window,omitempty"`
+	Note    string `json:"note,omitempty"`
+	Ended   string `json:"ended,omitempty"`
+}
+
+// PastRecording is a finished recording plus what its movie looks like now.
+type PastRecording struct {
+	Recording
+	Seconds float64 `json:"seconds"`
+	Bytes   int64   `json:"bytes"`
+	Missing bool    `json:"missing,omitempty"`
+}
+
+const historySize = 50
+
+// remember files a finished recording, newest first. The movie's last write is
+// its end, since a --seconds recording stops with nobody watching.
+// shortcut: lives in the state dir, a cache folder by default, so clearing it loses the list; move it if that bites.
+func remember(r Recording) {
+	info, err := os.Stat(r.File)
+	if err != nil {
+		return
+	}
+	r.Ended = info.ModTime().Format(time.RFC3339)
+	var old []Recording
+	_ = readState("recordings.json", &old)
+	list := []Recording{r}
+	for _, o := range old {
+		if o.File != r.File && len(list) < historySize {
+			list = append(list, o)
+		}
+	}
+	_ = writeState("recordings.json", list)
+}
+
+func pastRecordings() []PastRecording {
+	currentRecording() // files one that ended by itself
+	var list []Recording
+	_ = readState("recordings.json", &list)
+	past := []PastRecording{}
+	for _, r := range list {
+		p := PastRecording{Recording: r}
+		started, _ := time.Parse(time.RFC3339, r.Started)
+		ended, _ := time.Parse(time.RFC3339, r.Ended)
+		p.Seconds = ended.Sub(started).Seconds()
+		if info, err := os.Stat(r.File); err == nil {
+			p.Bytes = info.Size()
+		} else {
+			p.Missing = true
+		}
+		past = append(past, p)
+	}
+	return past
 }
 
 var screencapture = "/usr/sbin/screencapture"
@@ -72,12 +125,13 @@ func currentRecording() (Recording, bool) {
 	}
 	if !isRecorder(r.Pid) {
 		_ = os.Remove(filepath.Join(stateDir(), "record.json"))
+		remember(r)
 		return r, false
 	}
 	return r, true
 }
 
-func startRecording(file string, seconds int, clicks bool, pid int, app, window string) (Recording, error) {
+func startRecording(file string, seconds int, clicks bool, pid int, app, window, note string) (Recording, error) {
 	if r, running := currentRecording(); running {
 		return r, fmt.Errorf("a recording is already running (pid %d, %s); stop it first", r.Pid, r.File)
 	}
@@ -111,7 +165,7 @@ func startRecording(file string, seconds int, clicks bool, pid int, app, window 
 	if err := cmd.Start(); err != nil {
 		return Recording{}, fmt.Errorf("could not start the recorder: %w", err)
 	}
-	r := Recording{Pid: cmd.Process.Pid, File: path, Started: time.Now().Format(time.RFC3339), App: app}
+	r := Recording{Pid: cmd.Process.Pid, File: path, Started: time.Now().Format(time.RFC3339), App: app, Window: window, Note: note}
 	if err := writeState("record.json", r); err != nil {
 		return r, err
 	}
@@ -145,6 +199,7 @@ func stopRecording(wait time.Duration) (Recording, error) {
 		}
 		return r, fmt.Errorf("no movie at %s: %s", r.File, detail)
 	}
+	remember(r)
 	return r, nil
 }
 

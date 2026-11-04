@@ -215,7 +215,7 @@ func TestStopKeepsStateWhileTheRecorderLives(t *testing.T) {
 	old := screencapture
 	screencapture = stubborn
 	t.Cleanup(func() { screencapture = old })
-	r, err := startRecording(filepath.Join(dir, "out.mov"), 0, false, 0, "", "")
+	r, err := startRecording(filepath.Join(dir, "out.mov"), 0, false, 0, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,11 +289,11 @@ func TestRecordingStartsStopsAndRefusesOverlap(t *testing.T) {
 	screencapture = fake
 	t.Cleanup(func() { screencapture = old })
 	movie := filepath.Join(dir, "out.mov")
-	r, err := startRecording(movie, 0, false, 0, "", "")
+	r, err := startRecording(movie, 0, false, 0, "", "", "")
 	if err != nil || !alive(r.Pid) {
 		t.Fatalf("start %+v %v", r, err)
 	}
-	if _, err := startRecording(filepath.Join(dir, "two.mov"), 0, false, 0, "", ""); err == nil || !strings.Contains(err.Error(), "already running") {
+	if _, err := startRecording(filepath.Join(dir, "two.mov"), 0, false, 0, "", "", ""); err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Fatalf("expected overlap refusal, got %v", err)
 	}
 	if _, running := currentRecording(); !running {
@@ -312,5 +312,39 @@ func TestRecordingStartsStopsAndRefusesOverlap(t *testing.T) {
 	}
 	if _, err := stopRecording(time.Second); err == nil {
 		t.Fatal("stopping twice should fail")
+	}
+}
+
+func TestFinishedRecordingsAreRememberedNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HANDS_STATE_DIR", dir)
+	first, second := filepath.Join(dir, "one.mov"), filepath.Join(dir, "two.mov")
+	if err := os.WriteFile(first, []byte("movie"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().Add(-time.Minute).Format(time.RFC3339)
+	// A recorder that ended by itself: its pid is gone, so the next look files it.
+	if err := writeState("record.json", Recording{Pid: 999999, File: first, Started: started, App: "Safari", Window: "Docs", Note: "the login flow"}); err != nil {
+		t.Fatal(err)
+	}
+	past := pastRecordings()
+	if len(past) != 1 || past[0].Note != "the login flow" || past[0].Window != "Docs" || past[0].Bytes != 5 || past[0].Missing || past[0].Seconds < 55 {
+		t.Fatalf("self-ended recording: %+v", past)
+	}
+	remember(Recording{File: second}) // no movie, nothing to remember
+	if len(pastRecordings()) != 1 {
+		t.Fatal("a recording without a movie was remembered")
+	}
+	if err := os.WriteFile(second, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	remember(Recording{File: second, Started: started})
+	remember(Recording{File: second, Started: started}) // stop and the pane may both file it
+	if err := os.Remove(first); err != nil {
+		t.Fatal(err)
+	}
+	past = pastRecordings()
+	if len(past) != 2 || past[0].File != second || past[1].File != first || !past[1].Missing {
+		t.Fatalf("order, duplicates or missing movie: %+v", past)
 	}
 }

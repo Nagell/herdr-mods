@@ -5,7 +5,7 @@
 
 #include <stdbool.h>
 
-char *hands_permissions(bool ask);
+char *hands_permissions(bool ask_accessibility, bool ask_screen);
 char *hands_apps(void);
 char *hands_windows(void);
 int hands_frontmost_pid(void);

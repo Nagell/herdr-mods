@@ -38,7 +38,7 @@ The manifest has `place: none`. To show the pane, add a block to a layout you ow
 { "mod": "hands" }
 ```
 
-It shows Accessibility and Screen Recording as granted or missing, a **Grant access** button that runs `hands permissions --ask`, and whether a recording is running. Nothing else.
+While a permission is missing, a block lists Accessibility and Screen Recording, each with its own **Grant access** button that prompts for that one and, if macOS shows no prompt, opens its place in System Settings. The block goes away once both are granted. Below it are past recordings, newest first; selecting one shows its summary, what it recorded, when, how long, its size, and a `file://` link that opens the movie on click or cmd-click. The footer shows whether a recording is running.
 
 ### The skill
 
@@ -55,16 +55,16 @@ hands set 7 "text" | hands focus 7
 hands type "text" [--app Safari] | hands key cmd+l [--app Safari]
 hands scroll 3 --dy -5 | hands scroll --at X,Y --dy 10 --dx 0
 hands shot --app Safari [--window "Docs"] out.png
-hands record start demo.mov [--seconds 30] [--clicks] | hands record start demo.mov --app Safari [--window "Docs"]
-hands record stop | hands record status
-hands permissions [--ask]
+hands record start demo.mov [--seconds 30] [--clicks] [--note "what this shows"] | hands record start demo.mov --app Safari [--window "Docs"]
+hands record stop | hands record status | hands record list
+hands permissions [--ask[=accessibility|screen]]
 ```
 
 `--app` takes a name, bundle id or pid, matched exactly first and by prefix second. `click`, `set`, `focus`, `key`, `scroll` and `type` wait 500 ms before returning so the app settles between steps; `--delay 100` shortens that, `--delay 0` removes it. On `type` the same value is also the pause between characters, which defaults to 8 ms. Element numbers refer to the last `hands see` in that terminal; agents in other terminals keep their own. If the element has changed since the listing, the command does nothing and says so; run `see` again. Frames are global screen points with the origin at the top left of the main display. Every command takes `--json`. The menu bar is skipped unless `--menus` is given, since it is large and rarely needed; use `hands key` for menu shortcuts.
 
 Prefer `hands set N "text"` over typing into a text field: it writes the value through Accessibility in one step and falls back to select-all-and-type only when the field refuses. `hands type` sends keystrokes to whatever is focused in the target app, using the keys of the active keyboard layout. `hands key` understands `cmd`, `shift`, `ctrl`, `alt`/`option`, `fn`, letters, digits, punctuation, `enter`, `tab`, `space`, `esc`, `backspace`, arrows, `home`, `end`, `pageup`, `pagedown` and `f1`–`f15`.
 
-Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
+Finished recordings are kept in `recordings.json` in the state folder, the last 50, and `hands record list` prints them. Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
 
 ## Settings
 

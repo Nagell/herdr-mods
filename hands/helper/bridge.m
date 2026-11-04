@@ -27,12 +27,12 @@ static char *failure(NSString *message) {
 
 // ── Permissions and inventory ─────────────────────────────────────────────
 
-char *hands_permissions(bool ask) {
+char *hands_permissions(bool ask_accessibility, bool ask_screen) {
     @autoreleasepool {
-        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @(ask)};
+        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @(ask_accessibility)};
         bool accessibility = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
         bool screen = CGPreflightScreenCaptureAccess();
-        if (ask && !screen) screen = CGRequestScreenCaptureAccess();
+        if (ask_screen && !screen) screen = CGRequestScreenCaptureAccess();
         return dupJSON(@{@"accessibility": @(accessibility), @"screen": @(screen)});
     }
 }

@@ -20,6 +20,6 @@ description: Operate macOS apps from a Herdr terminal with the `hands` CLI: read
 - **Prefer `set` for text fields.** `hands set N "value"` writes the value in one step through Accessibility; `type` sends keystrokes to whatever is focused and is for editors, terminals and shortcuts.
 - Check first: `hands apps` for names and pids, `hands windows --app X` for windows and frames.
 - Actions pause 500 ms before returning so the app settles; raise it with `--delay 1000` for slow apps, or `--delay 0` when speed matters more.
-- Screenshots: `hands shot --app X out.png`, then read the PNG. Recordings: `hands record start demo.mov`, act, `hands record stop`.
+- Screenshots: `hands shot --app X out.png`, then read the PNG. Recordings: `hands record start demo.mov --note "what this shows"`, act, `hands record stop`. The note is the summary a person reads in the Hands sidebar, so always give one.
 - Events go to the target app only; the person keeps their cursor and focus. Still, say what you are about to do in another app before doing it, and stop at dialogs that ask for passwords, payments or deletions.
 - If a command says a permission is missing, run `hands permissions --ask` and tell the person to allow Herdr in System Settings › Privacy & Security, then restart the terminal.

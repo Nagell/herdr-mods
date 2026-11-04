@@ -34,7 +34,9 @@ func parse(raw *C.char) (any, error) {
 
 func cstr(s string) *C.char { return C.CString(s) }
 
-func permissions(ask bool) (any, error) { return parse(C.hands_permissions(C.bool(ask))) }
+func permissions(askAccessibility, askScreen bool) (any, error) {
+	return parse(C.hands_permissions(C.bool(askAccessibility), C.bool(askScreen)))
+}
 func runningApps() (any, error)         { return parse(C.hands_apps()) }
 func onScreenWindows() (any, error)     { return parse(C.hands_windows()) }
 func frontmostPid() int                 { return int(C.hands_frontmost_pid()) }
