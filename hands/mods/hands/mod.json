@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "place": "none",
+  "title": "hands",
+  "settings": {
+    "pause": {
+      "after_action": "500ms",
+      "between_keys": "8ms"
+    },
+    "see": {
+      "max_lines": 300,
+      "max_depth": 60
+    },
+    "record": {
+      "frames_per_second": 30
+    },
+    "pane": {
+      "refresh": "5s"
+    },
+    "state_dir": "~/Library/Caches/hands"
+  }
+}

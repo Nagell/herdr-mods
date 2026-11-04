@@ -13,6 +13,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 | [Better Tabs](better-tabs/README.md) | Native tab bar with configurable action buttons, hooks, panel memory, and responsive overflow. |
 | [Branch PR](branch-pr/README.md) | GitHub PR and GitLab MR sidebar and reusable browser tab with conversations, reviews, checks, worktrees, and explicit agent actions. |
 | [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, an All issues browser, quick state/priority/assignee edits, comments, and Start work worktrees with agent handoff. |
+| [hands](hands/README.md) | A `hands` CLI that gives agents hands on the Mac: read any app's accessibility tree, click, type, set values, scroll, screenshot a window, record the screen. Plus a tiny permissions pane. |
 
 ### Better Changes
 
@@ -33,6 +34,10 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 ### Branch Issue
 
 ![Branch Issue](branch-issue/preview.png)
+
+### hands
+
+![hands](hands/preview.png)
 
 ## Quick install
 
@@ -62,9 +67,11 @@ Requires Node.js for development tests:
 (cd better-tabs && node --test tests/*.test.cjs)
 (cd branch-pr && node --test tests/*.test.cjs && python3 -m unittest discover -s tests)
 (cd branch-pr/helper && go test ./... && go vet ./...)
+(cd hands && node --test tests/*.test.cjs && python3 -m unittest discover -s tests)
+(cd hands/helper && go test ./... && go vet ./...)
 ```
 
-The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Spaces uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh` and/or `glab`, `hc`, and a bundled local Go helper (built during installation with Go 1.23+); see its README for access and explicit write actions.
+The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Spaces uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh` and/or `glab`, `hc`, and a bundled local Go helper (built during installation with Go 1.23+); see its README for access and explicit write actions. hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a bundled Go helper and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing.
 
 ## License
 
