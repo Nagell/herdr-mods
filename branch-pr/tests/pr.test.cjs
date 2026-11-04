@@ -561,3 +561,19 @@ test('GitLab reviewers can be removed after reviewing, and an unreadable list sa
  h.mod.pr={...pr(),reviewers:[]};assert.match(strings(findElement(h.mod.render(),'pr-reviewers')),/No reviewers yet/);
  h.mod.pr={...pr(),reviewers:[]};h.mod.api=async()=>{throw Error('GitHub: not a collaborator')};h.mod.changeReviewer('add','eve',h.cx);await h.flush();assert.match(h.mod.error,/not a collaborator/);assert.equal(h.mod.mutating,false);
 });
+test('the checks tab shows the overall state as an icon',()=>{
+ const h=harness(),base=h.context.svg;h.context.svg=path=>base().id(path);h.mod.pr=pr();
+ const icon=checks=>{h.mod.pr.checks=checks;return findElement(h.mod.render(),'pr-checks').nodes.filter(n=>/check-/.test(n?.elementId??'')).map(n=>n.elementId).join()};
+ assert.equal(icon([{status:'IN_PROGRESS'}]),'mods/branch-pr/check-running.svg');
+ assert.equal(icon([{status:'COMPLETED',conclusion:'SUCCESS'}]),'mods/branch-pr/check-success.svg');
+ assert.equal(icon([{status:'COMPLETED',conclusion:'SUCCESS'},{status:'COMPLETED',conclusion:'FAILURE'},{status:'IN_PROGRESS'}]),'mods/branch-pr/check-failure.svg');
+ assert.equal(icon([]),'');
+});
+test('add comment opens a focused editor outside the scrolling conversation',()=>{
+ const h=harness();h.mod.pr=pr();h.mod.section='conversation';
+ findElement(h.mod.render(),'pr-add-comment').handlers.click({},h.cx);
+ assert.equal(h.mod.editor.focused,true);
+ const root=h.mod.render();
+ assert.ok(findElement(root,'pr-composer-general'));
+ assert.equal(findElement(findElement(root,`pr-detail-owner/repo-pr-conversation`),'pr-composer-general'),undefined);
+});

@@ -95,7 +95,7 @@ PR details provide Description, Conversations, and Checks. Conversation cards sh
 
 **Editing.** Comments, replies and review summaries you wrote show an **Edit** control. It opens the same editor prefilled with the current text; **Save** updates the comment on GitHub. Editing is disabled in preview mode. Every comment card also has **Copy link**, which puts the comment's GitHub URL on the clipboard.
 
-Checks show overall status and grouped workflows, jobs, steps, and failed logs (last 60KB), with links to full GitHub output. Open/draft/merged/closed use green/gray/purple/red icons; queued/running/passed/failed/skipped/cancelled check states have distinct icons. Agent working/blocked/done/idle are separate from PR state and do not recolor it.
+The Checks tab carries an icon for the overall state: spinning while checks run, then passed or failed, and failed as soon as any check fails. Checks show overall status and grouped workflows, jobs, steps, and failed logs (last 60KB), with links to full GitHub output. Open/draft/merged/closed use green/gray/purple/red icons; queued/running/passed/failed/skipped/cancelled check states have distinct icons. Agent working/blocked/done/idle are separate from PR state and do not recolor it.
 
 Unread markers compare saved comment fingerprints. **Mark N read**, or leaving a visited Conversations view, updates the local snapshot. Browser filters, selected PR, sections, filters, expanded checks, and reply drafts are saved locally. The branch sidebar retains a status footer; the browser intentionally has none. Failed reads retain cached state where possible and offer Retry, never retrying writes automatically.
 

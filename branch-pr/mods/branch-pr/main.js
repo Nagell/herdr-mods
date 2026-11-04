@@ -2067,6 +2067,7 @@ export default class PullRequests extends View {
           ? `> ${context.replace(/\n/g, "\n> ")}\n\n`
           : (options.prefix ?? "");
     this.editor.set_value(draft ?? initial);
+    this.editor.focus();
     cx.notify();
   }
 
@@ -3770,6 +3771,9 @@ export default class PullRequests extends View {
               .on_click((_e, cx) => {
                 this.selectSection(id, cx);
               })
+              .when(id === "checks" && count > 0, (el) =>
+                el.child(this.checkIcon(this.checkSummary(pr.checks).status, t)),
+              )
               .child(label)
               .when(count !== null, (el) =>
                 el.child(
@@ -4136,8 +4140,12 @@ export default class PullRequests extends View {
         body.child(card);
       }
     }
-    if (this.composer && !this.composer.entry) body.child(this.composerView(t));
     root.child(body);
+    // Docked below the scroll area: gpui-kit can only scroll a virtual list from code.
+    if (this.composer && !this.composer.entry)
+      root.child(
+        v_flex().flex_none().p(10).border_t(1).border_color(t.border).child(this.composerView(t)),
+      );
     if (this.mode === "branch") root.child(footer());
     return root;
   }
