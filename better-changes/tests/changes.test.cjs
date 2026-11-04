@@ -984,9 +984,14 @@ test("commits show where the remote head is and which are new", async () => {
   const record = (i) => `h${i}\0s${i}\0Ann\0a@x\x00${i}\0Subject ${i}\0\x1e\n`;
   let sides = "<h0\n<h1\n";
   let tracking = true;
+  let upstreamName = "origin/main\n";
+  let remoteHead = null;
   h.context.exec = async (cmd, args) => {
     if (args.includes("log")) return { code: 0, stdout: [0, 1, 2].map(record).join("") };
-    if (args.includes("--symbolic-full-name")) return tracking ? { code: 0, stdout: "origin/main\n" } : { code: 128, stderr: "no upstream" };
+    if (args.includes("--symbolic-full-name")) return tracking ? { code: 0, stdout: upstreamName } : { code: 128, stderr: "no upstream" };
+    if (args.includes("symbolic-ref")) return remoteHead ? { code: 0, stdout: remoteHead.target } : { code: 1, stderr: "" };
+    if (args.includes("merge-base")) return { code: 0, stdout: remoteHead.base };
+    if (args.includes("--count")) return { code: 0, stdout: remoteHead.behind };
     if (args.includes("--left-right")) return { code: 0, stdout: sides };
     return { code: 0, stdout: "" };
   };
@@ -1007,6 +1012,28 @@ test("commits show where the remote head is and which are new", async () => {
   assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /origin\/main · 2 not pulled/);
   tracking = false;
   assert.deepEqual([...(await load())], ["commit-no-upstream", "commit-h0", "commit-h1", "commit-h2"]);
+
+  // The default branch: its own line on a feature branch, shared on the branch itself.
+  tracking = true;
+  sides = "<h0\n";
+  remoteHead = { target: "origin/main\n", base: "h2\n", behind: "3\n" };
+  upstreamName = "origin/feature\n";
+  assert.deepEqual([...(await load())], ["commit-h0", "commit-upstream", "commit-h1", "commit-remote-head", "commit-h2"]);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /^origin\/feature$/);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-remote-head")), /^origin\/HEAD · 3 not pulled$/);
+  remoteHead.base = "h1\n";
+  assert.deepEqual([...(await load())], ["commit-h0", "commit-upstream", "commit-h1", "commit-h2"]);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /^origin\/feature, origin\/HEAD · 3 not pulled$/);
+  upstreamName = "origin/main\n";
+  remoteHead = { target: "origin/main\n", base: "h1\n", behind: "0\n" };
+  assert.deepEqual([...(await load())], ["commit-h0", "commit-upstream", "commit-h1", "commit-h2"]);
+  assert.match(strings(find(h.mod.render(h.cx), "commit-upstream")), /^origin\/main, origin\/HEAD$/);
+  // No upstream yet: origin/HEAD still shows where the branch left the default branch.
+  tracking = false;
+  remoteHead = { target: "origin/main\n", base: "h2\n", behind: "0\n" };
+  assert.deepEqual([...(await load())], ["commit-no-upstream", "commit-h0", "commit-h1", "commit-remote-head", "commit-h2"]);
+  remoteHead = null;
+  assert.deepEqual([...(await load())], ["commit-no-upstream", "commit-h0", "commit-h1", "commit-h2"]);
 });
 
 test("opening a commit during a history load leaves neither loading state stuck", async () => {
@@ -1018,3 +1045,75 @@ test("opening a commit during a history load leaves neither loading state stuck"
   assert.equal(h.mod.commitsLoading, false);
   assert.equal(h.mod.commitFilesLoading, false);
 });
+
+test("committed files list under unstaged and open their diff against the branch point", async () => {
+  const h = harness();
+  const answers = {
+    upstream: { code: 0, stdout: "origin/feature\n" },
+    head: { code: 0, stdout: "origin/main\n" },
+    base: { code: 0, stdout: "base1\n" },
+    tip: { code: 0, stdout: "tip1\n" },
+  };
+  const diffs = [];
+  h.context.exec = async (cmd, args, options) => {
+    h.calls.push({ cmd, args, options });
+    if (args.includes("--symbolic-full-name")) return answers.upstream;
+    if (args.includes("symbolic-ref")) return answers.head;
+    if (args.includes("merge-base")) return answers.base;
+    if (args.includes("--verify")) return answers.tip;
+    if (args.includes("--name-status")) return { code: 0, stdout: "M\0src/app.js\0A\0new file.txt\0" };
+    if (args.includes("--numstat")) {
+      diffs.push(args);
+      return { code: 0, stdout: "2\t1\tsrc/app.js\x003\t0\tnew file.txt\0" };
+    }
+    return { code: 0, stdout: "@@ -1 +1 @@\n-a\n+b\n" };
+  };
+  const git = (args) => h.mod.git(args);
+  h.mod.committed = await h.mod.readCommitted(git);
+  assert.equal(h.mod.committed.name, "origin/main");
+  assert.equal(h.mod.committed.total, 2);
+  assert.ok(diffs[0].includes("base1") && diffs[0].includes("HEAD"));
+
+  h.mod.view = "flat";
+  h.mod.tab = "changes";
+  const tree = h.mod.render(h.cx);
+  const list = find(tree, "changes-list");
+  const ids = list.nodes.map((n) => n.id).filter(Boolean);
+  assert.ok(ids.indexOf("changes-section-unstaged") < ids.indexOf("changes-section-committed"));
+  const row = find(tree, "change-committed-src/app.js");
+  assert.ok(row);
+  assert.equal(find(tree, "changes-stage-src/app.js"), undefined, "committed files have no stage button");
+
+  row.handlers.click({}, h.cx);
+  const selected = h.values["better-changes.selection"];
+  assert.equal(selected.scope, "committed");
+  assert.equal(selected.commit.base, "base1");
+  h.calls.length = 0;
+  h.mod.path = "src/app.js";
+  h.mod.scope = "committed";
+  h.mod.commitRef = selected.commit;
+  h.mod.commitFile = selected.file;
+  h.mod.context = selected.context;
+  h.mod.loadDiff(h.cx);
+  await h.flush();
+  const args = h.calls.at(-1).args;
+  const diff = args.indexOf("diff");
+  assert.equal(args.slice(diff, diff + 3).join(" "), "diff base1 HEAD");
+  assert.equal(args.at(-1), "src/app.js");
+
+  // A poll with no new commit or fetch reuses the list.
+  diffs.length = 0;
+  const again = await h.mod.readCommitted(git);
+  assert.equal(again, h.mod.committed);
+  assert.equal(diffs.length, 0);
+  // No default branch recorded: the upstream instead.
+  answers.head = { code: 1, stdout: "" };
+  answers.tip = { code: 0, stdout: "tip2\n" };
+  assert.equal((await h.mod.readCommitted(git)).name, "origin/feature");
+  // Nothing to compare with: the section goes away.
+  answers.upstream = { code: 128, stdout: "" };
+  h.mod.committed = await h.mod.readCommitted(git);
+  assert.equal(h.mod.committed, null);
+  assert.equal(find(h.mod.render(h.cx), "changes-section-committed"), undefined);
+});
+

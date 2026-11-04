@@ -239,6 +239,7 @@ export default class Changes extends View {
       this.context = context;
       this.root = null;
       this.files = [];
+      this.committed = null;
       this.path = null;
       this.rows = [];
       this.closed = new Set();
@@ -308,6 +309,11 @@ export default class Changes extends View {
         this.conflicts = files.some((f) => f.conflict);
         this.files = files.slice(0, this.settings.limits.files || MAX_FILES);
         this.error = null;
+        if (this.mode === "sidebar") {
+          const committed = await this.readCommitted(git);
+          if (context !== this.contextKey()) return;
+          this.committed = committed;
+        }
         this.watch(root, cx);
         if (this.mode === "sidebar" && this.tab === "commits") this.loadCommits(cx);
         if (this.mode === "diff") {
@@ -337,6 +343,49 @@ export default class Changes extends View {
       }
     });
   }
+  // ── Files committed on this branch ────────────────────────────────────────
+
+  // What this branch adds over the remote's default branch, or over its upstream
+  // when the clone never recorded a default. On the default branch itself that
+  // is what is not pushed yet. Null when there is nothing to compare with. These
+  // read the last fetch and never fetch.
+  async readCommitted(git) {
+    try {
+      const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
+      const tracked = upstream.code === 0 ? upstream.stdout.trim() : null;
+      const remote = tracked?.split("/")[0] ?? "origin";
+      const fallback = tracked ? { ref: "@{u}", name: tracked } : null;
+      const remoteHead = await git(["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+      const against =
+        remoteHead.code === 0 && remoteHead.stdout.trim()
+          ? { ref: `refs/remotes/${remote}/HEAD`, name: remoteHead.stdout.trim() }
+          : fallback;
+      if (!against) return null;
+      const base = await git(["merge-base", "HEAD", against.ref]);
+      const head = await git(["rev-parse", "--verify", "HEAD"]);
+      if (base.code !== 0 || head.code !== 0) return null;
+      const from = base.stdout.trim();
+      const key = `${from}:${head.stdout.trim()}`;
+      // Polled with the status, and only a new commit or fetch can change it.
+      if (this.committed?.key === key) return this.committed;
+      const diff = (flag) =>
+        git(["diff", "--no-renames", "--no-ext-diff", "--no-textconv", flag, "-z", from, "HEAD"]);
+      const numstat = await diff("--numstat");
+      const names = await diff("--name-status");
+      if (numstat.code !== 0 || names.code !== 0) return null;
+      const files = commitFiles(numstat.stdout, names.stdout);
+      return {
+        key,
+        base: from,
+        name: against.name,
+        total: files.length,
+        files: files.slice(0, this.settings.limits.files || MAX_FILES),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   // ── File selection and reusable diff tabs ─────────────────────────────────
 
   pick(file, cx, scope = "all") {
@@ -354,6 +403,10 @@ export default class Changes extends View {
       // The diff tab has no commit list, so the pick carries what it needs.
       const { hash, short, subject } = this.selectedCommit;
       selected.commit = { hash, short, subject };
+      selected.file = file;
+    }
+    if (scope === "committed") {
+      selected.commit = { base: this.committed.base, name: this.committed.name };
       selected.file = file;
     }
     const entries = shared("better-changes.diff-tabs") ?? {};
@@ -445,7 +498,10 @@ export default class Changes extends View {
     const hasHead = this.hasHead;
     const scope = this.scope || "all";
     const commit = this.commitRef;
-    const file = scope === "commit" ? this.commitFile : this.files.find((f) => f.path === path);
+    const file =
+      scope === "commit" || scope === "committed"
+        ? this.commitFile
+        : this.files.find((f) => f.path === path);
     const token = ++this.diffToken;
     this.note = null;
     if (!file) {
@@ -488,7 +544,9 @@ export default class Changes extends View {
               "--literal-pathspecs",
               ...(scope === "commit"
                 ? ["show", "--diff-merges=first-parent", "--format=", commit.hash]
-                : [
+                : scope === "committed"
+                  ? ["diff", commit.base, "HEAD"]
+                  : [
                     "diff",
                     ...(scope === "staged"
                       ? ["--cached"]
@@ -748,6 +806,7 @@ export default class Changes extends View {
   resetCommits() {
     this.commits = [];
     this.upstream = null;
+    this.remoteHead = null;
     this.commitsDone = false;
     this.commitsLoading = false;
     this.commitsError = null;
@@ -783,12 +842,29 @@ export default class Changes extends View {
     };
   }
 
-  // The line under the commits that are not on the remote yet.
-  upstreamMarker(t) {
-    const { name, behind } = this.upstream;
-    const label = behind ? `${name} · ${behind} not pulled` : name;
+  // The remote's default branch, from the upstream's remote or else origin:
+  // {name, target, base, behind}, with base the last commit shared with it.
+  // Null when the clone never recorded one, since finding out would need the network.
+  async readRemoteHead(upstream) {
+    const remote = upstream?.name.split("/")[0] ?? "origin";
+    const ref = `refs/remotes/${remote}/HEAD`;
+    const target = await this.git(["symbolic-ref", "--short", ref]);
+    if (target.code !== 0 || !target.stdout.trim()) return null;
+    const base = await this.git(["merge-base", "HEAD", ref]);
+    const behind = await this.git(["rev-list", "--count", `HEAD..${ref}`]);
+    if (base.code !== 0 || behind.code !== 0) return null;
+    return {
+      name: `${remote}/HEAD`,
+      target: target.stdout.trim(),
+      base: base.stdout.trim(),
+      behind: Number(behind.stdout) || 0,
+    };
+  }
+
+  // A line in the history naming the remote refs that sit at this commit.
+  remoteMarker(id, labels, t) {
     return h_flex()
-      .id("commit-upstream")
+      .id(id)
       .flex_none()
       .px(8)
       .py(4)
@@ -796,7 +872,7 @@ export default class Changes extends View {
       .items_center()
       .text_size(em(0.8))
       .text_color(t.accent)
-      .child(div().flex_none().child(label))
+      .child(div().flex_none().child(labels.join(", ")))
       .child(div().flex_1().h(1).bg(t.accent));
   }
 
@@ -829,8 +905,10 @@ export default class Changes extends View {
         if (result.code !== 0) throw Error(result.stderr || "Cannot read history");
         const page = parseLog(result.stdout);
         const upstream = more ? this.upstream : await this.readUpstream();
+        const remoteHead = more ? this.remoteHead : await this.readRemoteHead(upstream);
         if (token !== this.commitsToken || context !== this.contextKey()) return;
         this.upstream = upstream;
+        this.remoteHead = remoteHead;
         this.commits = more ? [...this.commits, ...page] : page;
         this.commitsDone = page.length < count;
         this.commitsError = null;
@@ -1222,7 +1300,34 @@ export default class Changes extends View {
                   : "No folder selected"),
           ),
       );
+    this.renderCommitted(list, t);
     return list;
+  }
+
+  renderCommitted(list, t) {
+    const committed = this.committed;
+    if (!committed) return;
+    list.child(div().h(1).w_full().flex_none().my(4).bg(t.border));
+    list.child(
+      h_flex()
+        .id("changes-section-committed")
+        .h(34)
+        .px(8)
+        .gap(6)
+        .items_center()
+        .flex_none()
+        .child(div().font_semibold().text_size(em(0.9)).child("Committed"))
+        .child(div().text_size(em(0.8)).text_color(t.dim).child(String(committed.total)))
+        .child(div().flex_1())
+        .child(
+          div().min_w(0).truncate().text_size(em(0.8)).text_color(t.dim).child(`since ${committed.name}`),
+        ),
+    );
+    if (committed.files.length) list.children(this.fileRows(committed.files, "committed", t));
+    else
+      list.child(
+        div().px(8).pb(6).text_size(em(0.85)).text_color(t.dim).child("Nothing committed on this branch yet"),
+      );
   }
 
   // Tree or flat rows for one group, honouring the sidebar's view toggle.
@@ -1240,7 +1345,11 @@ export default class Changes extends View {
 
   renderCommitList(t) {
     const list = v_flex().id("commit-list").flex_1().min_h(0).overflow_y_scrollbar().p(6);
-    const unpushed = this.upstream?.unpushed;
+    const { upstream, remoteHead } = this;
+    const unpushed = upstream?.unpushed;
+    const notPulled = (name, behind) => (behind ? `${name} · ${behind} not pulled` : name);
+    // On the default branch the two are the same ref, so they share the upstream's line.
+    const sameRef = remoteHead?.target === upstream?.name;
     let marked = false;
     if (this.commits.length && !this.upstream && !this.commitsLoading)
       list.child(
@@ -1255,10 +1364,22 @@ export default class Changes extends View {
       );
     for (const commit of this.commits) {
       const isNew = Boolean(unpushed?.has(commit.hash));
-      if (this.upstream && !isNew && !marked) {
+      const labels = [];
+      if (upstream && !isNew && !marked) {
         marked = true;
-        list.child(this.upstreamMarker(t));
+        labels.push(notPulled(upstream.name, upstream.behind));
+        if (sameRef) labels.push(remoteHead.name);
       }
+      if (remoteHead && !sameRef && commit.hash === remoteHead.base)
+        labels.push(notPulled(remoteHead.name, remoteHead.behind));
+      if (labels.length)
+        list.child(
+          this.remoteMarker(
+            labels[0].startsWith(upstream?.name) ? "commit-upstream" : "commit-remote-head",
+            labels,
+            t,
+          ),
+        );
       list.child(
         v_flex()
           .id(`commit-${commit.hash}`)
@@ -1627,7 +1748,9 @@ export default class Changes extends View {
 
   renderDiff(root, t) {
     const original =
-      this.scope === "commit" ? this.commitFile : this.files.find((f) => f.path === this.path);
+      this.scope === "commit" || this.scope === "committed"
+        ? this.commitFile
+        : this.files.find((f) => f.path === this.path);
     const file = original
       ? {
           ...original,
@@ -1689,7 +1812,7 @@ export default class Changes extends View {
             .flex_1()
             .truncate()
             .child(
-              `${this.scope === "commit" ? `Commit ${this.commitRef?.short} · ${this.commitRef?.subject}` : this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
+              `${this.scope === "commit" ? `Commit ${this.commitRef?.short} · ${this.commitRef?.subject}` : this.scope === "committed" ? `Committed · ${this.commitRef?.name} → HEAD` : this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
             ),
         )
         .child(div().text_color(t.ansi2).child("+ Added"))
