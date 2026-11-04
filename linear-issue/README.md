@@ -6,7 +6,7 @@ A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](h
 
 - **Branch sidebar:** the issue linked to the current checkout, found from a `branch.<name>.herdr-issue` binding or the identifier in the branch name (`me/eng-123-fix-login` → `ENG-123`). Several identifiers on one branch give a picker.
 - **All issues:** one reusable browser tab per space with search, **My issues / Active cycle / All** scopes, state and team filters, grouped by workflow state.
-- Issue details: description, threaded comments, links, sub-issues, and quick edits for **state, priority and assignee**.
+- Issue details: description, threaded comments, links, sub-issues, and quick edits for **state, priority, assignee and labels**.
 - **Start work:** a worktree from the issue using Linear's own branch name, opened as a nested space with a terminal or an installed agent that receives the issue as its first prompt.
 - Explicit comment/reply/edit controls and agent handoff prompts. Nothing is written to Linear without a click.
 - No dependency on Factory, Better Tabs, Workflow, GitHub PR, or another custom mod.
@@ -72,7 +72,7 @@ The sidebar reads the symbolic branch of the active terminal's checkout. It unio
 
 Search debounces for 450ms and starts at three characters; Linear matches titles and descriptions, and a query shaped like `ENG-123` also matches that identifier. **My issues** filters by assignee, **Active cycle** by the team's running cycle, **All issues** by nothing. The state filter maps to workflow state types: Active (triage, backlog, unstarted, started), Backlog, Started, Done, Cancelled, All. A **Team** picker appears when the workspace has more than one team. The list groups rows by workflow state with the state's own colour, and **Load more** continues Linear's cursor.
 
-Details show the identifier and title, an **Open in Linear** icon, and a meta row with three pickers that write immediately on choice: **state** (the team's workflow states), **priority**, and **assignee** (Me, Unassigned, then team members). Labels, project, cycle and estimate follow. Tabs: **Description** (Markdown, with the parent issue), **Comments** (threads by parent comment, **Edit** on your own comments, **Reply** per thread, **Add comment**), **Links** (Linear attachments, including pull-request links), and **Sub-issues** when there are any.
+Details show the identifier and title, an **Open in Linear** icon, and a meta row with three pickers that write immediately on choice: **state** (the team's workflow states), **priority**, and **assignee** (Me, Unassigned, then team members). Applied labels follow as pills; clicking one removes it, and the **Label** picker adds any other label the team can use. Project, cycle and estimate come last. Tabs: **Description** (Markdown, with the parent issue), **Comments** (threads by parent comment, **Edit** on your own comments, **Reply** per thread, **Add comment**), **Links** (Linear attachments, including pull-request links), and **Sub-issues** when there are any.
 
 Comments open an editor with Markdown preview; nothing posts before an explicit Reply/Comment/Save. Drafts survive errors and navigation. On a timeout, refresh before retrying since the write may have succeeded.
 

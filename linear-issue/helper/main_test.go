@@ -111,6 +111,13 @@ func TestMutationsAndKeyErrors(t *testing.T) {
 	if _, err := handle(context.Background(), Request{Action: "update", Issue: "uuid"}); err == nil {
 		t.Fatal("expected nothing to update")
 	}
+	none := []string{}
+	if _, err := handle(context.Background(), Request{Action: "update", Issue: "uuid", Labels: &none}); err != nil {
+		t.Fatal(err)
+	}
+	if ids, ok := object(object(last["variables"])["input"])["labelIds"].([]any); !ok || len(ids) != 0 {
+		t.Fatalf("expected empty labelIds, got %v", last)
+	}
 	out, err := handle(context.Background(), Request{Action: "viewer"})
 	if err != nil || len(array(object(out)["teams"])) != 1 {
 		t.Fatalf("viewer %v %v", out, err)

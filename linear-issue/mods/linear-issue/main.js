@@ -730,8 +730,8 @@ export default class LinearIssues extends View {
 
   // ── Writes: quick edits, comments, agent handoff ─────────────────────────
 
-  // State, priority and assignee write on choice. The helper returns the new
-  // values, which are merged into every copy of the issue we hold.
+  // State, priority, assignee and labels write on choice. The helper returns
+  // the new values, which are merged into every copy of the issue we hold.
   update(fields, label, cx) {
     if (!this.issue || this.mutating) return;
     const issue = this.issue;
@@ -1871,17 +1871,51 @@ export default class LinearIssues extends View {
         },
       ),
     );
-    for (const label of issue.labels ?? [])
+    // Labels: click an applied pill to remove it, pick from the rest to add.
+    // Linear takes the full list, so each change sends every remaining ID.
+    const applied = issue.labels ?? [];
+    const setLabels = (labels, cx) =>
+      this.update({ labels: labels.map((l) => l.id) }, "Labels", cx);
+    for (const label of applied)
       row.child(
         h_flex()
+          .id(`issue-label-${label.id}`)
           .gap(4)
           .items_center()
           .px(6)
           .py(2)
           .rounded(4)
           .bg(t.raised)
+          .tooltip(`Remove ${label.name}`)
+          .when(!this.mutating, (el) =>
+            el
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) =>
+                setLabels(
+                  applied.filter((l) => l.id !== label.id),
+                  cx,
+                ),
+              ),
+          )
           .child(this.dot(label.color, 7))
-          .child(div().child(label.name)),
+          .child(div().child(label.name))
+          .child(svg("mods/linear-issue/close.svg").size(9).text_color(t.dim)),
+      );
+    // Group labels are containers in Linear and cannot be applied themselves.
+    const addable = (issue.team?.labels ?? []).filter(
+      (l) => !l.isGroup && !applied.some((a) => a.id === l.id),
+    );
+    if (addable.length)
+      row.child(
+        this.dropdown(
+          "labels",
+          this.pill("issue-labels-trigger", t, [div().child("Label")], { disabled: this.mutating }),
+          addable.map((l) => ({ key: l.id, label: l.name, color: l.color })),
+          (choice, cx) => setLabels([...applied, addable.find((l) => l.id === choice.key)], cx),
+          t,
+          { width: 200, label: "Add label" },
+        ),
       );
     const placement = [
       issue.project?.name,

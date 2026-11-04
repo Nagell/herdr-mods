@@ -24,7 +24,7 @@ function harness(existingStorage) {
   const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';mod.me={id:'me',name:'Me'};mod.teams=[{key:'ENG',name:'Engineering'}];
   return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};
 }
-const issue = (extra={}) => ({id:'uuid-1',identifier:'ENG-7',title:'Fix login',url:'https://linear.app/t/issue/ENG-7',description:'Login breaks',priority:2,priorityLabel:'High',branchName:'me/eng-7-fix-login',state:{id:'s1',name:'Todo',type:'unstarted',color:'#aaa'},assignee:null,labels:[],attachments:[{id:'a1',title:'PR #4',url:'https://github.com/o/r/pull/4'}],children:[],team:{id:'t',key:'ENG',name:'Engineering',states:[{id:'s1',name:'Todo',type:'unstarted',position:1},{id:'s2',name:'In Progress',type:'started',position:2}],members:[{id:'me',name:'Me'},{id:'u2',name:'Bea',active:true}]},comments:[{id:'c1',body:'Root comment',url:'https://linear.app/c1',createdAt:'2026-01-01',user:{id:'u2',name:'Bea'}},{id:'c2',body:'A reply',createdAt:'2026-01-02',user:{id:'me',name:'Me'},parent:{id:'c1'}}],...extra});
+const issue = (extra={}) => ({id:'uuid-1',identifier:'ENG-7',title:'Fix login',url:'https://linear.app/t/issue/ENG-7',description:'Login breaks',priority:2,priorityLabel:'High',branchName:'me/eng-7-fix-login',state:{id:'s1',name:'Todo',type:'unstarted',color:'#aaa'},assignee:null,labels:[],attachments:[{id:'a1',title:'PR #4',url:'https://github.com/o/r/pull/4'}],children:[],team:{id:'t',key:'ENG',name:'Engineering',states:[{id:'s1',name:'Todo',type:'unstarted',position:1},{id:'s2',name:'In Progress',type:'started',position:2}],members:[{id:'me',name:'Me'},{id:'u2',name:'Bea',active:true}],labels:[{id:'l1',name:'Bug',color:'#f00'},{id:'l2',name:'Feature',color:'#0f0'},{id:'lg',name:'Area',isGroup:true}]},comments:[{id:'c1',body:'Root comment',url:'https://linear.app/c1',createdAt:'2026-01-01',user:{id:'u2',name:'Bea'}},{id:'c2',body:'A reply',createdAt:'2026-01-02',user:{id:'me',name:'Me'},parent:{id:'c1'}}],...extra});
 function strings(node) { if(typeof node==='string')return node;return (node?.nodes??[]).map(strings).join('\n'); }
 function findElement(node,id){ if(!node||typeof node==='string')return undefined; if(node.elementId===id)return node; for(const c of node.nodes??[]){const f=findElement(c,id); if(f)return f;} }
 
@@ -93,6 +93,17 @@ test('quick edits send the matching update and merge the returned fields',async(
  assert.equal(requests[0].stateId,'s2');assert.equal(h.mod.issue.state.name,'In Progress');assert.match(h.mod.notice,/State saved/);
  h.mod.update({unassign:true},'Assignee',h.cx);await h.flush();assert.equal(requests[1].unassign,true);
  h.mod.update({priority:0},'Priority',h.cx);await h.flush();assert.equal(requests[2].priority,0);
+});
+test('labels add through the picker and remove from the pill',async()=>{
+ const h=harness();h.mod.adoptIssue(issue({labels:[{id:'l1',name:'Bug',color:'#f00'}]}));const requests=[];
+ h.mod.api=async r=>{requests.push(r);return{issueUpdate:{success:true,issue:{labels:r.labels.map(id=>({id,name:id}))}}}};
+ findElement(h.mod.render(),'issue-labels').handlers.open_change(true,h.cx);
+ const menu=findElement(h.mod.render(),'issue-labels-menu');
+ assert.ok(!findElement(menu,'issue-labels-l1'),'applied label is not offered again');assert.ok(!findElement(menu,'issue-labels-lg'),'group labels cannot be applied');
+ findElement(menu,'issue-labels-l2').handlers.click({},h.cx);await h.flush();
+ assert.equal(String(requests[0].labels),'l1,l2');assert.equal(h.mod.issue.labels.length,2);assert.match(h.mod.notice,/Labels saved/);
+ findElement(h.mod.render(),'issue-label-l1').handlers.click({},h.cx);await h.flush();
+ assert.equal(String(requests[1].labels),'l2');assert.equal(h.mod.issue.labels.length,1);
 });
 test('comments, replies and edits go through the helper and failed posts keep the draft',async()=>{
  const h=harness();h.mod.adoptIssue(issue());const requests=[];

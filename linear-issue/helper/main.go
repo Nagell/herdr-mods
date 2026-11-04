@@ -21,22 +21,23 @@ import (
 
 type Obj = map[string]any
 type Request struct {
-	Action      string   `json:"action"`
-	Identifier  string   `json:"identifier"`
-	Identifiers []string `json:"identifiers"`
-	Issue       string   `json:"issue"`
-	Scope       string   `json:"scope"`
-	State       string   `json:"state"`
-	Team        string   `json:"team"`
-	Search      string   `json:"search"`
-	Cursor      string   `json:"cursor"`
-	Body        string   `json:"body"`
-	Comment     string   `json:"comment"`
-	Parent      string   `json:"parent"`
-	StateID     string   `json:"stateId"`
-	Assignee    string   `json:"assignee"`
-	Unassign    bool     `json:"unassign"`
-	Priority    *int     `json:"priority"`
+	Action      string    `json:"action"`
+	Identifier  string    `json:"identifier"`
+	Identifiers []string  `json:"identifiers"`
+	Issue       string    `json:"issue"`
+	Scope       string    `json:"scope"`
+	State       string    `json:"state"`
+	Team        string    `json:"team"`
+	Search      string    `json:"search"`
+	Cursor      string    `json:"cursor"`
+	Body        string    `json:"body"`
+	Comment     string    `json:"comment"`
+	Parent      string    `json:"parent"`
+	StateID     string    `json:"stateId"`
+	Assignee    string    `json:"assignee"`
+	Unassign    bool      `json:"unassign"`
+	Priority    *int      `json:"priority"`
+	Labels      *[]string `json:"labels"` // full replacement list of label IDs; nil leaves labels alone
 }
 
 const endpoint = "https://api.linear.app/graphql"
@@ -146,7 +147,7 @@ const pageInfo = `pageInfo{hasNextPage endCursor}`
 // Fields for a list row; detailFields adds everything the detail view shows.
 const cardFields = `id identifier title url priority priorityLabel createdAt updatedAt branchName state{id name type color} assignee{id name displayName} team{id key name} labels{nodes{id name color}} project{name url} cycle{number name}`
 const commentFields = `id body url createdAt updatedAt user{id name displayName} parent{id}`
-const detailFields = cardFields + ` description estimate creator{name displayName} parent{identifier title url} children{nodes{id identifier title url state{name type color}}} attachments{nodes{id title subtitle url sourceType}} comments(first:100){` + pageInfo + ` nodes{` + commentFields + `}} team{states{nodes{id name type color position}} members{nodes{id name displayName active}}}`
+const detailFields = cardFields + ` description estimate creator{name displayName} parent{identifier title url} children{nodes{id identifier title url state{name type color}}} attachments{nodes{id title subtitle url sourceType}} comments(first:100){` + pageInfo + ` nodes{` + commentFields + `}} team{states{nodes{id name type color position}} members{nodes{id name displayName active}} labels{nodes{id name color isGroup}}}`
 
 const viewerQuery = `{viewer{id name displayName email} teams{nodes{id key name}}}`
 
@@ -265,6 +266,7 @@ func fetchIssue(ctx context.Context, key, ref string) (Obj, error) {
 	if team != nil {
 		team["states"] = nodes(team["states"])
 		team["members"] = nodes(team["members"])
+		team["labels"] = nodes(team["labels"])
 	}
 	return issue, nil
 }
@@ -338,10 +340,17 @@ func handle(ctx context.Context, r Request) (any, error) {
 			}
 			input["priority"] = *r.Priority
 		}
+		if r.Labels != nil {
+			input["labelIds"] = *r.Labels
+		}
 		if len(input) == 0 {
 			return nil, errors.New("nothing to update")
 		}
-		return gql(ctx, key, `mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{id state{id name type color} assignee{id name displayName} priority priorityLabel}}}`, Obj{"id": r.Issue, "input": input})
+		data, err := gql(ctx, key, `mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{id state{id name type color} assignee{id name displayName} priority priorityLabel labels{nodes{id name color}}}}}`, Obj{"id": r.Issue, "input": input})
+		if issue := object(object(data["issueUpdate"])["issue"]); issue != nil {
+			issue["labels"] = nodes(issue["labels"])
+		}
+		return data, err
 	default:
 		return nil, errors.New("unknown action")
 	}
