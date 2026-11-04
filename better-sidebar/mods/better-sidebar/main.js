@@ -1,13 +1,17 @@
-// Better Spaces: a native spaces sidebar with right-aligned branches, nested
+// Better Sidebar: a native spaces sidebar with right-aligned branches, nested
 // worktrees, and a PR status line. Repository facts follow each space's first
 // terminal. Agent attention and Branch PR state remain separate concepts.
 
 import { PRStatusObserver, prPlaceKey, prAppearance } from "./pr-status.js";
 import { em } from "./typography.js";
 import { loadSettings, duration } from "./settings.js";
+import { Agents } from "./agents.js";
+import { Footer } from "./footer.js";
+import { PanelToggle } from "./panel-toggle.js";
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import {
+  props,
   spaces,
   machines,
   panes,
@@ -74,6 +78,13 @@ export default class Spaces extends View {
   // ── Lifecycle and refresh scheduling ──────────────────────────────────────
 
   init(_props, cx) {
+    // One mod, one copy per sidebar block: `view` in the block's props picks which.
+    const Part = { agents: Agents, footer: Footer, "panel-toggle": PanelToggle }[props()?.view];
+    if (Part) {
+      this.part = new Part();
+      this.part.init(_props, cx);
+      return;
+    }
     this.prObserver = new PRStatusObserver();
     this.settings = DEFAULT_SETTINGS;
     this.applySettings(cx);
@@ -111,9 +122,9 @@ export default class Spaces extends View {
   // Read the installed mod.json once; Herdr restarts the mod when it changes.
   applySettings(cx) {
     cx.spawn(async (cx) => {
-      const { settings, problems } = await loadSettings("better-spaces", DEFAULT_SETTINGS);
+      const { settings, problems } = await loadSettings("better-sidebar", DEFAULT_SETTINGS);
       this.settings = settings;
-      for (const problem of problems) console.warn(`better-spaces mod.json settings: ${problem}`);
+      for (const problem of problems) console.warn(`better-sidebar mod.json settings: ${problem}`);
       cx.notify();
     });
   }
@@ -124,6 +135,7 @@ export default class Spaces extends View {
     this.updateColors(sp);
     for (const s of sp) if (!this.shown.has(s.id)) this.born[s.id] ??= now;
     const ps = panes();
+    this.publishParents(sp, ps);
     const places = sp.map((s) => {
       const tabs = new Set((s.tabs ?? []).map((tab) => tab.id));
       const folder = spaceFolder(s, ps);
@@ -349,6 +361,23 @@ export default class Spaces extends View {
 
   // ── Space navigation and worktree/machine grouping ────────────────────────
 
+  // Tells the agents block, a separate copy, which main space each space belongs
+  // to: the repository's open main checkout, else the repository's folder name.
+  publishParents(sp, ps) {
+    const known = sp.map((w) => ({ w, g: this.git[checkoutKey(w, ps)] })).filter((r) => r.g);
+    const parents = {};
+    for (const { w, g } of known) {
+      const main = known.find((r) => r.g.repo === g.repo && !r.g.linked);
+      const folder = JSON.parse(g.repo)[1].replace(/\/\.git\/?$/, "").split("/").pop();
+      parents[w.id] = { key: g.repo, label: main?.w.name || folder };
+    }
+    const text = JSON.stringify(parents);
+    if (text === this.parentsText) return;
+    this.parentsText = text;
+    setShared("better-sidebar.space-parents", parents);
+  }
+
+
   menu(w) {
     // A popup is as tall as its items; height is only the most.
     openOverlay({
@@ -438,7 +467,7 @@ export default class Spaces extends View {
           cx.notify();
         })
         .child(
-          svg(`mods/better-spaces/${m ? "server" : "monitor"}.svg`)
+          svg(`mods/better-sidebar/${m ? "server" : "monitor"}.svg`)
             .size(13)
             .flex_none(),
         )
@@ -480,7 +509,7 @@ export default class Spaces extends View {
                 .bg(connected ? t.ansi2 : t.dim),
             )
             .child(
-              svg(`mods/better-spaces/chevron-${folded ? "right" : "down"}.svg`)
+              svg(`mods/better-sidebar/chevron-${folded ? "right" : "down"}.svg`)
                 .size(11)
                 .flex_none(),
             ),
@@ -497,7 +526,7 @@ export default class Spaces extends View {
         .text_color(t.dim)
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => run("space.new", m ? { machine: m } : {}))
-        .child(svg("mods/better-spaces/plus.svg").size(12))
+        .child(svg("mods/better-sidebar/plus.svg").size(12))
         .when(!collapsed, (el) => el.child("New space there"));
       return [
         head,
@@ -595,7 +624,7 @@ export default class Spaces extends View {
           .items_center()
           .text_color(status.color)
           .tooltip(`${pr.repository}#${pr.number} · ${status.label}\n${pr.title}`)
-          .child(svg(`mods/better-spaces/${status.icon}.svg`).size(13).flex_none())
+          .child(svg(`mods/better-sidebar/${status.icon}.svg`).size(13).flex_none())
           .when(!compact, (el) =>
             el
               .child(this.prNumber(w, pr, status))
@@ -702,7 +731,7 @@ export default class Spaces extends View {
           .gap(9)
           .items_center()
           .when(Boolean(tree), (el) =>
-            el.pl(22).child(svg("mods/better-spaces/branch.svg").size(13).text_color(t.dim)),
+            el.pl(22).child(svg("mods/better-sidebar/branch.svg").size(13).text_color(t.dim)),
           )
           .when(!tree, (el) =>
             el.child(
@@ -772,10 +801,11 @@ export default class Spaces extends View {
   }
 
   render() {
+    if (this.part) return this.part.render();
     const t = theme();
     const collapsed = (this.width ?? find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
     return v_flex()
-      .id("better-spaces-root")
+      .id("better-sidebar-root")
       .size_full()
       .min_h(0)
       .bg(t.chrome)
@@ -806,7 +836,7 @@ export default class Spaces extends View {
               .rounded(6)
               .hover((s) => s.bg(t.hover).text_color(t.foreground))
               .on_click(() => run("space.new"))
-              .child(svg("mods/better-spaces/plus.svg").size(14)),
+              .child(svg("mods/better-sidebar/plus.svg").size(14)),
           ),
       )
       .child(

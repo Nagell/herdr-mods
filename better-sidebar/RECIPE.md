@@ -1,8 +1,8 @@
-# Better Spaces
+# Better Sidebar
 
 A replacement spaces sidebar for a person's existing Herdr layout. Space names and their current Git branches share one line, with branches aligned right. Worktree spaces nest under their repository's main-checkout space. A second line shows the checkout's pull request with a state-specific icon, number, and color, queried through the local GitHub CLI.
 
-![Better Spaces](preview.png)
+![Better Sidebar](preview.png)
 
 ## What you see
 
@@ -30,7 +30,7 @@ Agent states are not PR states: working/blocked/done/idle do not change the PR's
 
 ## Built from
 
-One runtime folder, `mods/better-spaces/`: `main.js`, `pr-status.js`, `typography.js`, `mod.json`, and its own SVG assets. No layouts folder, key snippet, helper binary, or other custom mod is required. Manifest: `{ "place": "none", "title": "Better Spaces" }`.
+One runtime folder, `mods/better-sidebar/`: `main.js`, `pr-status.js`, `typography.js`, `mod.json`, and its own SVG assets. No layouts folder, key snippet, helper binary, or other custom mod is required. Manifest: `{ "place": "none", "title": "Better Sidebar" }`.
 
 Use GPUI div/svg and gpui-base vertical/horizontal flex containers. Herdr supplies spaces, panes, machines, theme, settings, exec, hc, watchFolder, window, layout, shared/setShared, localStorage, run, openOverlay, timers, and size-change callbacks. Commands are space.new, space.select, and space.move. Open the shipped menu as a popup with `{tab: "space", target: {id}}`.
 
@@ -40,12 +40,16 @@ Git commands run with `{cwd: folder, on: space.machine}`. GitHub CLI commands ru
 
 Read every package file before installation. Explain that it runs programs, reads repository metadata, and reaches GitHub with local gh credentials. Copy only the runtime folder. If its name is taken, rename the new copy and all its asset paths consistently; never overwrite an unrelated mod.
 
-Replace only the existing spaces block's mod reference in the person's layout, preserving its ID, dimensions, sibling agents list, other panels, and key bindings. Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so edits to them are lost; the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` (which switches to the clone) and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Set that block's mod reference to better-spaces. Keep the previous mod installed while other layouts still use it. Since place is none, copying the folder alone does not make it appear.
+The same mod draws three blocks, chosen by `props.view`: none for spaces, `agents` for the agents list, adapted from the shipped `agents` mod, and `footer` for one 37px line with a Settings icon, its update dot, and a plus-and-server Add machine icon. The agents view adds "Grouped by main space", read from `better-sidebar.space-parents` that the spaces view publishes from its Git data, and "Grouped by prefix", from the space name then the tab name: `[A-Z][A-Z0-9]*-` plus anything, or any case with a number after the dash, at the start or after a `/`. Groups are made neighbours before `setAgentOrder`, prefix groups sort by name with "No prefix" last.
+
+`props.view: panel-toggle` is a 36px block beside the tab bar with a panel-right button that runs `layout.toggle` on `props.target`, default `panel`, dim when hidden, tooltip Show or Hide sidebar. It also takes the `toggle-panel` command, bound to Cmd+Shift+B by the included `keys.json`.
+
+Replace only the existing spaces block's mod reference in the person's layout, preserving its ID, dimensions, sibling agents list, other panels, and key bindings. Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so edits to them are lost; the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` (which switches to the clone) and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Set that block's mod reference to better-sidebar. Keep the previous mod installed while other layouts still use it. Since place is none, copying the folder alone does not make it appear.
 
 Herdr is native GPUI, not HTML/Node/CSS. Do not retain callback contexts, notify during render, or use timers for animation. Missing gh or authentication is a status error, not a reason to break space navigation. GitHub Enterprise and non-GitHub hosts are unsupported. A minute-old result is not real-time CI. Same-named fork branches must not be mistaken for the checkout. The badge links to GitHub, but is not a PR browser or merge control.
 
 
-A `settings` block in the installed `mods/better-spaces/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+A `settings` block in the installed `mods/better-sidebar/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
 
 ## Done when
 

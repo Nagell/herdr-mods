@@ -1,7 +1,7 @@
 // Native tab bar, persistent action toolbar, and a separate overflow-popup view.
 // Keep layout commands in event handlers or synchronization tasks, never render.
 import { em } from "./typography.js";
-import { loadSettings } from "./settings.js";
+import { loadSettings, duration } from "./settings.js";
 import { find, buttons, execute, matches, isActive } from "./actions.js";
 import {
   toolbarPreferences,
@@ -35,7 +35,8 @@ const PREFERENCES_KEY = "better-tabs.toolbar";
 const DRAG_THRESHOLD = 5; // Small pointer movements must remain ordinary clicks.
 const DRAG_TIMEOUT_MS = 15000;
 // Preferences a person may change in the installed mod.json under `settings`.
-const DEFAULT_SETTINGS = { tabs: { max_width: 170 }, menu: { width: 240 } };
+const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "200ms" }, menu: { width: 240 } };
+const DRAG_DELAY_MS = 200;
 
 // Each row is 32px, with 2px gaps and 5px padding on each edge.
 const menuHeight = (count) => Math.min(420, Math.max(1, count) * 34 + 8);
@@ -120,11 +121,6 @@ export default class Tabs extends View {
 
   command(command, cx) {
     const config = this.config();
-    if (command === "toggle-sidebar") {
-      this.toggleSidebar();
-      return;
-    }
-
     if (command === "overflow") {
       this.openActions(this.toolbar().overflow);
       return;
@@ -158,19 +154,7 @@ export default class Tabs extends View {
     }
   }
 
-  // ── Sidebar visibility and per-space panel memory ────────────────────────
-
-  sidebarPanel(root = layout()) {
-    const config = this.config();
-    const id = config.panelToggle ?? config.rememberPanels?.container ?? "panel";
-    return id === false ? null : find(root, id);
-  }
-
-  toggleSidebar() {
-    const panel = this.sidebarPanel();
-    // Hide the container, not its active child, so reopening keeps the selection.
-    if (panel) run("layout.toggle", { id: panel.id });
-  }
+  // ── Per-space panel memory ───────────────────────────────────────────────
 
   syncPanel() {
     const memory = this.config().rememberPanels;
@@ -298,16 +282,23 @@ export default class Tabs extends View {
       space: spaces().find((s) => s.active)?.id,
       start: point,
       point,
+      pressedAt: Date.now(),
       active: false,
       target: null,
     };
+  }
+
+  // A press has to last before it can drag, so a click that slips stays a click.
+  tabDragReady(point) {
+    const delay = duration(this.settings.tabs.drag_delay, DRAG_DELAY_MS);
+    return Date.now() - this.tabDrag.pressedAt >= delay && moved(this.tabDrag.start, point);
   }
 
   hoverTab(tab, event, cx) {
     if (!this.tabDrag) return;
     const point = event.position ?? this.tabDrag.point;
     this.tabDrag.point = point;
-    this.tabDrag.active ||= moved(this.tabDrag.start, point);
+    this.tabDrag.active ||= this.tabDragReady(point);
     if (this.tabDrag.active) {
       this.tabDrag.target = { id: tab.id, after: afterMiddle(event) };
       cx.notify();
@@ -432,7 +423,7 @@ export default class Tabs extends View {
     if (this.tabDrag) {
       const point = event.position ?? this.tabDrag.point;
       this.tabDrag.point = point;
-      this.tabDrag.active ||= moved(this.tabDrag.start, point);
+      this.tabDrag.active ||= this.tabDragReady(point);
       if (this.tabDrag.active) cx.notify();
     }
     this.moveActionDrag(event, cx);
@@ -830,18 +821,6 @@ export default class Tabs extends View {
           this.finishActionDrag(cx);
         }),
     );
-    // The panel control stays outside the configurable action list, so it
-    // cannot itself be hidden in overflow. Toggling preserves the active child.
-    const panel = this.sidebarPanel(root);
-    if (panel)
-      actions.child(
-        this.simple(
-          "panel-toggle",
-          this.icon("panel-right", 16),
-          panel.hidden ? "Show sidebar" : "Hide sidebar",
-          () => this.toggleSidebar(),
-        ).text_color(panel.hidden ? t.dim : t.foreground),
-      );
     bar.child(actions);
     if (w?.buttons)
       bar

@@ -1,11 +1,11 @@
-Herdr Mods — Better Changes, Better Spaces, Better Tabs, and Branch PR
+Herdr Mods — Better Changes, Better Sidebar, Better Tabs, and Branch PR
 Copyright 2026 Tawsif Aqib
 
 Better Changes adapts behavior and code from Herdr Desktop's shipped Changes mod.
 Herdr Desktop is available at https://github.com/herdrdev/herdr-app and is
 licensed under the Apache License, Version 2.0.
 
-Better Spaces adapts code from Herdr Desktop's shipped spaces mod.
+Better Sidebar adapts code from Herdr Desktop's shipped spaces and agents mods.
 Its bundled navigation and pull-request SVG icons are also adapted from
 Herdr Desktop.
 

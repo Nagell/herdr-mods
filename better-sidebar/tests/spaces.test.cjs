@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const runtime = path.join(__dirname, "../mods/better-spaces");
+const runtime = path.join(__dirname, "../mods/better-sidebar");
 
 // Inspect fluent GPUI descriptions without opening a window. Timers do not run
 // automatically; flush() waits for spawned reads, making races deterministic.
@@ -76,6 +76,10 @@ function harness() {
     settings: () => ({ ui_font_size: 13 }),
     layout: () => ({ id: "sidebar", size: { px: 268 } }),
     window: () => ({ active: true }),
+    props: () => ({}),
+    Agents: class {},
+    Footer: class {},
+    PanelToggle: class {},
     shared: (key) => values[key],
     setShared: (key, value) => {
       values[key] = value;
@@ -479,13 +483,15 @@ test("real Git metadata groups a worktree beneath its main checkout", async () =
 });
 
 test("package is standalone with local icons and no layout or helper dependency", () => {
-  const source = fs.readFileSync(path.join(runtime, "main.js"), "utf8");
+  const source = ["main.js", "agents.js", "footer.js", "panel-toggle.js"]
+    .map((file) => fs.readFileSync(path.join(runtime, file), "utf8"))
+    .join("\n");
   assert.doesNotMatch(
     source,
     /mods\/(?:pull-requests|workspace-chrome|factory-spaces)|herdr-pr|appHome\(/,
   );
   const imports = [...source.matchAll(/mods\/([^/]+)\//g)];
-  assert.ok(imports.every((match) => match[1] === "better-spaces"));
+  assert.ok(imports.every((match) => match[1] === "better-sidebar"));
   for (const icon of [
     "branch",
     "server",
@@ -493,6 +499,16 @@ test("package is standalone with local icons and no layout or helper dependency"
     "chevron-down",
     "chevron-right",
     "plus",
+    "panel-right",
+    "clock",
+    "layers",
+    "git-branch",
+    "tag",
+    "check",
+    "spinner",
+    "pin",
+    "pin-off",
+    "settings",
     "pull-request",
     "draft",
     "merged",
@@ -516,4 +532,28 @@ test("pull request status can be turned off in the settings", async () => {
   await h.flush();
   assert.equal(h.mod.settings.pull_request_status, false);
   assert.equal(calls.length, 0);
+});
+
+test("spaces publish each space's main space for the agents block", () => {
+  const h = harness();
+  const repo = JSON.stringify([null, "/code/shop/.git"]);
+  const other = JSON.stringify([null, "/code/lonely/.git"]);
+  h.live.spaces = [
+    { id: "main", name: "shop", folder: "/code/shop", tabs: [] },
+    { id: "wt", name: "PR-6", folder: "/wt/pr-6", tabs: [] },
+    { id: "orphan", name: "PR-9", folder: "/wt/pr-9", tabs: [] },
+    { id: "plain", name: "notes", folder: "/notes", tabs: [] },
+  ];
+  const key = (folder) => JSON.stringify([null, folder]);
+  h.mod.git = Object.create(null);
+  h.mod.git[key("/code/shop")] = { repo, linked: false };
+  h.mod.git[key("/wt/pr-6")] = { repo, linked: true };
+  h.mod.git[key("/wt/pr-9")] = { repo: other, linked: true };
+  h.mod.publishParents(h.live.spaces, []);
+  const parents = h.values["better-sidebar.space-parents"];
+  assert.equal(parents.main.label, "shop");
+  assert.equal(parents.wt.label, "shop", "a worktree goes under its main space");
+  assert.equal(parents.wt.key, parents.main.key);
+  assert.equal(parents.orphan.label, "lonely", "without an open main space, the repository's folder");
+  assert.equal(parents.plain, undefined, "not a repository");
 });

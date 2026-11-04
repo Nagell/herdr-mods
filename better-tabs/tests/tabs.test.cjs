@@ -279,6 +279,7 @@ test("tabs select, drag reorder, rename, close, and open context menus", () => {
   const h = harness({ buttons: [] });
   let el = h.tabs.render(h.cx);
   h.find(el, "tab-t1").handlers["on_mouse_down:left"]({ click_count: 2 }, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   assert.equal(h.calls.at(-1).name, "tab.rename");
   const start = { position: { x: 20, y: 15 }, click_count: 1 };
   const drop = {
@@ -287,6 +288,7 @@ test("tabs select, drag reorder, rename, close, and open context menus", () => {
     bounds: { x: 100, y: 0, width: 100, height: 30 },
   };
   h.find(el, "tab-t1").handlers["on_mouse_down:left"](start, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   h.find(el, "tab-t2").handlers.on_mouse_move(drop, h.cx);
   assert.ok(h.find(h.tabs.render(h.cx), "drag-preview"));
   h.find(el, "tab-t2").handlers["on_mouse_up:left"](drop, h.cx);
@@ -295,6 +297,7 @@ test("tabs select, drag reorder, rename, close, and open context menus", () => {
   h.find(el, "close-t1").handlers.on_click({}, h.cx);
   assert.equal(h.calls.at(-1).name, "tab.close");
   h.find(el, "tab-t2").handlers["on_mouse_down:left"]({}, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   h.find(el, "tab-t2").handlers["on_mouse_up:left"]({}, h.cx);
   assert.equal(h.calls.at(-1).name, "tab.select");
   h.find(el, "tab-t2").handlers["on_mouse_down:right"]({}, h.cx);
@@ -348,6 +351,7 @@ test("tab drag has a movement threshold, follows the pointer, and marks the inse
   const h = harness({ buttons: [] });
   let el = h.tabs.render(h.cx);
   h.find(el, "tab-t1").handlers["on_mouse_down:left"]({ position: { x: 20, y: 15 } }, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   h.find(el, "tab-t1").handlers.on_mouse_move(
     {
       position: { x: 22, y: 15 },
@@ -391,6 +395,7 @@ test("leaving the bar cancels a tab drag instead of moving or selecting another 
   const h = harness({ buttons: [] });
   const el = h.tabs.render(h.cx);
   h.find(el, "tab-t1").handlers["on_mouse_down:left"]({ position: { x: 20, y: 15 } }, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   h.find(el, "better-tabs-root").handlers.on_hover(false, h.cx);
   h.find(el, "tab-t2").handlers["on_mouse_up:left"]({}, h.cx);
   assert.equal(h.calls.length, 0);
@@ -400,6 +405,7 @@ test("dropping a terminal tab on a toolbar action cancels without activating it"
   const h = harness();
   const el = h.tabs.render(h.cx);
   h.find(el, "tab-t1").handlers["on_mouse_down:left"]({ position: { x: 20, y: 15 } }, h.cx);
+  if (h.tabs.tabDrag) h.tabs.tabDrag.pressedAt = 0;
   h.find(el, "better-tabs-root").handlers.on_mouse_move({ position: { x: 800, y: 15 } }, h.cx);
   h.find(el, "action-files").handlers["on_mouse_up:left"]({}, h.cx);
   h.find(el, "action-files").handlers.on_click({}, h.cx);
@@ -572,54 +578,6 @@ test("overflow anchors below and right-aligned with the dots button", () => {
   assert.deepEqual(plain(h.calls.at(-1).overlay.at), { x: 786, y: 42 });
 });
 
-test("sidebar toggle follows the dots, preserves panel selection, and can be configured or disabled", () => {
-  const h = harness();
-  let el = h.tabs.render(h.cx);
-  const controls = h.find(el, "action-toolbar").kids;
-  assert.deepEqual(
-    controls.slice(-2).map((child) => child.key),
-    ["actions-more", "panel-toggle"],
-  );
-  h.find(el, "panel-toggle").handlers.on_click({}, h.cx);
-  assert.deepEqual(plain(h.calls.at(-1)), { name: "layout.toggle", args: { id: "panel" } });
-  assert.equal(h.tree.children[0].children[0].active, "files");
-  h.tree.children[0].hidden = true;
-  el = h.tabs.render(h.cx);
-  assert.equal(h.find(el, "panel-toggle").attrs.tooltip[0], "Show sidebar");
-  h.config.panelToggle = false;
-  assert.equal(h.find(h.tabs.render(h.cx), "panel-toggle"), undefined);
-  h.config.panelToggle = "custom-panel";
-  h.tree.children.push({ id: "custom-panel", hidden: true });
-  h.find(h.tabs.render(h.cx), "panel-toggle").handlers.on_click({}, h.cx);
-  assert.equal(h.calls.at(-1).args.id, "custom-panel");
-});
-
-test("sidebar shortcut command uses the icon target and safely ignores missing or disabled panels", () => {
-  const h = harness();
-  h.tabs.command("toggle-sidebar", h.cx);
-  assert.deepEqual(plain(h.calls.at(-1)), { name: "layout.toggle", args: { id: "panel" } });
-
-  h.config.panelToggle = "custom-panel";
-  h.tree.children.push({ id: "custom-panel", hidden: true });
-  h.tabs.command("toggle-sidebar", h.cx);
-  assert.equal(h.calls.at(-1).args.id, "custom-panel");
-
-  const count = h.calls.length;
-  h.config.panelToggle = false;
-  h.tabs.command("toggle-sidebar", h.cx);
-  h.config.panelToggle = "missing-panel";
-  h.tabs.command("toggle-sidebar", h.cx);
-  assert.equal(h.calls.length, count);
-
-  delete h.config.panelToggle;
-  h.config.rememberPanels = { container: "custom-panel", stack: "custom-stack" };
-  h.tabs.command("toggle-sidebar", h.cx);
-  assert.equal(h.calls.at(-1).args.id, "custom-panel");
-
-  const keys = JSON.parse(fs.readFileSync(path.join(root, "../../keys.json"), "utf8"));
-  assert.equal(keys.global["cmd-shift-b"], "better-tabs.toggle-sidebar");
-});
-
 test("toolbar arrangements are isolated by layout and toolbar ID", () => {
   const h = harness({ toolbarId: "primary" });
   h.tabs.savePreferences(h.hideToolbarAction({}, "files"));
@@ -650,7 +608,6 @@ test("errors become notifications and shipped package has no Factory dependency"
     "win-restore",
     "win-close",
     "more-vertical",
-    "panel-right",
     "pin",
   ])
     assert.ok(fs.existsSync(path.join(root, asset + ".svg")));
@@ -680,4 +637,29 @@ test("mod tabs get an icon from the layout map, else the shared registry, else n
   h.tabs.render(h.cx);
   assert.ok(!paths.some((p) => p.includes("pull-request") || p.includes("file.svg")));
   assert.ok(paths.includes("icons/claude.svg"));
+});
+
+test("a quick press does not drag, even if the pointer slips, and still selects the tab", () => {
+  const h = harness({ buttons: [] });
+  const el = h.tabs.render(h.cx);
+  const slip = {
+    position: { x: 60, y: 15 },
+    local_position: { x: 60 },
+    bounds: { x: 0, y: 0, width: 100, height: 30 },
+  };
+  h.find(el, "tab-t1").handlers["on_mouse_down:left"]({ position: { x: 20, y: 15 } }, h.cx);
+  h.find(el, "tab-t1").handlers.on_mouse_move(slip, h.cx);
+  assert.equal(h.tabs.tabDrag.active, false);
+  assert.equal(h.find(h.tabs.render(h.cx), "drag-preview"), undefined);
+  h.tabs.tabDrag.pressedAt = 0; // the same press, held past the delay
+  h.find(el, "tab-t1").handlers.on_mouse_move(slip, h.cx);
+  assert.equal(h.tabs.tabDrag.active, true);
+  h.tabs.tabDrag = null;
+  h.find(el, "tab-t2").handlers["on_mouse_down:left"]({ position: { x: 120, y: 15 } }, h.cx);
+  h.find(el, "tab-t2").handlers.on_mouse_move(
+    { ...slip, position: { x: 150, y: 15 } },
+    h.cx,
+  );
+  h.find(el, "tab-t2").handlers["on_mouse_up:left"]({ position: { x: 150, y: 15 } }, h.cx);
+  assert.deepEqual(plain(h.calls), [{ name: "tab.select", args: { id: "t2" } }]);
 });

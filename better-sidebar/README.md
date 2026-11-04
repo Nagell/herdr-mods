@@ -1,8 +1,8 @@
-# Better Spaces
+# Better Sidebar
 
-A standalone spaces sidebar for Herdr Desktop: right-aligned Git branches, nested worktrees, and color-coded pull-request status from the GitHub CLI.
+A standalone sidebar for Herdr Desktop: spaces with right-aligned Git branches, nested worktrees and color-coded pull-request status from the GitHub CLI; agents with more ways to group them; and a one-line footer.
 
-![Better Spaces](preview.png)
+![Better Sidebar](preview.png)
 
 The screenshot shows a nested worktree with its branch aligned right and a gray draft PR badge beneath it. Cmd-click the PR number to open it on GitHub.
 
@@ -12,15 +12,40 @@ The screenshot shows a nested worktree with its branch aligned right and a gray 
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, colored avatars, ahead/behind counts, machine groups, and the compact sidebar rail.
 
+## Agents
+
+The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-agents, status and fold behaviour. The icon beside **Agents** chooses how they are gathered:
+
+- **Priority** and **Grouped by space**, as in Herdr.
+- **Grouped by main space** puts a worktree's agents with its main checkout's, under the main space's name. A worktree whose main space is not open groups under the repository's folder name. It needs the spaces block of this mod in the same layout; without it each space is its own group.
+- **Grouped by prefix** gathers names like `PR-12`, `INS-4` and `PLAT-work`, also after a folder as in `feature/INS-4`. It reads the worktree or space name first, then the tab name. Capitals need only the dash, lower case needs a number after it, so `pr-12` counts and `herdr-mods` does not. Everything else goes under **No prefix**, last.
+
+## Footer
+
+Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready.
+
+## Right panel toggle
+
+The panel icon at the far right of the tab bar hides or shows the right panel without changing its selected view. It is its own block, so it needs the layout to hold the tab bar and this block in a row:
+
+```json
+{ "id": "tabs-row", "type": "row", "size": { "px": 42 }, "children": [
+  { "id": "tabs", "type": "block", "window_drag": true, "content": { "mod": "better-tabs" } },
+  { "id": "panel-toggle", "type": "block", "size": { "px": 36 }, "content": { "mod": "better-sidebar", "props": { "view": "panel-toggle" } } }
+] }
+```
+
+`props.target` names another layout node to toggle; the default is `panel`. The included `keys.json` binds **Cmd+Shift+B** on macOS to `better-sidebar.toggle-panel`; merge it into `~/.config/herdr-app/keys.json`. The command only works while this block is in the layout.
+
 ## Install
 
 Copy this prompt into your Herdr agent:
 
-> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-spaces
+> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-sidebar
 
-Installation follows [RECIPE.md](RECIPE.md). Copy only `mods/better-spaces/` into the app configuration. The manifest uses `"place": "none"`: the installer should **replace the existing spaces block's mod reference**, not add a second sidebar. Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or create a new layout. Preserve the agents list, other panels, key bindings, and the existing layout's dimensions. Never overwrite an unrelated mod on a name clash.
+Installation follows [RECIPE.md](RECIPE.md). Copy only `mods/better-sidebar/` into the app configuration. The manifest uses `"place": "none"`: the installer should **replace the existing spaces block's mod reference**, not add a second sidebar. Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or create a new layout. Preserve the agents list, other panels, key bindings, and the existing layout's dimensions. Never overwrite an unrelated mod on a name clash.
 
-The spaces block should reference `"mod": "better-spaces"`. Keep its existing ID, size, and other properties. Leave the previous mod installed if other layouts still use it; restoring that reference rolls back the change.
+The spaces block should reference `"mod": "better-sidebar"`, the agents block `{ "mod": "better-sidebar", "props": { "view": "agents" } }`, and the footer block `{ "mod": "better-sidebar", "props": { "view": "footer" } }` with its height set to 37px. Each is optional. Keep its existing ID, size, and other properties. Leave the previous mod installed if other layouts still use it; restoring that reference rolls back the change.
 
 ## Requirements and access
 
@@ -46,7 +71,7 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 
 ## Settings
 
-The installed `mods/better-spaces/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+The installed `mods/better-sidebar/mod.json` has a `settings` block; copy your edits forward when you update the mod:
 
 ```json
 "settings": { "git": { "retry_after": "15s" }, "pull_request_status": true }
@@ -56,14 +81,16 @@ The installed `mods/better-spaces/mod.json` has a `settings` block; copy your ed
 
 ## Development
 
-- `mods/better-spaces/main.js` — space navigation, Git metadata, worktree/machine grouping, and native rendering.
-- `mods/better-spaces/pr-status.js` — GitHub discovery, PR appearance, caching, and stale-response protection.
-- `mods/better-spaces/typography.js` — sizing from Herdr's live font settings.
+- `mods/better-sidebar/main.js` — space navigation, Git metadata, worktree/machine grouping, and native rendering.
+- `mods/better-sidebar/agents.js` — the agents block and its groupings.
+- `mods/better-sidebar/footer.js` — the one-line footer.
+- `mods/better-sidebar/pr-status.js` — GitHub discovery, PR appearance, caching, and stale-response protection.
+- `mods/better-sidebar/typography.js` — sizing from Herdr's live font settings.
 - `tests/spaces.test.cjs` — isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
 
 ```sh
 node --test tests/*.test.cjs
-herdr-app check "$PWD/mods/better-spaces"
+herdr-app check "$PWD/mods/better-sidebar"
 ```
 
 See the repository's [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for upstream attribution.
