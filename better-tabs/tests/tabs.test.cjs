@@ -652,6 +652,8 @@ test("a quick press does not drag, even if the pointer slips, and still selects 
   assert.equal(h.tabs.tabDrag.active, false);
   assert.equal(h.find(h.tabs.render(h.cx), "drag-preview"), undefined);
   h.tabs.tabDrag.pressedAt = 0; // the same press, held past the delay
+  h.find(el, "tab-t1").handlers.on_mouse_move({ ...slip, position: { x: 28, y: 15 } }, h.cx);
+  assert.equal(h.tabs.tabDrag.active, false); // too short a move, even after the delay
   h.find(el, "tab-t1").handlers.on_mouse_move(slip, h.cx);
   assert.equal(h.tabs.tabDrag.active, true);
   h.tabs.tabDrag = null;

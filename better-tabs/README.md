@@ -161,10 +161,10 @@ Configure `{ "type": "hook", "name": "newNamedTab", "args": { "name": "Review" }
 The installed `mods/better-tabs/mod.json` has a `settings` block; copy your edits forward when you update the mod:
 
 ```json
-"settings": { "tabs": { "max_width": 170, "drag_delay": "200ms" }, "menu": { "width": 240 } }
+"settings": { "tabs": { "max_width": 170, "drag_delay": "400ms" }, "menu": { "width": 240 } }
 ```
 
-`tabs.max_width` caps a tab's width in pixels, overridden by a layout block's `tabMaxWidth` prop; `tabs.drag_delay` is how long a press must last before moving it drags the tab; `menu.width` sizes the overflow and action menus. Buttons, panel memory and mod icons stay in the layout block's props, since they describe one tab bar. Problems with the block are logged, not shown.
+`tabs.max_width` caps a tab's width in pixels, overridden by a layout block's `tabMaxWidth` prop; `tabs.drag_delay` is how long a press must last before moving it 12px or more drags the tab; `menu.width` sizes the overflow and action menus. Buttons, panel memory and mod icons stay in the layout block's props, since they describe one tab bar. Problems with the block are logged, not shown.
 
 ## Development
 

@@ -35,8 +35,9 @@ const PREFERENCES_KEY = "better-tabs.toolbar";
 const DRAG_THRESHOLD = 5; // Small pointer movements must remain ordinary clicks.
 const DRAG_TIMEOUT_MS = 15000;
 // Preferences a person may change in the installed mod.json under `settings`.
-const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "200ms" }, menu: { width: 240 } };
-const DRAG_DELAY_MS = 200;
+const DEFAULT_SETTINGS = { tabs: { max_width: 170, drag_delay: "400ms" }, menu: { width: 240 } };
+const DRAG_DELAY_MS = 400;
+const TAB_DRAG_DISTANCE = 12; // A tab is wide, so a slow click can slip further than a toolbar button.
 
 // Each row is 32px, with 2px gaps and 5px padding on each edge.
 const menuHeight = (count) => Math.min(420, Math.max(1, count) * 34 + 8);
@@ -291,7 +292,7 @@ export default class Tabs extends View {
   // A press has to last before it can drag, so a click that slips stays a click.
   tabDragReady(point) {
     const delay = duration(this.settings.tabs.drag_delay, DRAG_DELAY_MS);
-    return Date.now() - this.tabDrag.pressedAt >= delay && moved(this.tabDrag.start, point);
+    return Date.now() - this.tabDrag.pressedAt >= delay && Math.hypot(point.x - this.tabDrag.start.x, point.y - this.tabDrag.start.y) >= TAB_DRAG_DISTANCE;
   }
 
   hoverTab(tab, event, cx) {

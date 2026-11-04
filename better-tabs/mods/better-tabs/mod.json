@@ -1,11 +1,11 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "place": "none",
   "title": "Better Tabs",
   "settings": {
     "tabs": {
       "max_width": 170,
-      "drag_delay": "200ms"
+      "drag_delay": "400ms"
     },
     "menu": {
       "width": 240
