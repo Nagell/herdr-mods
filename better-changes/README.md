@@ -26,9 +26,9 @@ Requires a Herdr version supporting mod tabs (`tab.new { mod, props }`) and Git 
 
 A name clash must be resolved before copying: retain the existing mod, rename this package's folder, and update its mod names and asset prefixes consistently. Do not overwrite an unrelated installation.
 
-## Committed files
+## Unpushed files
 
-A **Committed** section under **Unstaged** lists the files this branch has changed, with their totals, compared with where it left the remote's default branch: `origin/HEAD`, or the branch's upstream if the clone never recorded one. On the default branch that means what is not pushed yet. Clicking a file opens its diff against that point. Files also still changing appear in both places. The section is hidden when there is no remote branch to compare with, and it reads the last fetch; the mod never fetches.
+An **Unpushed** section under **Unstaged** lists the files in commits you have not pushed, with their totals, compared with the branch's upstream. A branch that was never pushed compares with the remote's default branch, `origin/HEAD`, so it lists everything on the branch. Clicking a file opens its diff against that point. Files also still changing appear in both places. The section goes away once everything is pushed, or when there is no remote branch to compare with. It reads the last fetch; the mod never fetches.
 
 ## Commit and amend
 

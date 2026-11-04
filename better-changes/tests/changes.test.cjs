@@ -1046,7 +1046,7 @@ test("opening a commit during a history load leaves neither loading state stuck"
   assert.equal(h.mod.commitFilesLoading, false);
 });
 
-test("committed files list under unstaged and open their diff against the branch point", async () => {
+test("unpushed files list under unstaged and open their diff against the upstream", async () => {
   const h = harness();
   const answers = {
     upstream: { code: 0, stdout: "origin/feature\n" },
@@ -1070,7 +1070,7 @@ test("committed files list under unstaged and open their diff against the branch
   };
   const git = (args) => h.mod.git(args);
   h.mod.committed = await h.mod.readCommitted(git);
-  assert.equal(h.mod.committed.name, "origin/main");
+  assert.equal(h.mod.committed.name, "origin/feature");
   assert.equal(h.mod.committed.total, 2);
   assert.ok(diffs[0].includes("base1") && diffs[0].includes("HEAD"));
 
@@ -1106,14 +1106,52 @@ test("committed files list under unstaged and open their diff against the branch
   const again = await h.mod.readCommitted(git);
   assert.equal(again, h.mod.committed);
   assert.equal(diffs.length, 0);
-  // No default branch recorded: the upstream instead.
-  answers.head = { code: 1, stdout: "" };
-  answers.tip = { code: 0, stdout: "tip2\n" };
-  assert.equal((await h.mod.readCommitted(git)).name, "origin/feature");
-  // Nothing to compare with: the section goes away.
+  // Never pushed: the remote's default branch instead.
   answers.upstream = { code: 128, stdout: "" };
+  answers.tip = { code: 0, stdout: "tip2\n" };
+  assert.equal((await h.mod.readCommitted(git)).name, "origin/main");
+  // Nothing to compare with: the section goes away.
+  answers.head = { code: 1, stdout: "" };
   h.mod.committed = await h.mod.readCommitted(git);
   assert.equal(h.mod.committed, null);
   assert.equal(find(h.mod.render(h.cx), "changes-section-committed"), undefined);
 });
 
+test("the unpushed section clears after a real push", async () => {
+  const { spawnSync } = require("node:child_process");
+  const os = require("node:os");
+  const path = require("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "unpushed-"));
+  const run = (cwd, ...args) => {
+    const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  const remote = path.join(dir, "remote.git"), repo = path.join(dir, "repo");
+  run(dir, "init", "-q", "--bare", "-b", "main", remote);
+  run(dir, "clone", "-q", remote, repo);
+  run(repo, "checkout", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "a.txt"), "a\n");
+  run(repo, "add", ".");
+  run(repo, "commit", "-qm", "first");
+  run(repo, "push", "-q", "-u", "origin", "main");
+  const h = harness();
+  const git = async (args) => {
+    const r = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
+    return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+  };
+  try {
+    fs.writeFileSync(path.join(repo, "b.txt"), "b\n");
+    run(repo, "add", ".");
+    run(repo, "commit", "-qm", "second");
+    h.mod.committed = await h.mod.readCommitted(git);
+    assert.equal(h.mod.committed.total, 1);
+    assert.equal(h.mod.committed.name, "origin/main");
+    assert.equal(h.mod.committed.files[0].path, "b.txt");
+    run(repo, "push", "-q");
+    h.mod.committed = await h.mod.readCommitted(git);
+    assert.equal(h.mod.committed.total, 0);
+    assert.equal(find(h.mod.render(h.cx), "changes-section-committed"), undefined);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -343,23 +343,23 @@ export default class Changes extends View {
       }
     });
   }
-  // ── Files committed on this branch ────────────────────────────────────────
+  // ── Files not pushed yet ──────────────────────────────────────────────────
 
-  // What this branch adds over the remote's default branch, or over its upstream
-  // when the clone never recorded a default. On the default branch itself that
-  // is what is not pushed yet. Null when there is nothing to compare with. These
+  // What HEAD has over its upstream, or, on a branch never pushed, over the
+  // remote's default branch. Null when there is nothing to compare with. These
   // read the last fetch and never fetch.
+  // shortcut: a branch pushed without setting its upstream still compares with the default branch, upgrade by also looking for <remote>/<branch>.
   async readCommitted(git) {
     try {
       const upstream = await git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
       const tracked = upstream.code === 0 ? upstream.stdout.trim() : null;
       const remote = tracked?.split("/")[0] ?? "origin";
-      const fallback = tracked ? { ref: "@{u}", name: tracked } : null;
-      const remoteHead = await git(["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
-      const against =
-        remoteHead.code === 0 && remoteHead.stdout.trim()
+      const remoteHead = tracked ? null : await git(["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`]);
+      const against = tracked
+        ? { ref: "@{u}", name: tracked }
+        : remoteHead.code === 0 && remoteHead.stdout.trim()
           ? { ref: `refs/remotes/${remote}/HEAD`, name: remoteHead.stdout.trim() }
-          : fallback;
+          : null;
       if (!against) return null;
       const base = await git(["merge-base", "HEAD", against.ref]);
       const head = await git(["rev-parse", "--verify", "HEAD"]);
@@ -1306,7 +1306,7 @@ export default class Changes extends View {
 
   renderCommitted(list, t) {
     const committed = this.committed;
-    if (!committed) return;
+    if (!committed?.total) return;
     list.child(div().h(1).w_full().flex_none().my(4).bg(t.border));
     list.child(
       h_flex()
@@ -1316,18 +1316,14 @@ export default class Changes extends View {
         .gap(6)
         .items_center()
         .flex_none()
-        .child(div().font_semibold().text_size(em(0.9)).child("Committed"))
+        .child(div().font_semibold().text_size(em(0.9)).child("Unpushed"))
         .child(div().text_size(em(0.8)).text_color(t.dim).child(String(committed.total)))
         .child(div().flex_1())
         .child(
-          div().min_w(0).truncate().text_size(em(0.8)).text_color(t.dim).child(`since ${committed.name}`),
+          div().min_w(0).truncate().text_size(em(0.8)).text_color(t.dim).child(`not on ${committed.name}`),
         ),
     );
-    if (committed.files.length) list.children(this.fileRows(committed.files, "committed", t));
-    else
-      list.child(
-        div().px(8).pb(6).text_size(em(0.85)).text_color(t.dim).child("Nothing committed on this branch yet"),
-      );
+    list.children(this.fileRows(committed.files, "committed", t));
   }
 
   // Tree or flat rows for one group, honouring the sidebar's view toggle.
@@ -1812,7 +1808,7 @@ export default class Changes extends View {
             .flex_1()
             .truncate()
             .child(
-              `${this.scope === "commit" ? `Commit ${this.commitRef?.short} · ${this.commitRef?.subject}` : this.scope === "committed" ? `Committed · ${this.commitRef?.name} → HEAD` : this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
+              `${this.scope === "commit" ? `Commit ${this.commitRef?.short} · ${this.commitRef?.subject}` : this.scope === "committed" ? `Unpushed · ${this.commitRef?.name} → HEAD` : this.scope === "staged" ? "Staged · HEAD → Index" : this.scope === "unstaged" ? "Unstaged · Index → Working tree" : "All changes"} · ${this.root || ""}`,
             ),
         )
         .child(div().text_color(t.ansi2).child("+ Added"))
