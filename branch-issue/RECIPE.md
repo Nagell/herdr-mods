@@ -1,6 +1,6 @@
 # Branch Issue
 
-A standalone native Linear issue sidebar and issue browser for a person's existing Herdr window, built as a sibling of GitHub PR. It talks to Linear's GraphQL API through a bundled helper that reads the personal API key only from the LINEAR_API_KEY environment variable (its own, then a login shell's); a missing or rejected key must surface as a plain panel message naming LINEAR_API_KEY with Retry, never a key field or a generic failure. The sidebar shows the issue bound to the active checkout; All issues opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow, Better Tabs, or GitHub PR dependency.
+A standalone native Linear issue sidebar and issue browser for a person's existing Herdr window, built as a sibling of Branch PR. It talks to Linear's GraphQL API through a bundled helper that reads the personal API key only from the LINEAR_API_KEY environment variable (its own, then a login shell's); a missing or rejected key must surface as a plain panel message naming LINEAR_API_KEY with Retry, never a key field or a generic failure. The sidebar shows the issue bound to the active checkout; All issues opens a reusable normal center tab. Preserve the person's terminal tabs, layout, and shortcuts. No Workflow, Better Tabs, or Branch PR dependency.
 
 ## What you see
 
@@ -28,20 +28,20 @@ Commands: open-browser/toggle, refresh, back, open:<identifier>, description/com
 
 ## Built from
 
-One package with mods/branch-issue/main.js, typography.js (identical to GitHub PR's), mod.json (place:none, title:Branch Issue), SVGs, helper/go.mod/main.go/main_test.go, install.py, tests, and docs. The dependency-free Go 1.23+ helper posts to https://api.linear.app/graphql with the key in the Authorization header, reads the key from LINEAR_API_KEY, falling back to `$SHELL -lic 'printf %s "$LINEAR_API_KEY"'`, and never stores it. Actions: viewer, list, detail (identifier or UUID), resolve, comment, edit-comment, update. Comment pagination is followed to the end.
+One package with mods/branch-issue/main.js, typography.js (identical to Branch PR's), mod.json (place:none, title:Branch Issue), SVGs, helper/go.mod/main.go/main_test.go, install.py, tests, and docs. The dependency-free Go 1.23+ helper posts to https://api.linear.app/graphql with the key in the Authorization header, reads the key from LINEAR_API_KEY, falling back to `$SHELL -lic 'printf %s "$LINEAR_API_KEY"'`, and never stores it. Actions: viewer, list, detail (identifier or UUID), resolve, comment, edit-comment, update. Comment pagination is followed to the end.
 
 Native GPUI div/svg and gpui-base flex, input/textarea, Markdown, and Popover controls. One keyboard-navigable dropdown helper serves every picker. Herdr supplies spaces, panes, agents, props, shared/setShared, exec, hc, home/appHome, theme, nextCommand, run, knownAgents, timers, native URL opening, and localStorage.
 
 ## Watch out
 
-The key is a personal token with the person's full Linear access: say so before install and never log it. The login-shell fallback runs the person's shell startup files once per request. Linear's branchName follows the team's branch format, which may contain slashes; the worktree name is its slug. The assignee picker only lists active team members. Attachment rows open their URL; there is no cross-mod call into GitHub PR.
+The key is a personal token with the person's full Linear access: say so before install and never log it. The login-shell fallback runs the person's shell startup files once per request. Linear's branchName follows the team's branch format, which may contain slashes; the worktree name is its slug. The assignee picker only lists active team members. Attachment rows open their URL; there is no cross-mod call into Branch PR.
 
 Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Add a block `{ "mod": "branch-issue", "props": { "mode": "branch" } }` to the panel stack or replace one slot, preserving node IDs, dimensions, sibling panels, and keys. No Node/DOM/CSS, retained callback contexts, top-level await, timers for animation, or render-time shared-state writes.
 
 ## Done when
 
 - Node tests, Python installer tests, Go tests/vet, and herdr-app check pass.
-- Package has no Factory/Better Tabs/Workflow/GitHub PR dependency.
+- Package has no Factory/Better Tabs/Workflow/Branch PR dependency.
 - A missing or rejected LINEAR_API_KEY shows the plain message with Retry and no key field.
 - The sidebar resolves a branch from its binding or its name, offers Link issue otherwise, and picks among several.
 - The browser filters, searches, groups by state, pages, and opens details; quick edits write once per choice.

@@ -1,6 +1,6 @@
 # Branch Issue
 
-A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](https://herdr.dev/), built as a sibling of [GitHub PR](../github-pr/README.md).
+A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](https://herdr.dev/), built as a sibling of [Branch PR](../branch-pr/README.md).
 
 ![Branch Issue](preview.png)
 
@@ -9,7 +9,7 @@ A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](h
 - Issue details: description, threaded comments, links, sub-issues, and quick edits for **state, priority, assignee and labels**.
 - **Start work:** a worktree from the issue using Linear's own branch name, opened as a nested space with a terminal or an installed agent that receives the issue as its first prompt.
 - Explicit comment/reply/edit controls and agent handoff prompts. Nothing is written to Linear without a click.
-- No dependency on Factory, Better Tabs, Workflow, GitHub PR, or another custom mod.
+- No dependency on Factory, Better Tabs, Workflow, Branch PR, or another custom mod.
 
 ## Install
 
@@ -98,6 +98,6 @@ python3 -m unittest discover -s tests
 herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"
 ```
 
-`main.js` owns native UI, branch and browser state, commands, and async invalidation. `typography.js` is shared with GitHub PR byte for byte. `helper/main.go` is the JSON bridge to Linear's GraphQL API with validated requests, key storage, and a 26-second timeout. Tests use mocked API calls, not live Linear writes.
+`main.js` owns native UI, branch and browser state, commands, and async invalidation. `typography.js` is shared with Branch PR byte for byte. `helper/main.go` is the JSON bridge to Linear's GraphQL API with validated requests, key storage, and a 26-second timeout. Tests use mocked API calls, not live Linear writes.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.
