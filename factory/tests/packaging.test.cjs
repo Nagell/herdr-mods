@@ -9,7 +9,7 @@ const files = () => ['main.js', 'settings.js', ...['views', 'actions', 'run'].fl
 
 test('package owns its helper and depends on no other mod or layout', () => {
   const code = files().map((f) => fs.readFileSync(path.join(runtime, f), 'utf8')).join('\n');
-  assert.doesNotMatch(code, /better-tabs|branch-pr|branch-issue|panel-body|collie/i);
+  assert.doesNotMatch(code, /better-tabs|branch-pr|branch-issue|panel-body/i);
   assert.match(code, /appHome\(\)\}\/mods\/factory\/bin\/factory/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))).title, 'Factory');
   for (const file of ['helper/go.mod', 'helper/main.go', 'helper/install/main.go', 'skills/factory/SKILL.md', 'README.md', 'RECIPE.md'])

@@ -49,7 +49,7 @@ The installer builds the helper, copies only `mods/branch-issue/` to `~/.config/
 The manifest has `place: none`, so add it to a layout you own, about 368px wide:
 
 ```json
-{ "mod": "branch-issue" }
+{ "id": "linear-issues", "type": "block", "content": { "mod": "branch-issue" } }
 ```
 
 With Better Tabs, a button can open it (`target` is that block's layout ID):

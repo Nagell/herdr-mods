@@ -2,8 +2,6 @@
 
 A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap onto more lines when they don't fit, and a toolbar for your panels with a menu to tuck away the ones you rarely use.
 
-![Better Tabs](preview.png)
-
 - **Drag tabs** to reorder them. A separate line in the gap between tabs shows where the tab will land.
 - **Tabs wrap** onto more lines, and the bar grows to hold them.
 - The **+** sits right after the last tab.
@@ -63,7 +61,7 @@ Your arrangement is saved per layout, by button ID, and doesn't edit the layout 
 
 `herdr-app do better-tabs.button:changes` runs a button by ID, and `herdr-app do better-tabs.overflow` opens the menu. Bind them in `keys.json` if you like; the mod installs no keys.
 
-A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes and Branch PR do this.
+A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes does this.
 
 ## Settings
 

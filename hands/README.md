@@ -1,6 +1,6 @@
 # hands
 
-Hands for a coding agent on the rest of the Mac, as a Herdr mod for [Herdr Desktop](https://herdr.dev/): a small `hands` command that lists apps and windows, reads an app's accessibility tree as numbered lines, clicks, types, presses keys, sets values, scrolls, screenshots a window and records the screen. Plus a tiny pane that shows whether Herdr holds the two permissions it needs.
+Hands for a coding agent on the rest of the Mac, as a Herdr mod for [Herdr Desktop](https://herdr.dev/): a small `hands` command that lists apps and windows, reads an app's accessibility tree as numbered lines, clicks, types, presses keys, sets values, scrolls, screenshots a window and records the screen. Plus a panel with its screenshots and recordings, a history of what it did, and whether Herdr holds the two permissions it needs.
 
 ![hands](preview.png)
 
@@ -35,10 +35,10 @@ The installer builds the helper, copies **only** `mods/hands/` and the binary to
 The manifest has `place: none`. To show the pane, add a block to a layout you own, for example in the panel stack:
 
 ```json
-{ "mod": "hands" }
+{ "id": "hands", "type": "block", "content": { "mod": "hands" } }
 ```
 
-While a permission is missing, a block lists Accessibility and Screen Recording, each with its own **Grant access** button that prompts for that one and, if macOS shows no prompt, opens its place in System Settings. The block goes away once both are granted. Below it are two tabs. Both read like Better Changes' Commits tab, in collapsible days. **Actions** lists what `hands` did or failed to do, newest first: the action and what it touched, then any output file or the error in red, the app, the Herdr terminal that asked, and when. Cmd-click a row with a file to open it, or press the folder button to show it in Finder. **Recordings** lists past recordings with their length; selecting one shows its summary, what it recorded, when, the movie with its size, which opens on Cmd-click, and the actions taken during it, with the same folder button in the header. The footer shows whether a recording is running.
+While a permission is missing, a block lists Accessibility and Screen Recording, each with its own **Grant access** button that prompts for that one and, if macOS shows no prompt, opens its place in System Settings. The block goes away once both are granted. Below it are two tabs. Both read like Better Changes' Commits tab, in collapsible days. **Captures** lists screenshots and recordings together, newest first. Cmd-click a screenshot to open it, or press the folder button to show it in Finder. Recordings show their length; selecting one shows its summary, what it recorded, when, the movie with its size, which opens on Cmd-click, and the actions taken during it, with the same folder button in the header. **Actions** lists what `hands` did or failed to do: the action and what it touched, then any output file or the error in red, the app, the Herdr terminal that asked, and when. A menu above the list filters it by kind of action, or to the failures. The footer shows whether a recording is running.
 
 ### The skill
 

@@ -53,7 +53,7 @@ The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/her
 The manifest has `place: none`, so add it to a layout you own, about 368px wide:
 
 ```json
-{ "mod": "branch-pr", "props": { "mode": "branch" } }
+{ "id": "pull-requests", "type": "block", "content": { "mod": "branch-pr" } }
 ```
 
 With Better Tabs, a button can open it (`target` is that block's layout ID):

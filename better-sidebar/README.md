@@ -88,7 +88,7 @@ In `mods/better-sidebar/`:
 - `views/spaces.js`, `views/agents.js`, `views/footer.js`, `views/panel-toggle.js`: the parts. `views/ui.js`: the design kit, Herdr's sizes and small components, with only what this mod uses.
 - `icons/`: this mod's icons.
 - `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
-- `tests/spaces.test.cjs` — isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
+- `tests/spaces.test.cjs` and `tests/agents.test.cjs`: isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
 
 ```sh
 node --test tests/*.test.cjs

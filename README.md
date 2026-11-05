@@ -2,6 +2,8 @@
 
 Independent mods for [Herdr Desktop](https://herdr.dev/).
 
+![Herdr Mods](preview.png)
+
 A collection of standalone mods—not a bundled workflow or replacement layout. Choose a mod below and install only that package.
 
 ## Available mods
@@ -23,10 +25,6 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 ### Better Sidebar
 
 ![Better Sidebar](better-sidebar/preview.png)
-
-### Better Tabs
-
-![Better Tabs](better-tabs/preview.png)
 
 ### Branch PR
 
@@ -60,7 +58,7 @@ Each mod's README covers its features and requirements; its `RECIPE.md` guides i
 
 ## Versions and settings
 
-Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and print the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
+Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and prints the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
 
 ## Test
 
@@ -80,7 +78,7 @@ Requires Node.js and Go for development tests:
 (cd factory/helper && go test ./... && go vet ./...)
 ```
 
-The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a bundled local Go helper (built during installation with Go 1.23+); see its README for access and explicit write actions. hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a bundled Go helper and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing.
+The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a local Go helper built during installation with Go 1.23+; see its README for access and explicit write actions. Branch Issue uses Git, `hc`, and a local Go helper, built the same way, that reaches Linear with your `LINEAR_API_KEY`; see its README too. hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a Go helper built on your machine, and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing. Factory uses `hc`, Claude Code, optionally the Codex CLI, and a local Go helper; it starts agent sessions, so see its README first.
 
 ## License
 
