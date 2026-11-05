@@ -7,6 +7,7 @@ import {
   STATE_CHANGES,
   checkSummary,
   conversationEntries,
+  mergeBlockers,
   prStats,
   prStatus,
   stateEvents,
@@ -273,53 +274,68 @@ export const detailMethods = {
     if (!change || change.repo !== this.repo || change.number !== pr.number) return null;
     const { label, question } = STATE_CHANGES[change.event];
     const squash = change.event === "squash";
-    return v_flex()
-      .id("pr-change-confirm")
-      .flex_none()
-      .mx(14)
-      .my(10)
-      .p(10)
-      .gap(8)
-      .rounded(8)
-      .border_1()
-      .border_color(t.border)
-      .bg(t.raised)
-      .child(div().min_w(0).whitespace_normal().text_size(TEXT.small).child(question(pr)))
-      .when(squash, (el) =>
-        el.child(
-          TextBox({
-            id: "pr-squash-message",
-            state: this.squashMessage,
-            label: "Commit message",
-            height: 130,
-          }),
-        ),
-      )
-      .child(
-        h_flex()
-          .gap(8)
-          .justify_end()
-          .child(
-            Button({
-              id: "pr-change-cancel",
-              label: "Cancel",
-              disabled: this.mutating,
-              onClick: (cx) => {
-                this.stateChange = null;
-                cx.notify();
-              },
-            }),
-          )
-          .child(
-            Button({
-              id: "pr-change-yes",
-              label,
-              primary: true,
-              disabled: this.mutating || (squash && !this.squashMessage.value().trim()),
-              onClick: (cx) => this.changeState(cx),
+    const merging = ["merge", "squash", "rebase"].includes(change.event);
+    const warning = merging ? mergeBlockers(pr).map((b) => b.label) : [];
+    return (
+      v_flex()
+        .id("pr-change-confirm")
+        .flex_none()
+        .mx(14)
+        .my(10)
+        .p(10)
+        .gap(8)
+        .rounded(8)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.raised)
+        .child(div().min_w(0).whitespace_normal().text_size(TEXT.small).child(question(pr)))
+        // GitHub merges past anything it doesn't require, so say so before it does.
+        .when(warning.length > 0, (el) =>
+          el.child(
+            div()
+              .min_w(0)
+              .whitespace_normal()
+              .text_size(TEXT.small)
+              .text_color(t.ansi1)
+              .child(`Still in the way: ${warning.join(", ")}.`),
+          ),
+        )
+        .when(squash, (el) =>
+          el.child(
+            TextBox({
+              id: "pr-squash-message",
+              state: this.squashMessage,
+              label: "Commit message",
+              height: 130,
             }),
           ),
-      );
+        )
+        .child(
+          h_flex()
+            .gap(8)
+            .justify_end()
+            .child(
+              Button({
+                id: "pr-change-cancel",
+                label: "Cancel",
+                disabled: this.mutating,
+                onClick: (cx) => {
+                  this.stateChange = null;
+                  cx.notify();
+                },
+              }),
+            )
+            .child(
+              Button({
+                id: "pr-change-yes",
+                label,
+                primary: true,
+                disabled: this.mutating || (squash && !this.squashMessage.value().trim()),
+                onClick: (cx) => this.changeState(cx),
+              }),
+            ),
+        )
+    );
   },
 
   agentRows(body) {

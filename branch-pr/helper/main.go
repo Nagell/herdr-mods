@@ -31,6 +31,7 @@ type Request struct {
 	Thread   string            `json:"thread"`
 	Body     string            `json:"body"`
 	Event    string            `json:"event"`
+	ID       string            `json:"id"`
 	Method   string            `json:"method"`
 	Head     string            `json:"head"`
 	Reviewer string            `json:"reviewer"`
@@ -417,6 +418,9 @@ func checkStateChange(r Request) error {
 		if r.Head == "" {
 			return errors.New("head commit required to merge")
 		}
+		if r.ID == "" {
+			return errors.New("pull request ID required for auto-merge")
+		}
 		if r.Method != "merge" && r.Method != "squash" && r.Method != "rebase" {
 			return fmt.Errorf("unknown merge method %q", r.Method)
 		}
@@ -437,7 +441,13 @@ func changeState(ctx context.Context, r Request) (any, error) {
 	case "cancel-auto":
 		args = []string{"pr", "merge", number, "--repo", r.Repo, "--disable-auto"}
 	case "auto":
-		args = []string{"pr", "merge", number, "--repo", r.Repo, "--auto", "--" + r.Method, "--match-head-commit", r.Head}
+		// Not `gh pr merge --auto`: with nothing required to wait for, that merges at once,
+		// failing checks and all. This asks only for auto-merge, or says why it can't.
+		_, err := gql(ctx, `mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head}){pullRequest{id}}}`, Obj{"id": r.ID, "method": strings.ToUpper(r.Method), "head": r.Head})
+		if err != nil {
+			return nil, err
+		}
+		return Obj{"ok": true}, nil
 	default:
 		args = []string{"pr", "merge", number, "--repo", r.Repo, "--" + r.Event, "--match-head-commit", r.Head}
 		// The first line is the commit's subject and the rest its body, as in git.

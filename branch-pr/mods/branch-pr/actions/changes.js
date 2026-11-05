@@ -38,7 +38,9 @@ export const changeMethods = {
           event: change.event,
           head: change.head,
           ...(change.event === "squash" ? { body: this.squashMessage.value().trim() } : {}),
-          ...(change.event === "auto" ? { method: this.pr.mergeMethods?.[0] ?? "merge" } : {}),
+          ...(change.event === "auto"
+            ? { method: this.pr.mergeMethods?.[0] ?? "merge", id: this.pr.id }
+            : {}),
         });
         if (key !== this.spaceKey) return;
         this.stateChange = null;

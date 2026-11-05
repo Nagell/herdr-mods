@@ -296,7 +296,10 @@ export function stateEvents(pr) {
   if (pr.isDraft) return ["close"];
   if (pr.autoMergeRequest) return ["cancel-auto", "close"];
   const methods = pr.mergeMethods ?? ["merge"];
-  const auto = pr.autoMergeAllowed && mergeBlockers(pr).length ? ["auto"] : [];
+  // GitHub only waits on what's required: BLOCKED or BEHIND. Otherwise there's nothing to
+  // wait for, so "when ready" would mean now, whatever the other checks say.
+  const waits = ["BLOCKED", "BEHIND"].includes(pr.mergeStateStatus);
+  const auto = pr.autoMergeAllowed && waits ? ["auto"] : [];
   return [...auto, ...methods, "close"];
 }
 

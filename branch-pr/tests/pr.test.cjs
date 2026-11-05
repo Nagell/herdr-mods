@@ -100,8 +100,12 @@ test('actions follow the PR, offering merge when ready only while something is i
   const { context: m } = harness();
   const events = (over) => [...m.stateEvents(PR(over))];
   same(events({}), ['squash', 'merge', 'close']);
-  same(events({ checks: [FAILED] }), ['auto', 'squash', 'merge', 'close']);
-  same(events({ checks: [FAILED], autoMergeAllowed: false }), ['squash', 'merge', 'close']);
+  same(events({ mergeStateStatus: 'BLOCKED' }), ['auto', 'squash', 'merge', 'close']);
+  same(events({ mergeStateStatus: 'BEHIND' }), ['auto', 'squash', 'merge', 'close']);
+  same(events({ mergeStateStatus: 'BLOCKED', autoMergeAllowed: false }), ['squash', 'merge', 'close']);
+  // A check that failed but isn't required: GitHub wouldn't wait, so it isn't offered.
+  same(events({ checks: [FAILED], mergeStateStatus: 'UNSTABLE' }), ['squash', 'merge', 'close']);
+  same(events({ checks: [FAILED], mergeStateStatus: 'CLEAN' }), ['squash', 'merge', 'close']);
   same(events({ autoMergeRequest: { enabledAt: 'x' } }), ['cancel-auto', 'close']);
   same(events({ isDraft: true }), ['close']);
   same(events({ state: 'CLOSED' }), ['reopen']);
@@ -205,13 +209,13 @@ test('merging asks first, names the head it saw, and a failure keeps the questio
 
 test('merge when ready uses the repository\'s first method and can be cancelled', async () => {
   const h = harness();
-  h.mod.pr = PR({ checks: [FAILED] });
+  h.mod.pr = PR({ checks: [FAILED], mergeStateStatus: 'BLOCKED' });
   const calls = [];
   h.mod.api = async (r) => { calls.push(r); return r.action === 'detail' ? PR({ autoMergeRequest: { enabledAt: 'x' } }) : {}; };
   openActions(h);
   click(h.mod.render(), 'pr-actions-option-auto', h);
   click(h.mod.render(), 'pr-change-yes', h); await h.flush();
-  assert.equal(calls[0].event, 'auto'); assert.equal(calls[0].method, 'squash'); assert.equal(calls[0].head, 'abc');
+  assert.equal(calls[0].event, 'auto'); assert.equal(calls[0].method, 'squash'); assert.equal(calls[0].head, 'abc'); assert.equal(calls[0].id, 'pr');
   const tree = h.mod.render();
   assert.match(strings(find(tree, 'pr-stat-merge')), /Auto/);
   openActions(h);
@@ -443,6 +447,19 @@ test('every action is in the header menu, Close set apart, and none on a merged 
   for (const id of ['squash', 'merge', 'close']) assert.ok(find(tree, `pr-actions-option-${id}`));
   h.mod.pr = PR({ state: 'MERGED' });
   assert.equal(find(h.mod.render(), 'pr-actions'), undefined);
+});
+
+test('merging past something in the way says what, before you confirm', () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [FAILED], threads: [THREAD()], mergeStateStatus: 'UNSTABLE' });
+  openActions(h);
+  click(h.mod.render(), 'pr-actions-option-squash', h);
+  assert.match(strings(find(h.mod.render(), 'pr-change-confirm')), /Still in the way: 1 check failed, 1 unresolved\./);
+  h.mod.pr = PR();
+  h.mod.stateChange = null;
+  openActions(h);
+  click(h.mod.render(), 'pr-actions-option-squash', h);
+  assert.doesNotMatch(strings(find(h.mod.render(), 'pr-change-confirm')), /Still in the way/);
 });
 
 test('the confirmation shows from any tab', () => {
@@ -791,7 +808,7 @@ test('a PR\'s worktrees are listed and a click switches to or opens their space'
   h.mod.pr = PR({ repository: 'owner/repo' });
   h.mod.loadWorktrees(h.cx); await h.flush();
   let tree = h.mod.render();
-  assert.match(strings(find(tree, 'pr-worktree-row-0')), /PR-2 fix .*Open space/);
+  assert.match(strings(find(tree, 'pr-worktree-row-0')), /PR-2\s+fix/);
   find(tree, 'pr-worktree-row-0').handlers.click({}, h.cx);
   assert.equal(h.ran.at(-1)[0], 'space.new');
   h.live.spaces = [{ id: 'wt', folder: '/wt/PR-2' }];

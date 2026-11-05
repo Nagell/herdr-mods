@@ -2,7 +2,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, theme } from "herdr";
-import { TEXT, Button, Icon, Row, TextButton, TextField } from "./ui.js";
+import { TEXT, Button, Row, TextButton, TextField } from "./ui.js";
 
 export const worktreeViewMethods = {
   worktreeRows(body) {
@@ -40,23 +40,16 @@ export const worktreeViewMethods = {
           },
         })
           .tooltip(space ? `Switch to ${worktree.path}` : `Open ${worktree.path} as a space`)
-          .child(Icon("checkout").text_color(t.muted))
           .child(div().flex_none().child(worktree.name))
           .child(
             div()
               .flex_1()
               .min_w(0)
               .truncate()
+              .text_right()
               .text_size(TEXT.small)
               .text_color(t.dim)
               .child(worktree.branch),
-          )
-          .child(
-            div()
-              .flex_none()
-              .text_size(TEXT.caption)
-              .text_color(space ? t.done : t.dim)
-              .child(space ? "Open" : "Open space"),
           ),
       );
     });

@@ -224,11 +224,8 @@ func TestChangeStateRunsTheMatchingGhCommand(t *testing.T) {
 	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "merge", Head: "abc", Body: "ignored"}); err != nil || !reflect.DeepEqual(got, cases["merge"]) {
 		t.Fatalf("a plain merge took a message: %v %v", got, err)
 	}
-	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "auto", Method: "squash", Head: "abc"}); err != nil || !reflect.DeepEqual(got, []string{"pr", "merge", "42", "--repo", "owner/repo", "--auto", "--squash", "--match-head-commit", "abc"}) {
-		t.Fatalf("auto-merge ran %v: %v", got, err)
-	}
 	got = nil
-	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}, {Event: "auto", Head: "abc"}, {Event: "auto", Method: "--admin", Head: "abc"}, {Event: "auto", Method: "squash"}} {
+	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}, {Event: "auto", ID: "pr", Head: "abc"}, {Event: "auto", ID: "pr", Method: "--admin", Head: "abc"}, {Event: "auto", ID: "pr", Method: "squash"}, {Event: "auto", Method: "squash", Head: "abc"}} {
 		r.Action, r.Repo, r.Number = "change-state", "owner/repo", 42
 		if _, err := handle(context.Background(), r); err == nil || got != nil {
 			t.Fatalf("%+v was not refused, ran %v", r, got)
@@ -366,5 +363,32 @@ func TestAGhPathThatDoesNotExistCountsAsMissing(t *testing.T) {
 	_, err := runCommand(context.Background(), []string{"api", "user"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "is not installed") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// `gh pr merge --auto` merges at once when nothing is required; that must never run.
+func TestAutoMergeAsksGitHubForAutoMergeAndNeverMerges(t *testing.T) {
+	var vars Obj
+	var query string
+	mock(t, func(a []string, b []byte) ([]byte, error) {
+		if !reflect.DeepEqual(a, []string{"api", "graphql", "--input", "-"}) {
+			t.Fatalf("ran %v", a)
+		}
+		p := payload(t, b)
+		query, vars = text(p["query"]), object(p["variables"])
+		return []byte(`{"data":{}}`), nil
+	})
+	r := Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "auto", ID: "PR_1", Method: "squash", Head: "abc"}
+	if _, err := handle(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(query, "enablePullRequestAutoMerge") || vars["method"] != "SQUASH" || vars["head"] != "abc" || vars["id"] != "PR_1" {
+		t.Fatalf("%s %v", query, vars)
+	}
+	mock(t, func(a []string, b []byte) ([]byte, error) {
+		return mustJSON(Obj{"errors": []any{Obj{"message": "Pull request is in clean status"}}}), nil
+	})
+	if _, err := handle(context.Background(), r); err == nil || !strings.Contains(err.Error(), "clean status") {
+		t.Fatalf("GitHub's refusal was lost: %v", err)
 	}
 }
