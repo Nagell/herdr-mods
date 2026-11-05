@@ -61,7 +61,6 @@ function harness(config = {}) {
     image: element,
     h_flex: element,
     v_flex: element,
-    em: (n) => n * 14,
     props: () => config,
     layout: () => tree,
     spaces: () => spaces,
@@ -85,21 +84,25 @@ function harness(config = {}) {
     fs
       .readFileSync(path.join(root, name), "utf8")
       .replace(/^import\s+[\s\S]*?;\n/gm, "")
-      .replaceAll("export async function ", "async function ")
-      .replaceAll("export function ", "function ")
-      .replace("export const hooks", "const hooks")
-      .replace("export default class Tabs", "globalThis.Tabs = class Tabs");
+      .replace(/^export \{[^}]*\};?\n/gm, "")
+      .replace(/^export default \w+;\n/m, "globalThis.Tabs = Tabs;\n")
+      .replace(/^export /gm, "");
   vm.runInContext(
-    load("settings.js") +
-      "\n" +
-      load("hooks.js") +
-      "\n" +
-      load("actions.js") +
-      "\n" +
-      load("toolbar.js") +
-      "\n" +
-      load("main.js") +
-      "\nglobalThis.api = {execute, buttons, matches, isActive, find, hooks, toolbarPartition, toolbarPreferences, hideToolbarAction, placeToolbarAction, tabMoveIndex};",
+    [
+      "settings.js",
+      "actions/engine.js",
+      "actions/toolbar.js",
+      "views/ui.js",
+      "views/panel-memory.js",
+      "views/arrangement.js",
+      "views/drags.js",
+      "views/menu.js",
+      "views/tab-bar.js",
+      "main.js",
+    ]
+      .map(load)
+      .join("\n") +
+      "\nglobalThis.api = {execute, buttons, isActive, find, toolbarPartition, toolbarPreferences, hideToolbarAction, placeToolbarAction, tabMoveIndex};",
     context,
   );
   const cx = {
@@ -151,116 +154,24 @@ test("panel actions toggle containers and reject missing targets without dispatc
   assert.throws(() => h.execute({ ...action, target: "missing" }));
   assert.equal(h.calls.length, count);
 });
-test("mod-tab opens once with the focused checkout, reuses, and recreates after closing", () => {
-  const h = harness(),
-    action = { type: "mod-tab", mod: "example", name: "All items", props: { mode: "browser" } };
-  const space = { id: "a", folder: "/main", tabs: [{ id: "shell", active: true }] };
-  h.setPanes([{ tab: "shell", cwd: "/worktree", focused: true }]);
-  h.execute(action, { space });
+test("commands dispatch, and other action types are refused", () => {
+  const h = harness();
+  h.execute({ type: "command", name: "tab.new", args: { name: "Example" } });
   assert.equal(h.calls[0].name, "tab.new");
-  assert.equal(h.calls[0].args.props.source.cwd, "/worktree");
-  h.execute(action, { space });
-  assert.equal(h.calls.length, 1);
-  space.tabs.push({ id: "browser" });
-  h.setPanes([{ tab: "browser", mod: "example" }]);
-  h.execute(action, { space });
-  assert.equal(h.calls.at(-1).name, "tab.select");
-  assert.equal(h.calls.at(-1).args.id, "browser");
-  h.setPanes([]);
-  h.data["better-tabs.mod-tabs"][JSON.stringify(["a", "example"])].pending = 1;
-  h.execute(action, { space });
-  assert.equal(h.calls.at(-1).name, "tab.new");
+  assert.throws(() => h.execute({ type: "sequence", actions: [] }), /Unknown/);
+  assert.throws(() => h.execute({ type: "overlay", mod: "x" }), /Unknown/);
 });
 
-test("generic stack toggle preserves other layout children", () => {
-  const h = harness(),
-    action = { type: "toggle-stack", stack: "center", child: "browser", fallback: "main" };
-  h.execute(action);
-  assert.equal(h.calls.at(-1).args.child, "browser");
-  h.tree.children[1].active = "browser";
-  h.execute(action);
-  assert.equal(h.calls.at(-1).args.child, "main");
-});
-test("commands, overlays, shared updates, and sequences dispatch in order", () => {
-  const h = harness();
-  h.execute({
-    type: "sequence",
-    actions: [
-      { type: "command", name: "tab.new", args: { name: "Example" } },
-      { type: "overlay", mod: "example", kind: "dialog", props: { x: 1 } },
-      { type: "shared", key: "example.flag", toggle: true },
-    ],
-  });
-  assert.equal(h.calls[0].name, "tab.new");
-  assert.equal(h.calls[1].overlay.mod, "example");
-  assert.equal(h.data["example.flag"], true);
-});
-test("sequences have a recursion bound and hooks are explicit trusted handlers", () => {
-  const h = harness();
-  const loop = { type: "sequence" };
-  loop.actions = [loop];
-  assert.throws(() => h.execute(loop), /nested/);
-  assert.throws(() => h.execute({ type: "hook", name: "toString" }), /Unknown/);
-  h.hooks.example = (args, context) => {
-    assert.equal(args.x, 1);
-    assert.equal(context.space, "a");
-  };
-  h.execute({ type: "hook", name: "example", args: { x: 1 } }, { space: "a" });
-});
-test("async hook failures are reported directly and inside action sequences", async () => {
-  const h = harness();
-  h.hooks.fail = async () => {
-    throw Error("Hook failed");
-  };
-  h.tabs.act({ type: "hook", name: "fail" }, h.cx);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.match(h.calls.at(-1).notify.body, /Hook failed/);
-  h.calls.length = 0;
-  h.tabs.act(
-    {
-      type: "sequence",
-      actions: [
-        { type: "hook", name: "fail" },
-        { type: "command", name: "tab.new" },
-      ],
-    },
-    h.cx,
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(h.calls[0].name, "tab.new");
-  assert.match(h.calls.at(-1).notify.body, /Hook failed/);
-});
-
-test("contributions are opt-in; layout IDs win and predicates/order apply", () => {
-  const h = harness(),
-    config = { buttons: [{ id: "own", label: "Own", order: 5 }] };
-  const extra = {
-    mod: [
-      { id: "own", label: "Wrong" },
-      { id: "other", order: 1 },
-      { id: "hidden", when: { shared: "hide" } },
-    ],
-  };
-  assert.equal(h.buttons(config, extra).length, 1);
-  config.contributions = true;
-  assert.deepEqual(
-    plain(h.buttons(config, extra)).map((b) => b.id),
-    ["other", "own"],
-  );
-  assert.equal(h.buttons(config, extra)[1].label, "Own");
-});
-test("keyboard button hooks honor enabled conditions and named command aliases", () => {
+test("the button command runs a button by ID, and ignores unknown ones", () => {
   const h = harness({
-    buttons: [{ id: "x", disabled: true, action: { type: "command", name: "tab.new" } }],
-    commands: {
-      toggle: { type: "toggle-stack", stack: "center", child: "browser", fallback: "main" },
-    },
+    buttons: [{ id: "x", action: { type: "command", name: "tab.new" } }],
   });
-  h.tabs.command("button:x", h.cx);
+  h.tabs.command("button:missing");
   assert.equal(h.calls.length, 0);
-  h.tabs.command("toggle", h.cx);
-  assert.equal(h.calls[0].args.child, "browser");
+  h.tabs.command("button:x");
+  assert.equal(h.calls[0].name, "tab.new");
 });
+
 test("malformed local storage is harmless and per-space memory restores panels outside render", () => {
   const h = harness();
   const key = JSON.stringify(["panel", "panel-body", "b"]);
@@ -303,15 +214,15 @@ test("tabs select, drag reorder, rename, close, and open context menus", () => {
   h.find(el, "tab-t2").handlers["on_mouse_down:right"]({}, h.cx);
   assert.equal(h.calls.at(-1).overlay.mod, "menu");
 });
-test("overflow uses this mod and includes hidden-toolbar actions without contributions duplication", () => {
+test("overflow uses this mod and includes hidden-toolbar actions ", () => {
   const h = harness({
-    maxButtons: 1,
     buttons: ["a", "b", "c"].map((id) => ({
       id,
       label: id,
       action: { type: "command", name: "tab.new" },
     })),
   });
+  h.tabs.width = 450; // Room for one button.
   const el = h.tabs.render(h.cx);
   assert.ok(h.find(el, "action-a"));
   assert.equal(h.find(el, "action-b"), undefined);
@@ -322,7 +233,6 @@ test("overflow uses this mod and includes hidden-toolbar actions without contrib
     plain(popup.props.buttons).map((b) => b.id),
     ["b", "c"],
   );
-  assert.equal(popup.props.contributions, false);
 });
 test("overflow action closes itself and dispatches the action", () => {
   const h = harness({
@@ -422,6 +332,7 @@ test("toolbar actions drop into overflow without activating and remain hidden af
   const h = harness({ buttons: entries });
   let el = h.tabs.render(h.cx);
   h.find(el, "action-z").handlers["on_mouse_down:left"]({ position: { x: 800, y: 15 } }, h.cx);
+  h.data["better-tabs.action-drag"].pressedAt = 0;
   h.find(el, "actions-more").handlers.on_mouse_move(
     { position: { x: 1100, y: 15 }, bounds: { x: 1080, y: 0, width: 26, height: 40 } },
     h.cx,
@@ -440,14 +351,14 @@ test("toolbar actions drop into overflow without activating and remain hidden af
   assert.equal(h.find(h.tabs.render(h.cx), "action-z"), undefined);
 });
 
-test("hidden actions sort alphabetically and can be pinned, including configured overflow actions", () => {
+test("hidden actions sort alphabetically and can be pinned", () => {
   const h = harness();
   const entries = [
     { id: "z", label: "Zulu" },
-    { id: "b", label: "beta", overflow: true },
+    { id: "b", label: "beta" },
     { id: "a", label: "Alpha" },
   ];
-  let saved = h.hideToolbarAction({}, "z");
+  let saved = h.hideToolbarAction(h.hideToolbarAction({}, "z"), "b");
   let result = h.toolbarPartition(entries, saved, 1);
   assert.deepEqual(
     plain(result.visible).map((entry) => entry.id),
@@ -468,9 +379,8 @@ test("hidden actions sort alphabetically and can be pinned, including configured
     plain(h.toolbarPartition(entries, saved, 3).visible).map((entry) => entry.id),
     ["b", "a"],
   );
-  assert.deepEqual(plain(h.toolbarPreferences({ hidden: ["x", "x", null], pinned: false })), {
+  assert.deepEqual(plain(h.toolbarPreferences({ hidden: ["x", "x", null], pinned: ["old"] })), {
     hidden: ["x"],
-    pinned: [],
     order: [],
   });
 });
@@ -491,7 +401,8 @@ test("overflow menu provides alphabetic entries and an explicit show-in-toolbar 
     ["action-a", "action-z"],
   );
   h.find(el, "pin-z").handlers.on_click({}, h.cx);
-  assert.equal(h.tabs.preferences().pinned.includes("z"), true);
+  assert.equal(h.tabs.preferences().hidden.includes("z"), false);
+  assert.equal(h.tabs.preferences().order[0], "z");
   assert.equal(h.calls.at(-1).close, "popup");
   assert.equal(
     h.calls.some((call) => call.name),
@@ -578,12 +489,9 @@ test("overflow anchors below and right-aligned with the dots button", () => {
   assert.deepEqual(plain(h.calls.at(-1).overlay.at), { x: 786, y: 42 });
 });
 
-test("toolbar arrangements are isolated by layout and toolbar ID", () => {
-  const h = harness({ toolbarId: "primary" });
+test("toolbar arrangements are kept per layout", () => {
+  const h = harness();
   h.tabs.savePreferences(h.hideToolbarAction({}, "files"));
-  h.config.toolbarId = "secondary";
-  assert.equal(h.tabs.preferences().hidden.length, 0);
-  h.config.toolbarId = "primary";
   assert.deepEqual(plain(h.tabs.preferences().hidden), ["files"]);
   h.data.layout = "different-layout";
   assert.equal(h.tabs.preferences().hidden.length, 0);
@@ -593,7 +501,7 @@ test("errors become notifications and shipped package has no Factory dependency"
   const h = harness();
   h.tabs.act({ type: "unknown" }, h.cx);
   assert.match(h.calls[0].notify.body, /Unknown/);
-  for (const name of ["main.js", "actions.js", "hooks.js", "toolbar.js"])
+  for (const name of ["main.js", "actions/engine.js", "actions/toolbar.js"])
     assert.doesNotMatch(
       fs.readFileSync(path.join(root, name), "utf8"),
       /factory-tabs|pull-requests|workflow/,
@@ -606,37 +514,74 @@ test("errors become notifications and shipped package has no Factory dependency"
     "win-min",
     "win-max",
     "win-restore",
-    "win-close",
     "more-vertical",
     "pin",
   ])
-    assert.ok(fs.existsSync(path.join(root, asset + ".svg")));
+    assert.ok(fs.existsSync(path.join(root, `icons/${asset}.svg`)));
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, "mod.json"))).place, "none");
 });
-test("mod tabs get an icon from the layout map, else the shared registry, else none", () => {
-  const h = harness({ buttons: [], modIcons: { "better-changes": "mods/better-changes/file.svg" } });
+test("mod tabs get the icon the mod published, program icons win, unknown mods get none", () => {
+  const h = harness({ buttons: [] });
   const paths = [];
   h.context.svg = (p) => {
     paths.push(p);
     return h.context.div();
   };
-  h.data["mod-icons"] = {
-    "branch-pr": "mods/branch-pr/pull-request.svg",
-    "better-changes": "ignored.svg",
-  };
-  h.setPanes([
-    { tab: "t1", mod: "branch-pr" },
-    { tab: "t2", mod: "better-changes" },
-  ]);
+  h.data["mod-icons"] = { "branch-pr": "mods/branch-pr/pull-request.svg" };
+  h.setPanes([{ tab: "t1", mod: "branch-pr" }]);
   h.tabs.render(h.cx);
   assert.ok(paths.includes("mods/branch-pr/pull-request.svg"));
-  assert.ok(paths.includes("mods/better-changes/file.svg"));
-  assert.ok(!paths.includes("ignored.svg"));
   paths.length = 0;
-  h.setPanes([{ tab: "t1", mod: "unknown" }, { tab: "t2", program: { icon: "icons/claude.svg", tint: true } }]);
+  h.setPanes([
+    { tab: "t1", mod: "unknown" },
+    { tab: "t2", program: { icon: "icons/claude.svg", tint: true } },
+  ]);
   h.tabs.render(h.cx);
-  assert.ok(!paths.some((p) => p.includes("pull-request") || p.includes("file.svg")));
+  assert.ok(!paths.some((p) => p.includes("pull-request")));
   assert.ok(paths.includes("icons/claude.svg"));
+});
+
+test("the bar grows with wrapped tabs, once per height, on the right layout node", () => {
+  const h = harness();
+  h.tabs.fitHeight({ width: 900, height: 29 });
+  h.tabs.fitHeight({ width: 900, height: 64 });
+  h.tabs.fitHeight({ width: 900, height: 64 });
+  const resizes = h.calls.filter((c) => c.name === "layout.resize");
+  assert.deepEqual(plain(resizes.map((c) => c.args.px)), [42, 77]);
+  assert.equal(resizes[0].args.id, "tabs");
+});
+
+test("a quick press on a toolbar action does not drag, even if the pointer slips", () => {
+  const h = harness({
+    buttons: [{ id: "a", label: "A", action: { type: "command", name: "app.palette" } }],
+  });
+  const el = h.tabs.render(h.cx);
+  const action = h.find(el, "action-a");
+  const bounds = { x: 780, y: 0, width: 60, height: 40 };
+  action.handlers["on_mouse_down:left"]({ position: { x: 800, y: 15 } }, h.cx);
+  action.handlers.on_mouse_move(
+    { position: { x: 830, y: 15 }, bounds, local_position: { x: 50 } },
+    h.cx,
+  );
+  assert.equal(h.data["better-tabs.action-drag"].active, false);
+  action.handlers["on_mouse_up:left"]({}, h.cx);
+  action.handlers.on_click({}, h.cx);
+  assert.equal(h.calls.at(-1).name, "app.palette");
+});
+
+test("a click on a toolbar action ends its press, even if no release arrives", () => {
+  const h = harness({
+    buttons: [{ id: "a", label: "A", action: { type: "command", name: "app.palette" } }],
+  });
+  const el = h.tabs.render(h.cx);
+  const action = h.find(el, "action-a");
+  action.handlers["on_mouse_down:left"]({ position: { x: 800, y: 15 } }, h.cx);
+  h.data["better-tabs.action-drag"].pressedAt = 0;
+  action.handlers.on_click({}, h.cx);
+  assert.equal(h.data["better-tabs.action-drag"], null);
+  assert.equal(h.calls.at(-1).name, "app.palette");
+  h.find(el, "better-tabs-root").handlers.on_mouse_move({ position: { x: 950, y: 15 } }, h.cx);
+  assert.equal(h.find(h.tabs.render(h.cx), "drag-preview"), undefined);
 });
 
 test("a quick press does not drag, even if the pointer slips, and still selects the tab", () => {
@@ -658,10 +603,7 @@ test("a quick press does not drag, even if the pointer slips, and still selects 
   assert.equal(h.tabs.tabDrag.active, true);
   h.tabs.tabDrag = null;
   h.find(el, "tab-t2").handlers["on_mouse_down:left"]({ position: { x: 120, y: 15 } }, h.cx);
-  h.find(el, "tab-t2").handlers.on_mouse_move(
-    { ...slip, position: { x: 150, y: 15 } },
-    h.cx,
-  );
+  h.find(el, "tab-t2").handlers.on_mouse_move({ ...slip, position: { x: 150, y: 15 } }, h.cx);
   h.find(el, "tab-t2").handlers["on_mouse_up:left"]({ position: { x: 150, y: 15 } }, h.cx);
   assert.deepEqual(plain(h.calls), [{ name: "tab.select", args: { id: "t2" } }]);
 });

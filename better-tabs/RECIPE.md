@@ -1,65 +1,49 @@
 # Better Tabs
 
-A native tab bar with a configurable action toolbar. Keep the person's existing layout and terminal tabs, and replace only the tab-bar mod. Buttons can toggle panels, run app/mod commands, open overlays, toggle stack views, update shared state, or invoke trusted JavaScript hooks local to the mod.
+A tab bar for a person's existing Herdr layout: draggable tabs that wrap onto more lines, a + after the last tab, and a toolbar of panel buttons with a ⋮ menu to hide them in.
 
 ![Better Tabs](preview.png)
 
 ## What you see
 
-A full-width theme-chrome bar, normally in a 42px-high layout block. Tabs scroll horizontally on the left. Each is 29px high, rounded 7px, with a program icon, truncating name (170px maximum by default), status indicator, and a 26px close control on the active tab. The active tab has a raised background and theme border; other tabs use muted text. Working agents get a native spinning icon, blocked/done agents a colored dot, idle tabs no attention marker. A tab whose pane is a mod pane has no program; draw a tinted 14px SVG from props.modIcons[mod], else from the shared map mod-icons that mods publish about themselves (Branch PR and Better Changes do), else nothing.
+A theme-chrome bar 42px high, growing as tabs wrap, with a 1px bottom `border`. Tabs and toolbar start 6.5px from the top. Tabs are 29px pills with radius 7, 10px padding, a 7px gap inside and 6px between, in 12.8px text. The active tab is `raised` with a `border` edge and a ×; others are plain in `muted`. A tab shows its program's icon at 14px, its name up to 170px, a 12px spinning `working` icon, or a 6px `blocked` or `done` dot.
 
-A plus button immediately after the last tab opens Herdr's shipped new-menu; it belongs to the scrolling tab content, not the far edge of the flexible tab area. On the right, configured toolbar buttons are 26px high, with 14px icons, labels, optional badges, active highlights, hover backgrounds, and tooltips. Group changes add separators. An always-visible vertical-dots SVG (⋮) is the overflow menu and a highlighted drop-to-hide target. Overflow entries appear alphabetically in a compact 240px-wide native popup of 32px rows, each with a subtle Show in toolbar pin icon. Match Herdr's shipped menus: popover background, 12.8px text, 5px padding, no instructional heading, and a single muted No hidden actions row when empty. Anchor below and right-align with the dots button; long menus scroll within a 420px height cap. Explicit initial overflow flags, saved user choices, and the responsive width budget keep tabs from being crowded out. Windows/Linux get window controls where window().buttons requests them. macOS respects traffic-light spacing from the layout.
+After the last tab, wrapping with the tabs, is a 26px + button. On the right, staying on the first line, are the toolbar buttons, 26px high with radius 6, 12px text and an optional 14px icon, `selected` when active, with a 1px separator where the group changes. Last is a 26px ⋮ button.
 
-Fonts inherit Herdr settings; em-like values use ui_font_size, then font_size, then 14. Colors use theme tokens. No fixed dark-only palette.
+While dragging, the source tab dims to 35%, a copy follows the pointer, and a 2px `accent` line sits in the gap beside the target, 4px outside its edge, clear of any tab border.
+
+The ⋮ menu is a 240px popup on `popover` with 5px padding and 32px rows, listing hidden buttons alphabetically, each with a 22px pin button.
 
 ## How it behaves
 
-Click selects a tab. After the press has lasted `tabs.drag_delay` (200ms) and the pointer has moved 5px, dragging dims the source slot and shows a floating preview following the pointer, offset so it does not cover drop hitboxes. A theme-accent insertion line marks before/after placement. Commit the one-based tab.move only on release; resolve by stable tab IDs and ignore removed tabs or changed spaces. Leaving the bar cancels the drag. Do not activate another tab or the plus button as a side effect of dropping. Double-click renames; right-click opens the shipped tab menu. The active close control closes only that tab. Vertical wheel movement over the tab list navigates previous/next tabs unless disabled. Preserve named tabs and allow horizontal scrolling.
+A press becomes a drag only after 400ms and 12px of movement, for tabs and toolbar buttons alike; anything less is a click. Nothing moves until release. Leaving the bar cancels a drag. Dropping a tab on + puts it last. A tab's click selects it, double-click renames it through `tab.rename`, and right-click opens the shipped `menu` mod. `tab.move` takes a one-based index.
 
-Drag a toolbar action onto the ellipsis and release to hide it without activating it. Clicking the ellipsis lists hidden and responsive-overflow actions alphabetically; selecting an entry runs its normal action. Drag an entry out of the menu to close the popup and expose the real toolbar as a drop surface; insert it before/after a visible action. The Show in toolbar control restores an entry at the front without activating it. Visible actions can also be reordered by dragging. Store hidden, pinned, and ordered stable action IDs in shared better-tabs.toolbar preferences keyed by layout and toolbarId (default main). Overflow copies receive their originating toolbar scope and full action list. Restoring an action can displace another into overflow under the width/maxButtons limit. Menu drags use short-lived shared state; clear it on drop/cancel and expire abandoned gestures. Suppress click activation after a drag.
+Dropping a toolbar button on ⋮ hides it. In the menu, clicking a row runs its action, dragging out closes the menu so it can be dropped on the toolbar, and the pin restores it at the front. Buttons that don't fit the width also go in the menu. The arrangement is saved by button ID, per layout, in `shared("better-tabs.toolbar")`.
 
-The right-panel toggle is not part of this mod; Better Sidebar provides it.
+Tabs use a wrapping flex row whose measured height resizes the bar with `layout.resize` on `tabs-row` if it exists, else `tabs`. Measured sizes are scaled by zoom, so divide by `settings().zoom`.
 
-The default toolbar offers Files/Changes only when the corresponding nodes exist. Supplied props.buttons replace defaults. Each button has an ID, label, icon, action, and optional group/order, tooltip, iconOnly, badge, visibility/enabled/active conditions, disabled flag, and an initial overflow flag that the user's saved arrangement can override. Badge values may come from shared state; zero remains visible.
+Panel memory saves each space's open panel in localStorage and restores it on returning, outside render.
 
-Actions: command(name,args), panel(container,stack,target), mod-tab(mod,name,props), toggle-stack(stack,child,fallback), overlay(mod,kind,props,width,height), sequence(actions), shared(key,value/toggle), and hook(name,args). mod-tab opens/selects one reusable mod tab per mod per space and captures props.space and props.source {cwd,on} from the focused terminal, falling back to the space folder. A short shared pending guard prevents duplicate rapid opens; the target mod uses the supplied context to pin its repository. Normal tab controls close it; later opens recreate it. Validate panel/stack targets before dispatch. Sequence nesting is bounded and dispatch order is preserved, but Herdr commands are queued: sequences do not await completion or roll back earlier actions. Hooks are explicit functions in hooks.js; no eval or arbitrary source loading. Report exceptions and returned promise rejections with notifications.
-
-Panel buttons select/show their child or hide an already-active panel. rememberPanels selects a configurable container/stack pair; save its choice locally per space and restore on space changes with a short acknowledgement window. Run synchronization on initialization and a 300ms timer, never in render. A new copy starts from the current layout if there is no saved choice. Unknown saved children become closed panels. Corrupt saved preferences must not break the bar.
-
-better-tabs.button:<id> invokes an eligible configured button. props.commands maps arbitrary command names to actions, so a layout can define toggle-prs without embedding PR concepts in this mod. better-tabs.overflow opens the hidden/overflow actions menu. Keep Cmd+B's left-sidebar binding unchanged. Other platforms can bind an unused shortcut to the same command. Mod command delivery follows Herdr's shown-copy limitation.
-
-Opt-in props.contributions reads shared("better-tabs.buttons"), a map from publisher IDs to button arrays. Merge deterministic publisher order, keep layout entries on duplicate IDs, apply conditions and numeric ordering. Publishers explicitly unregister; shared state persists across restarts. It is a trusted declarative registry, not automatic plugin discovery. Popup entries snapshot when opened; badges and enabled/active conditions remain live.
+Actions are `panel` (`container`, `stack`, `target`) and `command` (`name`, `args`). Errors become notifications.
 
 ## Built from
 
-One runtime folder mods/better-tabs with main.js, actions.js, toolbar.js, hooks.js, typography.js, mod.json, and bundled SVG icons. Manifest place is none. The root README in this package documents the complete props schema and examples. No custom mod, Git executable, gh, Node runtime, workflow, or external helper is required.
-
-Use GPUI div/svg/image and gpui-base h_flex/v_flex. Herdr APIs: spaces, panes, run, openOverlay/closeOverlay, theme, window, layout, settings, props, shared/setShared, notify, nextCommand, timers, and size-change callbacks. localStorage holds panel preferences; persistent shared state holds toolbar arrangements. toolbar.js provides pure arrangement and insertion-boundary helpers. Pointer events drive drag previews and markers, without redraw timers. The shipped menu and new-menu provide context/new-tab menus. All toolbar-owned icons are bundled; configured custom paths may refer to the target mod's icon.
-
-The tabs block receives configuration through content.props. For a workflow layout, configure its own Workflow/PR panel actions and browser mod-tab action there. The standalone runtime contains no Factory/Workflow/PR-specific logic. Copy this runtime folder to install, not tests, recipe, or preview. Rename consistently on an unrelated name clash, including self-opening overflow mod names and asset paths.
+One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
 
 ## Watch out
 
-Explain access before installing: the default runtime does not execute programs, read repo files, or reach the network, but commands/overlays and custom hooks can do so. These are trusted actions, not a sandbox. Custom hooks must not import other mods' source at runtime.
+GPUI gives pointer events, not a drag payload, and the popup is another copy of the mod, so toolbar drags live in shared state and tab drags stay local.
 
-Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so edits to them are lost; the mod only shows in a layout the person owns. Check `shared("layout")`: if the shown layout is shipped, clone it with `herdr-app do layout.clone '{"name":"<shown>","as":"<name>"}'` (which switches to the clone) and edit the clone; if the person already has their own layout, ask whether to add the mod to it or to create a new layout. Say which layout now holds it. Preserve the original tabs block ID, height, window_drag setting, and other layout nodes. place:none means copying alone does not display the mod. Panels use node IDs, not mod names. A layout may use a changes node containing Better Changes without this package depending on it.
+`stop_propagation()` in a button's `on_click` can stop its `on_mouse_up` from running, which leaves a drag open and stuck to the pointer. End the drag in `on_click` too.
 
-No callback contexts retained. No side effects from render. Animation uses spin(), not timers. Native initial checks do not exercise overflow/deferred elements. Give the overflow popup an explicit width and height, with an inner flexing scroll list; putting overflow scrolling on an intrinsically sized popup root collapses it and hides the actions. Shared contributed commands cannot reach hidden mod copies. Panel memory is local to this mod copy and one configured container/stack pair. A layout switch creates a fresh toolbar instance.
+Keep the bar's own gap wider than the drop line, or the line touches a tab's border. Never call `run` or `setShared` during render.
 
-
-A `settings` block in the installed `mods/better-tabs/mod.json` carries the person's preferences, merged over the mod's defaults by the shared `settings.js` with unknown keys and wrong types reported; the keys are listed in README.md. Durations are strings such as `60s`, sizes such as `60KB`. Version lives beside it in the same file.
+Copying the folder is not enough: shipped layouts are read-only, so point a tabs block in a layout the person owns at `better-tabs`, preserving its size and `window_drag`.
 
 ## Done when
 
-- node --test tests/*.test.cjs and herdr-app check pass.
-- The running app renders tabs, icons, status, and toolbar without errors; inspect a saved screenshot.
-- The plus button sits directly after the final tab. Dragging tabs shows a moving preview and correct insertion boundary in both directions, and only commits on release. Small movements remain clicks; leaving the bar cancels.
-- Tab selection, reorder, rename, close, and context menus remain functional.
-- Default configuration has no custom-mod dependency.
-- Configured panel and stack actions use only the supplied node IDs.
-- Per-space panel memory restores outside render and corrupt preferences are harmless.
-- Named commands and button-ID commands dispatch eligible actions; missing targets notify instead of breaking rendering.
-- The always-visible vertical dots accept drop-to-hide, open a compact anchored menu, list hidden actions alphabetically, dispatch a chosen action, and support drag-out or explicit pin restoration.
-- Toolbar arrangement survives restart and remains isolated by layout/toolbar ID; dropped actions never accidentally activate.
-- Contributions opt in explicitly, preserve layout precedence, and document persistent registry cleanup.
-- Keys and unrelated layouts/mods are not overwritten; migrate only explicitly owned legacy bindings.
+- `node --test tests/*.test.cjs` and `herdr-app check` pass.
+- A quick click selects a tab or runs a button, and nothing follows the pointer afterwards.
+- Dragging shows the line between tabs and moves on release; leaving the bar cancels.
+- Many tabs wrap, the bar grows, + stays after the last tab, and the bar shrinks back when tabs close.
+- Dropping a button on ⋮ hides it, and the pin or a drag brings it back, surviving a restart.

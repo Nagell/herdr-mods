@@ -5,10 +5,10 @@
 export function toolbarPreferences(value) {
   const ids = (items) =>
     Array.isArray(items) ? [...new Set(items.filter((id) => typeof id === "string"))] : [];
-  return { hidden: ids(value?.hidden), pinned: ids(value?.pinned), order: ids(value?.order) };
+  return { hidden: ids(value?.hidden), order: ids(value?.order) };
 }
 
-export function arrangedActions(entries, preferences) {
+function arrangedActions(entries, preferences) {
   const { order } = toolbarPreferences(preferences);
   const rank = new Map(order.map((id, index) => [id, index]));
   // Stable sorting leaves newly configured, unranked entries in input order.
@@ -20,11 +20,7 @@ export function arrangedActions(entries, preferences) {
 export function toolbarPartition(entries, preferences, limit) {
   const saved = toolbarPreferences(preferences);
   const visible = arrangedActions(entries, saved)
-    .filter(
-      (entry) =>
-        !saved.hidden.includes(entry.id) &&
-        (entry.overflow !== true || saved.pinned.includes(entry.id)),
-    )
+    .filter((entry) => !saved.hidden.includes(entry.id))
     .slice(0, Math.max(0, limit));
   // Overflow is the complement, not just the explicitly hidden IDs. This
   // keeps actions recoverable when hidden by configuration or a narrow window.
@@ -42,32 +38,19 @@ export function toolbarPartition(entries, preferences, limit) {
 
 export function hideToolbarAction(preferences, id) {
   const saved = toolbarPreferences(preferences);
-  return {
-    ...saved,
-    hidden: [...new Set([...saved.hidden, id])],
-    pinned: saved.pinned.filter((item) => item !== id),
-  };
+  return { ...saved, hidden: [...new Set([...saved.hidden, id])] };
 }
 
 /** Move an action to an insertion boundary, or the front when using Pin. */
 export function placeToolbarAction(entries, preferences, id, target = null, after = false) {
   const saved = toolbarPreferences(preferences);
-  if (target === id)
-    return {
-      ...saved,
-      hidden: saved.hidden.filter((item) => item !== id),
-      pinned: [...new Set([...saved.pinned, id])],
-    };
+  if (target === id) return { ...saved, hidden: saved.hidden.filter((item) => item !== id) };
   const order = arrangedActions(entries, saved)
     .map((entry) => entry.id)
     .filter((item) => item !== id);
   const index = target ? order.indexOf(target) : 0;
   order.splice(index < 0 ? order.length : index + (target && after ? 1 : 0), 0, id);
-  return {
-    hidden: saved.hidden.filter((item) => item !== id),
-    pinned: [...new Set([...saved.pinned, id])],
-    order,
-  };
+  return { hidden: saved.hidden.filter((item) => item !== id), order };
 }
 
 /** Translate a before/after boundary into Herdr's one-based tab.move index. */
