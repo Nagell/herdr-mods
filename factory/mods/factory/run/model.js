@@ -73,7 +73,8 @@ export function runStats(run) {
       detail: `${done} of ${stages.length} stages done`,
     },
   ];
-  const reviewed = stages.filter((s) => s.counts);
+  // Only finished reviews: a queued one is about to check again, so its old count is stale.
+  const reviewed = stages.filter((s) => s.counts && s.state === "done");
   if (reviewed.length) {
     const count = (names) =>
       reviewed.reduce(

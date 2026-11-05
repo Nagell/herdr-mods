@@ -10,7 +10,7 @@ It follows Better Changes and Branch PR, in one framed sidebar panel, radius 10,
 
 The `/factory` skill starts runs, not the sidebar. With no run, Run says so and lists the workflows as `/factory <name>` with their stages and description, then Open workflows folder.
 
-A run has a fixed block with a rule under it: a colour dot, the workflow's name over its state and start time in small print, and an Actions menu on the right, then a strip of `raised` at half strength, rounded, with Stages done/total, Findings when a review has run (ansi1 with critical or high, ansi3 otherwise, ansi2 at none) and Round during a loop, separated by dots. Stop and close-all confirm in a block under it.
+A run has a fixed block with a rule under it: a colour dot, the workflow's name over its state and start time in small print, and an Actions menu on the right, then a strip of `raised` at half strength, rounded, with Stages done/total, Findings from finished reviews, left out while a review waits to check again (ansi1 with critical or high, ansi3 otherwise, ansi2 at none) and Round during a loop, separated by dots. Stop and close-all confirm in a block under it.
 
 Below it scrolls the tree, joined by 1px lines: the Factory row with the orchestrator's program icon, then each stage with a status icon; its name and what it's doing; its result; and `model · effort · role` in small print. A live stage's row opens its session. On the right are rerun and close icons when they apply, and a chevron on a done stage opening its result: the summary, findings in collapsible groups by severity with title, `file:line` in the code font and detail, replies, and Follow up. Helpers a stage started nest below it.
 

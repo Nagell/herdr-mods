@@ -242,6 +242,13 @@ test('a hidden panel reads nothing', async () => {
   assert.equal(h.mod.current().workflow, 'implement');
 });
 
+test('findings leave the stats while a review waits to check again', () => {
+  const { context: m } = harness();
+  const keys = (r) => [...m.runStats(r)].map((s) => s.key).join();
+  assert.equal(keys(RUN([stage({ id: 'review', state: 'queued', counts: { high: 1 }, loop: { with: 'dev', max: 3 }, round: 1 })])), 'stages,round');
+  assert.equal(keys(RUN([stage({ id: 'review', state: 'working', counts: { high: 1 } })])), 'stages');
+});
+
 test('stats leave out what a run has no use for', async () => {
   const { context: m } = harness();
   const keys = (r) => [...m.runStats(r)].map((s) => s.key).join();
