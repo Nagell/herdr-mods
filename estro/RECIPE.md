@@ -29,30 +29,21 @@ The toolbar's buttons are `panel` actions with `container: "panel"` and `stack: 
 
 ## Installing it
 
-Copy `layouts/estro.json` and each folder in `mods/`, as usual. **Four of the mods also need a helper built, which copying can't do**, and this folder holds no binaries. Their source is in [munza/herdr-mods](https://github.com/munza/herdr-mods). For each that the person wants:
+**`mods/` here holds pointers, not mods: don't copy it.** Each `mods/<mod>/RECIPE.md` names the mod's real home in [munza/herdr-mods](https://github.com/munza/herdr-mods). Four of them need a helper built from source, which copying could never do, and this keeps one copy of each mod.
 
-```sh
-git clone https://github.com/munza/herdr-mods
-cd herdr-mods/branch-pr && go -C helper run ./install
-cd ../branch-issue && go -C helper run ./install
-cd ../hands && go -C helper run ./install
-cd ../factory && go -C helper run ./install
-```
+Copy only `layouts/estro.json`. Then add each mod with its pointer's prompt, for example:
 
-Add `--update` where the mod is already installed. Each installer builds its helper and copies its mod, so it replaces the copy from this folder, and it refuses to overwrite an unrelated mod. Read each mod's README first and tell the person what it can do:
+> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
 
-- **Branch PR:** runs Git, `gh` and `hc`, and on a click can merge, comment and create worktrees. Needs Go 1.23+ and a logged-in `gh`.
-- **Branch Issue:** reaches Linear with `LINEAR_API_KEY` from the environment, runs Git and `hc`, and on a click can write to Linear and create worktrees. Needs Go 1.23+ and that key.
-- **Hands:** needs macOS 14+, Go 1.23+ and the Xcode command line tools. Granting Herdr Accessibility and Screen Recording lets anything in a Herdr terminal operate every app. It also links `~/.local/bin/hands`.
-- **Factory:** starts agent sessions and sends them messages, and its default `dev` stage auto-accepts file edits. Needs Go 1.23+, `hc` and Claude Code. It also writes default workflows to `~/.config/herdr-mods/factory/` and the `/factory` skill to `~/.claude/skills/factory/`.
+Do that for `better-changes`, `better-sidebar`, `better-tabs`, `branch-pr`, `branch-issue`, `hands` and `factory`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
 
-A mod whose helper isn't built says so in its own panel. Anyone who doesn't want one can drop its button and block from the layout. Better Sidebar's `keys.json`, which binds Cmd+Shift+B to the panel toggle, is optional and lives in that mod's folder in the same repository.
+Anyone who doesn't want one of them can drop its button and block from the layout: Branch PR needs `gh`, Branch Issue a Linear key, Hands macOS, and Factory Claude Code. All four need Go 1.23+ to build their helper.
 
 Then `herdr-app check` each mod and `layout.switch {"name": "estro"}`.
 
 ## Built from
 
-`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`: `better-sidebar`, `better-tabs`, `better-changes`, `branch-pr`, `branch-issue`, `hands`, `factory`. `files`, `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod. `sync.sh` and `tests/` keep this folder's copies in step with those.
+`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-sidebar`, `better-tabs`, `better-changes`, `branch-pr`, `branch-issue`, `hands` and `factory`. `files`, `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
 
 ## Watch out
 
