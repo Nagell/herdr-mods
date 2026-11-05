@@ -19,6 +19,17 @@ function parseNumstat(text) {
   return stats;
 }
 
+// What each unmerged status means, in Git's X (yours) and Y (incoming) columns.
+const CONFLICT_KINDS = {
+  UU: "both edited",
+  AA: "both added",
+  DD: "both deleted",
+  DU: "deleted by you",
+  UD: "deleted incoming",
+  AU: "added by you",
+  UA: "added incoming",
+};
+
 /**
  * Combine porcelain-v1 status with [index, working-tree] numstat output.
  * Callers disable rename detection so each NUL-delimited entry has one path.
@@ -44,7 +55,8 @@ export function changedFiles(status, numstats) {
         path,
         fresh,
         conflict,
-        // Conflicts stay in the unstaged group until the user resolves them.
+        conflictKind: conflict ? CONFLICT_KINDS[xy] : null,
+        // `unstaged` stays true for a conflict; the sidebar lists conflicts apart.
         staged: !fresh && !conflict && xy[0] !== " " && xy[0] !== "?",
         unstaged: fresh || conflict || xy[1] !== " ",
         status: conflict ? "U" : xy.includes("D") ? "D" : fresh || xy.includes("A") ? "A" : "M",
@@ -154,6 +166,125 @@ export function splitDiffRows(rows) {
   return paired;
 }
 
+const CONTEXT_LINES = 3;
+
+// Split a conflicted file into its plain lines and its marked blocks, each line
+// keeping its number in the file. A marker with no end stays plain text.
+function conflictParts(text) {
+  const lines = text
+    .replace(/\n$/, "")
+    .split("\n")
+    .map((text, index) => ({ text, line: index + 1 }));
+  const parts = [];
+  let plain = [];
+  for (let i = 0; i < lines.length; i++) {
+    const block = /^<{7}( |$)/.test(lines[i].text) ? readBlock(lines, i) : null;
+    if (!block) {
+      plain.push(lines[i]);
+      continue;
+    }
+    parts.push({ plain }, { block });
+    plain = [];
+    i = block.end;
+  }
+  parts.push({ plain });
+  return parts;
+}
+
+// One block from its `<<<<<<<`: yours, the optional `|||||||` base, and incoming.
+function readBlock(lines, start) {
+  const block = { open: lines[start], yours: [], base: [], incoming: [], end: start };
+  let section = block.yours;
+  for (let i = start + 1; i < lines.length; i++) {
+    const { text } = lines[i];
+    if (section === block.yours && /^\|{7}( |$)/.test(text)) {
+      block.baseMarker = lines[i];
+      section = block.base;
+    } else if (section !== block.incoming && text === "=======") {
+      block.divider = lines[i];
+      section = block.incoming;
+    } else if (section === block.incoming && /^>{7}( |$)/.test(text)) {
+      block.close = lines[i];
+      block.end = i;
+      return block;
+    } else {
+      section.push(lines[i]);
+    }
+  }
+  return null;
+}
+
+/**
+ * Rows for showing a conflicted file with its traditional markers: only the
+ * blocks, with a few lines around each. `inline` keeps the file as it is;
+ * `split` puts yours on the left and incoming on the right. Null if no markers.
+ */
+export function conflictRows(text) {
+  const parts = conflictParts(text);
+  const count = parts.filter((part) => part.block).length;
+  if (!count) return null;
+  const inline = [];
+  const split = [];
+  const context = (entry) => ({ kind: " ", old: entry.line, next: entry.line, text: entry.text });
+  const marker = (entry) => ({
+    kind: "marker",
+    old: entry.line,
+    next: entry.line,
+    text: entry.text,
+  });
+  // Two blocks close together share the lines between them, so show those once.
+  let shownUpTo = 0;
+  const addContext = (entries) => {
+    for (const entry of entries) {
+      if (entry.line <= shownUpTo) continue;
+      shownUpTo = entry.line;
+      inline.push(context(entry));
+      split.push({ kind: "pair", left: context(entry), right: context(entry) });
+    }
+  };
+  let number = 0;
+  parts.forEach((part, index) => {
+    if (!part.block) return;
+    number++;
+    const { open, yours, baseMarker, base, divider, incoming, close } = part.block;
+    const before = parts[index - 1].plain;
+    const after = parts[index + 1].plain;
+    const heading = { kind: "@", text: `Conflict ${number} of ${count} · line ${open.line}` };
+    inline.push(heading);
+    split.push(heading);
+    addContext(before.slice(-CONTEXT_LINES));
+
+    inline.push(marker(open));
+    for (const entry of yours)
+      inline.push({ kind: "yours", next: entry.line, old: entry.line, text: entry.text });
+    if (baseMarker) {
+      inline.push(marker(baseMarker));
+      for (const entry of base)
+        inline.push({ kind: "base", next: entry.line, old: entry.line, text: entry.text });
+    }
+    inline.push(marker(divider));
+    for (const entry of incoming)
+      inline.push({ kind: "incoming", next: entry.line, old: entry.line, text: entry.text });
+    inline.push(marker(close));
+
+    split.push({ kind: "pair", left: marker(open), right: marker(close) });
+    for (let i = 0; i < Math.max(yours.length, incoming.length); i++) {
+      const left = yours[i] && { kind: "yours", old: yours[i].line, text: yours[i].text };
+      const right = incoming[i] && {
+        kind: "incoming",
+        next: incoming[i].line,
+        text: incoming[i].text,
+      };
+      split.push({ kind: "pair", left: left ?? null, right: right ?? null });
+    }
+    split.push({ kind: "pair", left: marker(divider), right: marker(divider) });
+
+    shownUpTo = close.line;
+    addContext(after.slice(0, CONTEXT_LINES));
+  });
+  return { inline, split, count };
+}
+
 // `git log` records separated by \x1e; fields by \0: hash, short hash, author,
 // email, unix time, subject, body. Git adds a newline after each record.
 export function parseLog(text) {
@@ -161,7 +292,9 @@ export function parseLog(text) {
     .split("\x1e")
     .filter((record) => record.includes("\0"))
     .map((record) => {
-      const [hash, short, author, email, at, subject, body = ""] = record.replace(/^\n/, "").split("\0");
+      const [hash, short, author, email, at, subject, body = ""] = record
+        .replace(/^\n/, "")
+        .split("\0");
       return { hash, short, author, email, at: Number(at), subject, body: body.trim() };
     });
 }

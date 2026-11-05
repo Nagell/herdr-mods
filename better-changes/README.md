@@ -1,18 +1,16 @@
 # Better Changes
 
-A focused Git changes sidebar and diff viewer for Herdr Desktop.
+A Git panel for Herdr Desktop, built to look like Herdr's own panels: file changes, staging, commits and history in a sidebar, with diffs in the centre.
 
 ![Better Changes](preview.png)
 
-- Full-height changed-file list, with connected icon pills for **Tree / Flat** and **Inline / Side by side**. Hover for tooltips.
-- Separate **Staged** and **Unstaged** groups. Use **+** to stage and **−** to unstage a file, or the group-header controls for all files.
-- Partially staged files appear in both groups; each entry opens its own version of the diff.
-- One reusable diff tab per space. File selections rename the tab to the filename. Close it with the tab close button or your existing `tab.close` binding (normally **Cmd+W** on macOS).
-- Aligned Before/After columns in side-by-side mode, with shared vertical scrolling. Trackpad horizontal scrolling, Shift+wheel, or the header arrows scroll both columns horizontally.
-- Herdr's configured fonts, green additions, red removals, and old/new line numbers.
-- A multiline commit-message editor and an icon-labelled **Commit / Amend** split button. Both operations use only the staged index; unstaged edits stay untouched. Unstaging also preserves working files before the first commit.
+- **Changes** lists **Conflicts**, **Staged**, **Unstaged** and **Committed** (not pushed yet) files in collapsible groups. Groups with nothing in them are hidden.
+- **+** and **−** stage or unstage a file; **Stage all** and **Unstage all** act on the whole repository except conflicts. Working files are never touched.
+- The **⋮** menu picks **Flat** or **Tree** for file lists, and **Inline** or **Side by side** for diffs.
+- Clicking a file opens its diff in one reusable centre tab, named after the file. It comes back to that file after a restart.
+- **Commits** lists history, grouped by your branch and its remote, and opens any commit's description and changes, with a link to GitHub for commits already pushed.
+- A commit box with **Commit** and **Amend**.
 - Local and remote spaces: Git and file reads run on the space's machine.
-- A **Commits** tab beside **Changes** lists history 50 commits at a time with a **Load more** row. Opening a commit shows its subject, author, date, body, and changed files; clicking a file opens that commit's diff in the same centre tab.
 
 ## Install only this mod
 
@@ -20,40 +18,44 @@ Copy this prompt into your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
 
-The package's [RECIPE.md](RECIPE.md) guides installation: read the source, copy only `mods/better-changes/` into your Herdr app configuration, validate it, and fit its sidebar into your existing layout. No bundled layout replaces your setup.
+[RECIPE.md](RECIPE.md) guides the install. Herdr's shipped layouts are read-only, so the mod only shows in a layout you own. On a shipped layout, your agent clones it and points its Changes slot at `better-changes`.
 
-Requires a Herdr version supporting mod tabs (`tab.new { mod, props }`) and Git on each machine you use. The default manifest docks the sidebar on the right at 368px when Herdr first discovers it, but Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and points its Changes slot at `better-changes` with `{ "mode": "sidebar" }`; if you already have your own layout, it asks whether to add the mod there or create a new layout.
-
-A name clash must be resolved before copying: retain the existing mod, rename this package's folder, and update its mod names and asset prefixes consistently. Do not overwrite an unrelated installation.
-
-## Unpushed files
-
-An **Unpushed** section under **Unstaged** lists the files in commits you have not pushed, with their totals, compared with the branch's upstream. A branch that was never pushed compares with the remote's default branch, `origin/HEAD`, so it lists everything on the branch. Clicking a file opens its diff against that point. Files also still changing appear in both places. The section goes away once everything is pushed, or when there is no remote branch to compare with. It reads the last fetch; the mod never fetches.
+Requires Git on each machine you use.
 
 ## Commit and amend
 
-Write a title and optional body in the multiline **Commit message** field. **Enter** inserts a newline; it does not commit. The main button runs the selected operation; its adjacent dropdown selects **Commit** or **Amend** without executing either one.
+**Enter** makes a new line; only the button commits. The chevron beside it switches between **Commit** and **Amend** without running either.
 
-- **Commit** creates a new commit from staged changes and requires a nonempty message and at least one staged change.
-- **Amend** rewrites the latest commit with the staged changes and your message. It can also change just the message when nothing is staged. Selecting it loads the latest commit's message into an empty editor, but never replaces an existing draft or text typed while loading. Amend is unavailable before the first commit.
-- Amend shows a history-rewrite warning and rechecks the latest commit before executing. If another tool advanced `HEAD`, select **Amend** again before retrying. Be careful with commits already shared with others; this mod never pushes or force-pushes.
-- Both operations are disabled while loading/busy or when conflicts remain. Failures preserve your message. A successful amend returns the button to **Commit** mode.
+- **Commit** creates a commit from what is staged, and needs a message and at least one staged file.
+- **Amend** rewrites the latest commit with what is staged and your message, and can change just the message. Choosing it loads the latest message into an empty box, but never replaces text you wrote. If something else moved the latest commit since, it stops and asks you to choose Amend again.
+
+Both are off while conflicts remain, and a failure keeps your message. This mod never pushes. Be careful amending a commit you have already shared.
+
+## Conflicts
+
+Conflicted files get their own **Conflicts** group at the top, each saying what kind it is, such as "both edited". One opens with Git's traditional `<<<<<<<`, `=======` and `>>>>>>>` markers, showing only the conflict blocks with a few lines around them and the real line numbers from the file. **Inline** shows the block as it is in the file, including the base section if your Git writes one. **Side by side** puts yours on the left and incoming on the right. It says when one side deleted the file. Showing them is all this does: resolving is left to an agent or your editor. Commit stays off until no conflicts remain.
 
 ## Commits
 
-The **Changes / Commits** pill in the header switches the sidebar between uncommitted changes and history. The list shows each commit's subject, author, relative age, and short hash, newest first, and loads 50 at a time. A line labelled with the branch's upstream, such as `origin/main`, marks where the remote head is, and commits above it that are not on the remote have a dot. If the remote has commits you lack, the line sits where the two split and says how many are not pulled. A second line marks `origin/HEAD`, the remote's default branch, at the last commit your branch shares with it; on the default branch itself the two share one line. `origin/HEAD` only exists if the clone recorded it, and `git remote set-head origin --auto` adds it when it is missing. This compares against the last fetch; the mod never fetches. Click a commit for its full message and the files it touched, with the same Tree / Flat toggle; click **Commits** at the top to go back. When `origin` points at GitHub, Cmd-click (Ctrl-click elsewhere) the short hash to open the commit on GitHub. Clicking a file opens its diff for that commit in the reusable diff tab. Merge commits are shown against their first parent. The commit footer is hidden on this tab.
+Your branch comes first, with the commits not pushed yet, then its remote branch. The badge on the **Commits** tab counts the unpushed ones.
 
-## Limits
+On a feature branch, a third group shows the remote's default branch, `origin/HEAD`, from where your branch left it. When your branch tracks the default branch, the two share one group, labelled with both. A group says **N not pulled** when the remote has commits you lack. All of this reads the last fetch and never fetches.
 
-The list displays at most 1,000 changed files. Bulk stage/unstage applies to the whole repository. Diff previews display at most 1,500 lines and 4,000 characters per line. Binary, unreadable, and empty files show explicit messages. Split view pairs adjacent removed/added lines by position; it does not calculate word-level matching. File trees do not detect renames; a rename appears as deletion/addition.
+A branch that was never pushed compares with `origin/HEAD`. With no remote to compare with, there is one group and no badge on the tab.
 
-Colors indicate additions/removals, not whether an AI or human edited the lines. Git and Herdr do not supply reliable uncommitted edit-author attribution.
+## One header row
 
-The sidebar reads repository status on a timer and uses local folder watches. Remote repositories refresh through polling. Explicit `source: { cwd, on }` props can pin the mod to a repository; normally it follows the active terminal.
+A mod can't change Herdr's pane header, which names a diff tab `better-changes`, so a diff tab has two rows: that header, then the file. To get one row, use this mod's own header, Herdr's with the file added, in a layout you own:
+
+```json
+"pane": { "header": { "content": { "mod": "better-changes" } } }
+```
+
+Terminals look the same as with Herdr's header. It's a copy of Herdr's `pane` mod, so it won't pick up later changes to it.
 
 ## Settings
 
-The installed `mods/better-changes/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+The installed `mods/better-changes/mod.json` has a `settings` block, and saving it applies at once:
 
 ```json
 "settings": {
@@ -63,27 +65,28 @@ The installed `mods/better-changes/mod.json` has a `settings` block; copy your e
 }
 ```
 
-`refresh.status` is the Git status poll interval. `limits` bound the file list, the lines and line length shown in a diff, and the commits loaded per page. `default.view` (`tree` or `flat`) and `default.diff` (`inline` or `split`) apply until you have chosen one, which is remembered. Problems with the block are logged, not shown.
+`refresh.status` is how often Git is read. `limits` bound the file list, the lines and line length shown in a diff, and the commits loaded per page; zero falls back to the default. `default.view` (`tree` or `flat`) and `default.diff` (`inline` or `split`) apply until you choose in the **⋮** menu. Unknown keys and wrong types are reported in the log and ignored.
+
+## Limits
+
+Stage all and Unstage all apply past the file limit. Side by side pairs adjacent removed and added lines by position, not by similarity. A rename shows as a deletion and an addition. Commit links are for GitHub remotes named `origin`. A branch pushed without an upstream still compares with `origin/HEAD`.
+
+Colors show additions and removals, not whether a person or an agent wrote the lines.
 
 ## Development
 
-### Code map
+In `mods/better-changes/`:
 
-- `mods/better-changes/main.js` — the native Herdr view, organized into lifecycle/synchronization, repository status, file selection, diff loading, Git mutations, and rendering sections. The sidebar and diff tab are separate instances of the same view; namespaced shared state connects them.
-- `mods/better-changes/model.js` — pure transformations for Git status/numstat parsing, file trees, line numbering, and side-by-side row pairing.
-- `mods/better-changes/typography.js` — sizing and font helpers that follow Herdr's live settings.
-- `tests/changes.test.cjs` — a lightweight Herdr/GPUI stand-in plus behavior tests, including real Git operations in temporary repositories.
-- `tests/packaging.test.cjs` — standalone packaging and asset checks.
+- `main.js`: setup, settings and commands. `settings.js`: shared with the other mods.
+- `git/repository.js`: following the repository, the index, history, commit and amend. `git/reads.js`: plain functions that read from Git. `git/model.js`: parsing with no Herdr calls.
+- `views/sidebar.js`, `views/diff.js`, `views/pane-header.js`: the three things it can draw. `views/ui.js`: the design kit, Herdr's sizes and small components. Every look lives here.
+- `icons/`: Lucide icons, the set Herdr uses, and Herdr's own pane header icons.
 
-Start with `model.js` for the data shapes, then follow `init()` → `refresh()` → `render()` in `main.js`. Clicking a file calls `pick()` in the sidebar; the diff tab observes that selection through `syncSelection()` and loads its preview with `loadDiff()`. Comments explain repository pinning, async request invalidation, and index-only Git mutations.
-
-### Checks
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
 
 ```sh
 node --test tests/*.test.cjs
-herdr-app check "$HOME/.config/herdr-app/mods/better-changes"
+herdr-app check "$PWD/mods/better-changes"
 ```
 
-Tests cover file parsing, trees, partial staging, index-only commits and amends, multiline messages, mode selection and keyboard navigation, draft preservation, changed-HEAD guards, real Git index/history operations, stale responses, tab reuse, repository pinning, and split-line alignment. Run Git-operation tests in temporary repositories; do not stage or commit a user's working repository for testing.
-
-See the repository's [LICENSE](../LICENSE) and [NOTICE](../NOTICE).
+`herdr-app check` only draws the empty state, so a mistake in a list or the commit box shows up only in the running panel.

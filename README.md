@@ -8,7 +8,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 
 | Mod | What it does |
 | --- | --- |
-| [Better Changes](better-changes/README.md) | Git changes sidebar with tree/flat lists, stage/unstage controls, and a reusable inline or side-by-side diff tab. |
+| [Better Changes](better-changes/README.md) | Git panel in Herdr's own style: staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and a reusable inline or side-by-side diff tab. |
 | [Better Sidebar](better-sidebar/README.md) | Spaces and nested worktrees with right-aligned Git branches and color-coded pull-request status from `gh`, agents grouped by main space or name prefix, and a one-line footer. |
 | [Better Tabs](better-tabs/README.md) | Native tab bar with configurable action buttons, hooks, panel memory, and responsive overflow. |
 | [Branch PR](branch-pr/README.md) | GitHub PR and GitLab MR sidebar and reusable browser tab with conversations, reviews, checks, worktrees, and explicit agent actions. |
