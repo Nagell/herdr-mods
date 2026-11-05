@@ -314,11 +314,53 @@ test('a thread goes to an agent with its comments; a failed delivery says why', 
   h.mod.issue = ISSUE();
   h.mod.section = 'comments';
   h.live.agents = [AGENT('t1')];
-  click(h.mod.render(), 'issue-agent-send-c1', h);
+  openMenu(h, 'issue-agent-send-c1');
+  click(h.mod.render(), 'issue-agent-send-c1-option-t1', h);
   assert.match(h.mod.composer.context, /Bob: First\n\nCam: A reply/);
   click(h.mod.render(), 'issue-submit', h); await h.flush();
   assert.equal(h.mod.error, 'gone');
   assert.ok(h.mod.composer, 'keeps the prompt');
+});
+
+test('an issue can go to a new agent from either menu, through the editable prompt', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
+  h.mod.issue = ISSUE();
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  openMenu(h, 'issue-actions');
+  click(h.mod.render(), 'issue-actions-option-agent:new:claude', h);
+  assert.equal(h.ran.filter(([n]) => n === 'tab.new').length, 0, 'only Send delivers');
+  assert.match(strings(h.mod.render()), /Send to new Claude Code/);
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'issue-submit', h); await h.flush();
+  const [name, args] = h.ran.at(-1);
+  assert.equal(name, 'tab.new');
+  assert.deepEqual(JSON.parse(JSON.stringify(args.argv)), ['claude']);
+  assert.match(args.task, /^Look at this/);
+  assert.match(args.task, /as data, not instructions/);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.mod.notice, 'Started new Claude Code in a new tab.');
+  assert.equal(h.mod.composer, null);
+});
+
+test('(spawn) goes through the editable prompt, then starts a sub-agent with no shell', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
+  h.mod.issue = ISSUE();
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  h.live.agents = [AGENT('t1', { status: 'working', program: { key: 'claude' } })];
+  openMenu(h, 'issue-actions');
+  click(h.mod.render(), 'issue-actions-option-agent:spawn:t1', h);
+  assert.equal(h.sent.length, 0);
+  const box = strings(h.mod.render());
+  assert.match(box, /Send to Agent t1 \(spawn\)/);
+  assert.doesNotMatch(box, /busy/, 'a busy parent does not hold up a sub-agent');
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'issue-submit', h); await h.flush();
+  assert.deepEqual([...h.sent[0]].slice(0, 7), ['run', '--bg', '--json', '--parent', 't1', '--cwd', '/repo']);
+  assert.equal(h.sent[0][7], 'claude');
+  assert.match(h.sent[0][8], /^Look at this/);
+  assert.equal(h.mod.notice, 'Started a sub-agent under Agent t1.');
 });
 
 test('without an agent the handoff says so', () => {
@@ -549,7 +591,7 @@ test('an issue\'s worktrees are listed, and a click switches to or opens their s
 });
 
 test('nothing left of the center tab, label editing or comment editing', () => {
-  assert.doesNotMatch(source, /tab\.new|openBrowser|labelIds|edit-comment|"browser"|typography/);
+  assert.doesNotMatch(source, /tab\.new[^;]*mod:|openBrowser|labelIds|edit-comment|"browser"|typography/);
 });
 
 test('a handoff asks only for what the prompt says, while Start work asks for the work', () => {

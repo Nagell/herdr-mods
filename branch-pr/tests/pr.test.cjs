@@ -14,7 +14,7 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^export /gm, '')
   + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName });';
 
-function harness({ storage = new Map(), exec, hc } = {}) {
+function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
   const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
@@ -51,7 +51,7 @@ function harness({ storage = new Map(), exec, hc } = {}) {
     home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
     layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
     
-    nextCommand: () => new Promise(() => {}), knownAgents: async () => [],
+    nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
     console,
   };
@@ -537,7 +537,7 @@ test('reviewers show their standing and can be asked again, but only while open'
   assert.equal(find(h.mod.render(), 'pr-reviewer-again-ann'), undefined);
 });
 
-test('checks group by run, fetch jobs on opening, and a failure goes to the agent in one click', async () => {
+test('checks group by run, fetch jobs on opening, and a failure goes to the agent you pick', async () => {
   const h = harness();
   h.mod.pr = PR({ checks: [{ name: 'lint', conclusion: 'SUCCESS', workflowName: 'CI', detailsUrl: 'https://github.com/o/r/actions/runs/77/job/1' }, { ...FAILED, workflowName: 'CI' }] });
   h.mod.section = 'checks';
@@ -548,7 +548,7 @@ test('checks group by run, fetch jobs on opening, and a failure goes to the agen
   let tree = h.mod.render();
   assert.match(strings(tree), /CI 2/);
   assert.equal(find(tree, 'pr-fix-0'), undefined, 'nothing to fix on a passing check');
-  click(tree, 'pr-fix-1', h); await h.flush();
+  await pick(h, 'pr-fix-1', 't1');
   assert.equal(h.sent[0][0], 'send'); assert.equal(h.sent[0][1], 't1');
   assert.match(h.sent[0][2], /--job 88/);
   assert.equal(h.mod.notice, 'Sent to Agent t1.');
@@ -569,18 +569,75 @@ test('without an agent the handoff says so and sends nothing', () => {
   assert.equal(fix.handlers.click, undefined);
 });
 
-test('several agents offer a choice, and the one on the PR comes first', async () => {
-  const h = harness();
+const pick = async (h, menu, option) => {
+  find(h.mod.render(), menu).handlers.open(true, h.cx);
+  click(h.mod.render(), `${menu}-option-${option}`, h);
+  await h.flush();
+};
+
+test('a handoff is a dropdown: the agent on the PR first, then others, then a new one', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }, { key: 'pi', name: 'Pi', run: ['pi'], installed: false }] });
   h.mod.pr = PR({ checks: [FAILED] });
   h.mod.section = 'checks';
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
   h.live.agents = [AGENT('free'), AGENT('onit')];
   h.live.panes = [{ pane: 'p-free', cwd: '/repo', branch: 'main' }, { pane: 'p-onit', cwd: '/repo', branch: 'fix' }];
-  click(h.mod.render(), 'pr-fix-0', h); await h.flush();
-  assert.equal(h.sent[0][1], 'onit');
-  const group = () => find(h.mod.render(), 'pr-fix-0-agents');
-  group().handlers.open(true, h.cx);
-  click(h.mod.render(), 'pr-fix-0-agents-option-free', h); await h.flush();
-  assert.equal(h.sent[1][1], 'free');
+  find(h.mod.render(), 'pr-fix-0').handlers.open(true, h.cx);
+  const menu = strings(find(h.mod.render(), 'pr-fix-0-menu'));
+  assert.match(menu, /Agent onit[\s\S]*Agent free[\s\S]*Start new Claude Code/);
+  assert.doesNotMatch(menu, /Pi/, 'only what is installed');
+  assert.equal(h.sent.length, 0, 'opening the menu sends nothing');
+  click(h.mod.render(), 'pr-fix-0-option-free', h); await h.flush();
+  assert.equal(h.sent[0][1], 'free');
+  await pick(h, 'pr-fix-0', 'new:claude');
+  assert.equal(h.sent.length, 1, 'a new agent is not sent to through hc');
+  const [name, args] = h.ran.at(-1);
+  assert.equal(name, 'tab.new');
+  assert.equal(args.folder, '/repo');
+  assert.deepEqual(JSON.parse(JSON.stringify(args.argv)), ['claude']);
+  assert.match(args.task, /--log-failed/);
+  assert.equal(h.mod.notice, 'Started new Claude Code in a new tab.');
+});
+
+test('(spawn) starts a sub-agent under the running agent, in the worktree, with no shell', async () => {
+  const claude = { key: 'claude', name: 'Claude Code', run: ['claude'], installed: true };
+  const h = harness({ known: [claude] });
+  h.mod.pr = PR({ checks: [FAILED] });
+  h.mod.section = 'checks';
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  h.mod.worktrees = { key: h.mod.worktreeKey(), list: [{ path: '/wt/PR-2', branch: 'fix', name: 'PR-2' }] };
+  h.live.agents = [AGENT('t1', { program: { key: 'claude' }, status: 'working' }), AGENT('t2', { program: { key: 'other' } })];
+  find(h.mod.render(), 'pr-fix-0').handlers.open(true, h.cx);
+  const menu = strings(find(h.mod.render(), 'pr-fix-0-menu'));
+  assert.match(menu, /Agent t1 \(spawn\)/);
+  assert.doesNotMatch(menu, /Agent t2 \(spawn\)/, 'no sub-agent of a kind we cannot start');
+  click(h.mod.render(), 'pr-fix-0-option-spawn:t1', h); await h.flush();
+  const args = [...h.sent[0]];
+  assert.deepEqual(args.slice(0, 8), ['run', '--bg', '--json', '--parent', 't1', '--cwd', '/wt/PR-2', 'claude']);
+  assert.match(args[8], /--log-failed/);
+  assert.equal(args.length, 9, 'the message is one argument');
+  assert.equal(h.mod.notice, 'Started a sub-agent under Agent t1.');
+  const flag = h.mod.hcArgs(h.mod.agentAt('spawn:t1'), '--dangerously-skip-permissions');
+  assert.equal(flag.at(-1), ' --dangerously-skip-permissions', 'text is never read as a flag');
+  await pick(h, 'pr-fix-0', 'new:claude');
+  assert.equal(h.ran.at(-1)[1].folder, '/wt/PR-2', 'a new agent works in the worktree too');
+});
+
+test('a comment can go to a new agent through the same editable prompt', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
+  h.mod.pr = PR({ threads: [THREAD()] });
+  h.mod.section = 'conversation';
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  await pick(h, 'pr-agent-send-t1', 'new:claude');
+  assert.equal(h.ran.filter(([n]) => n === 'tab.new').length, 0, 'only Send delivers');
+  assert.match(strings(h.mod.render()), /Send to new Claude Code/);
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'pr-submit', h); await h.flush();
+  assert.match(h.ran.at(-1)[1].task, /^Look at this/);
+  assert.equal(h.mod.composer, null);
 });
 
 test('a failed delivery says why and notes no success', async () => {
@@ -600,7 +657,7 @@ test('all unresolved threads go to the agent together', async () => {
   h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
   const tree = h.mod.render();
   assert.match(strings(find(tree, 'pr-send-unresolved')), /Send 2 to agent/);
-  click(tree, 'pr-send-unresolved', h); await h.flush();
+  await pick(h, 'pr-send-unresolved', 't1');
   assert.match(h.sent[0][2], /a\.go:3/); assert.match(h.sent[0][2], /b\.go:3/);
 });
 
@@ -610,7 +667,7 @@ test('a comment goes to an agent through an editable prompt that only Send deliv
   h.mod.section = 'conversation';
   h.live.agents = [AGENT('t1')];
   h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
-  click(h.mod.render(), 'pr-agent-send-t1', h);
+  await pick(h, 'pr-agent-send-t1', 't1');
   assert.equal(h.sent.length, 0);
   assert.equal(h.mod.composer.kind, 'agent');
   h.mod.editor.set_value('Look at this');
@@ -936,5 +993,5 @@ test('a worktree name with a path in it is refused, and a moved PR stops the che
 });
 
 test('nothing left of GitLab, previews, pending reviews, proposals or a center tab', () => {
-  assert.doesNotMatch(source, /gitlab|glab|merge-requests|proposal|pendingReview|start-review|setPreview|\.workflow\/|tab\.new|openBrowser/i);
+  assert.doesNotMatch(source, /gitlab|glab|merge-requests|proposal|pendingReview|start-review|setPreview|\.workflow\/|tab\.new[^;]*mod:|openBrowser/i);
 });

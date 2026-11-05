@@ -1,7 +1,7 @@
 // The Comments tab: everything said on the PR, and answering it or handing it on.
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, theme } from "herdr";
+import { theme } from "herdr";
 import {
   authorsOf,
   conversationEntries,
@@ -303,7 +303,7 @@ export const conversationMethods = {
     const t = theme();
     const composer = this.composer;
     const toAgent = composer.kind === "agent";
-    const agent = toAgent ? agents().find((a) => a.address === this.target) : null;
+    const agent = toAgent ? this.agentAt(this.target) : null;
     const box = v_flex()
       .id(`pr-composer-${composer.entry ?? "general"}`)
       .gap(8)
@@ -315,7 +315,7 @@ export const conversationMethods = {
           .font_medium()
           .child(agent ? `Send to ${agentName(agent)}` : "That agent is no longer running."),
       );
-    if (agent?.status === "working")
+    if (agent?.status === "working" && !agent.spawn)
       box.child(
         div()
           .text_size(TEXT.caption)

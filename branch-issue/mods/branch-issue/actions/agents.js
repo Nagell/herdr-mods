@@ -1,8 +1,11 @@
 // Handing work to the agents: who is on this issue, and what to send them.
 import { h_flex } from "gpui-base";
-import { agents, panes, hc, run } from "herdr";
+import { agents, panes, hc, knownAgents, run } from "herdr";
 import { agentsOnIssue, handoffMessage } from "../linear/model.js";
-import { SmallButton, MenuTrigger } from "../views/ui.js";
+import { SmallButton, MenuButton } from "../views/ui.js";
+
+const NEW_AGENT = "new:";
+const SPAWN = "spawn:";
 
 export const agentName = (agent) => agent?.tab_name || agent?.title || agent?.address || "agent";
 
@@ -31,30 +34,125 @@ export const agentMethods = {
     run("agent.focus", { terminal: agent.address });
   },
 
-  // A button that goes to the likeliest agent, with a chooser when there's a choice.
-  agentButton({ id, label, icon, send }) {
-    const choices = this.agentChoices();
-    const [first, ...rest] = choices;
-    const button = SmallButton({
-      id,
-      icon,
-      label: first ? label : `${label} (no agent)`,
-      disabled: !first || this.mutating,
-      onClick: (cx) => send(first, cx),
+  // Installed agents on this space's machine, for starting a new one. Herdr keeps the list
+  // cached, so asking on every space change costs little.
+  loadNewAgents(sp, cx) {
+    const machine = sp?.machine ?? null;
+    cx.spawn(async (cx) => {
+      try {
+        const known = await knownAgents({ on: machine });
+        if ((this.sp?.machine ?? null) === machine)
+          this.newAgents = known.filter((a) => a.installed);
+      } catch {
+        this.newAgents = [];
+      }
+      cx.notify();
     });
-    if (!rest.length) return button;
+  },
+
+  newAgentChoices() {
+    return (this.newAgents ?? []).map((a) => ({
+      address: `${NEW_AGENT}${a.key}`,
+      isNew: true,
+      run: a.run,
+      tab_name: `new ${a.name}`,
+    }));
+  },
+
+  // Who a choice means: someone running, or one to start.
+  agentAt(address) {
+    if (address?.startsWith(SPAWN)) {
+      const parent = agents().find((a) => a.address === address.slice(SPAWN.length));
+      const command = parent && this.spawnRun(parent);
+      return command
+        ? {
+            ...parent,
+            spawn: true,
+            run: command,
+            parentName: agentName(parent),
+            tab_name: `${agentName(parent)} (spawn)`,
+          }
+        : null;
+    }
+    return (
+      agents().find((a) => a.address === address) ??
+      this.newAgentChoices().find((a) => a.address === address) ??
+      null
+    );
+  },
+
+  // A sub-agent has to be the parent's own kind, so an agent we can't match has none.
+  spawnRun(parent) {
+    return (this.newAgents ?? []).find((a) => a.key === parent.program?.key)?.run ?? null;
+  },
+
+  // Work goes where the checkout is: the one this space is in, else the first there is.
+  workFolder() {
+    const worktrees = this.currentWorktrees();
+    const here = worktrees.find((w) => w.path === this.sp?.folder);
+    return (here ?? worktrees[0])?.path ?? this.sp?.folder;
+  },
+
+  // What `hc` is asked to do. A sub-agent is started here, not by asking its parent: no
+  // shell sees the message, which can hold other people's text, and a busy parent is no wait.
+  hcArgs(agent, message) {
+    if (!agent.spawn) return ["send", agent.address, message];
+    const machine = this.sp?.machine;
+    return [
+      "run",
+      "--bg",
+      "--json",
+      "--parent",
+      agent.address,
+      ...(machine ? ["--on", machine] : []),
+      ...(this.workFolder() ? ["--cwd", this.workFolder()] : []),
+      ...agent.run,
+      // Never read as a flag by the agent's command line.
+      message.startsWith("-") ? ` ${message}` : message,
+    ];
+  },
+
+  // A new agent gets its own tab, in the work's folder, with the message as its first prompt.
+  startAgent(agent, message) {
+    run("tab.new", {
+      space: this.sp?.id,
+      folder: this.workFolder(),
+      argv: agent.run,
+      task: message,
+    });
+    this.notice = `Started ${agentName(agent)} in a new tab.`;
+  },
+
+  // A dropdown of who can take this: agents on the issue first, then the rest of this space,
+  // then a new one of each installed kind. `send(agent, cx)` does the work.
+  agentButton({ id, label, icon, send }) {
+    const running = this.agentChoices();
+    const fresh = this.newAgentChoices();
+    if (this.mutating || !(running.length + fresh.length))
+      return SmallButton({
+        id,
+        icon,
+        label: this.mutating ? label : `${label} (no agent)`,
+        disabled: true,
+        onClick: () => {},
+      });
     const chooser = this.chooser({
-      id: `${id}-agents`,
+      id,
       accessibilityLabel: `${label}: choose an agent`,
-      width: 240,
-      trigger: MenuTrigger({ id: `${id}-agents-trigger`, label: "Choose an agent" }),
-      choices: choices.map((a) => ({ id: a.address, label: agentName(a), detail: a.address })),
-      value: first.address,
-      onChoose: (address, cx) =>
-        send(
-          choices.find((a) => a.address === address),
-          cx,
-        ),
+      width: 260,
+      trigger: MenuButton({ id: `${id}-trigger`, label }),
+      choices: [
+        ...running.flatMap((a) => [
+          { id: a.address, label: agentName(a), detail: a.status },
+          ...(this.spawnRun(a) ? [{ id: `${SPAWN}${a.address}`, label: `${agentName(a)} (spawn)` }] : []),
+        ]),
+        ...fresh.map((a, i) => ({
+          id: a.address,
+          label: `Start ${agentName(a)}`,
+          divided: i === 0 && running.length > 0,
+        })),
+      ],
+      onChoose: (address, cx) => send(this.agentAt(address), cx),
     });
     // A click on the chooser shouldn't also count as a click on the row around it.
     return h_flex()
@@ -62,27 +160,36 @@ export const agentMethods = {
       .flex_none()
       .items_center()
       .on_click((_e, cx) => cx.stop_propagation())
-      .child(button.rounded_r(0).border_r(0))
       .child(chooser);
   },
 
   // Only Send delivers. `hc` reaches a busy agent's session too.
   sendAgent(cx) {
-    const agent = agents().find((a) => a.address === this.target);
+    const agent = this.agentAt(this.target);
     if (!agent || this.mutating) return;
     const key = this.spaceKey;
     const draft = this.draftKey;
     const composer = this.composer;
     const message = handoffMessage(this.issue, composer, this.editor.value());
+    if (agent.isNew) {
+      this.startAgent(agent, message);
+      localStorage.removeItem(draft);
+      this.composer = null;
+      this.draftKey = null;
+      cx.notify();
+      return;
+    }
     this.mutating = true;
     this.error = null;
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        const result = await hc(["send", agent.address, message]);
+        const result = await hc(this.hcArgs(agent, message));
         if (result.code !== 0) throw new Error(result.stderr || "Agent delivery failed");
         if (key === this.spaceKey && this.composer === composer) {
-          this.notice = `Sent to ${agentName(agent)}.`;
+          this.notice = agent.spawn
+            ? `Started a sub-agent under ${agent.parentName}.`
+            : `Sent to ${agentName(agent)}.`;
           localStorage.removeItem(draft);
           this.composer = null;
           this.draftKey = null;

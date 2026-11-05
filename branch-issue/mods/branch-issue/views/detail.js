@@ -95,7 +95,13 @@ export const detailMethods = {
     const agents = this.agentChoices();
     const choices = [
       { id: "start", label: "Start work" },
-      ...agents.map((a, i) => ({
+      ...agents.flatMap((a, i) => [
+        { id: `agent:${a.address}`, label: `Send to ${agentName(a)}`, divided: i === 0 },
+        ...(this.spawnRun(a)
+          ? [{ id: `agent:spawn:${a.address}`, label: `Send to ${agentName(a)} (spawn)` }]
+          : []),
+      ]),
+      ...this.newAgentChoices().map((a, i) => ({
         id: `agent:${a.address}`,
         label: `Send to ${agentName(a)}`,
         divided: i === 0,

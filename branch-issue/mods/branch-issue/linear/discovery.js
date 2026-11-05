@@ -16,6 +16,7 @@ export const discoveryMethods = {
     // Invalidate in-flight requests before clearing space-specific state.
     this.spaceKey = key;
     this.sp = sp;
+    this.loadNewAgents(sp, cx);
     this.listToken++;
     this.detailToken++;
     this.branchToken++;

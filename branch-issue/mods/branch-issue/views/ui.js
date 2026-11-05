@@ -589,24 +589,3 @@ export function Select({
     .when(open, (el) => el.content(MenuBody({ id, width, focus, children: options, onKey })));
 }
 
-// Joined to a SmallButton's right edge, for choosing what it acts on.
-export function MenuTrigger({ id, label }) {
-  const t = theme();
-  return div()
-    .id(id)
-    .w(22)
-    .h(26)
-    .flex_none()
-    .flex()
-    .items_center()
-    .justify_center()
-    .rounded_r(6)
-    .border_1()
-    .border_color(t.border)
-    .text_color(t.muted)
-    .cursor_pointer()
-    .accessibility_label(label)
-    .tooltip(label)
-    .hover((s) => s.bg(t.hover).text_color(t.foreground))
-    .child(Icon("chevron-down", 11));
-}

@@ -7,7 +7,7 @@ A Linear panel for [Herdr Desktop](https://herdr.dev/), built to look like Herdr
 - **Two lists in the sidebar:** **Branch** for the issues on your checkout's branch, which goes straight to the details when there's only one, and **All** with search, My issues / Active cycle / All issues, state and team filters, grouped by workflow state in collapsible groups. Opening an issue stays in the sidebar, like a commit in Better Changes.
 - **At a glance:** state, priority and assignee sit on one line under the title, and change right there. Sub-issues done and pull request status appear below them when an issue has them.
 - **Start work:** a worktree using Linear's own branch name, opened as its own space with a terminal or an agent that gets the issue as its first prompt, and optionally moved to Started.
-- **Agents:** those working on the issue are listed with their state; click one to go to it. **Send to agent** hands over the issue or a comment thread with a prompt you can edit.
+- **Agents:** those working on the issue are listed with their state; click one to go to it. **Send to agent** hands over the issue or a comment thread with a prompt you can edit, to an agent you pick from a dropdown, a sub-agent under it with **(spawn)**, or a new one in its own tab. New ones work in the issue's worktree if it has one.
 - **Properties:** labels, project, cycle and estimate in the Overview.
 - **Links and sub-issues,** with pull request status.
 - **Comments:** threads, Reply, a link for each comment, and a box for a new one after the last.
