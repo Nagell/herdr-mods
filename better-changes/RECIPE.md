@@ -20,7 +20,7 @@ The Commits tab shows groups with the same heading: the branch (unpushed), its r
 
 Opening a commit replaces the list: a 42px row with a back button, the short hash and, for a pushed commit on GitHub, an external-link button; then the subject, author and date, and the description; a 1px line; then a Changes heading with a badge and the commit's files in the chosen view.
 
-A diff opens as a centre tab named after the file. Rows are 20px in the code font at 11px, with old and new line numbers. Side by side has Before and After columns that scroll together. Additions use `ansi2`, removals `ansi1`, and hunk headings `accent` on `raised`.
+A diff opens as a centre tab named after the file. Rows are in the code font at the terminals' size (`settings().font_size`) and 1.5 times as tall, with old and new line numbers. Side by side has Before and After columns that scroll together. Additions use `ansi2`, removals `ansi1`, and hunk headings `accent` on `raised`.
 
 ## How it behaves
 

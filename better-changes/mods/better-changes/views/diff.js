@@ -3,10 +3,15 @@ import { div } from "gpui-kit";
 import { h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, readTextFile, theme, shared, setShared, run, layout } from "herdr";
 import { diffRows, splitDiffRows, conflictRows } from "../git/model.js";
-import { TEXT, SIZE, codeFont, Icon, Panel, PaneBar, DiffStat, Message } from "./ui.js";
+import { TEXT, SIZE, codeFont, codeSize, Icon, Panel, PaneBar, DiffStat, Message } from "./ui.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
-const CHAR_WIDTH = 6.8; // Of the 11px code font, to size the horizontal scroll.
+// In widths of the code font's size, so a diff looks the same at any terminal size.
+const CHAR_WIDTH = 0.62;
+const GUTTERS = 10;
+const rowHeight = () => Math.round(codeSize() * 1.5);
+const scrollWidth = (lengths) =>
+  Math.max(300, ...lengths.map((length) => (length * CHAR_WIDTH + GUTTERS) * codeSize()));
 
 export const diffMethods = {
   // A reopened tab shows the file it last showed. Never replaces a live entry,
@@ -167,7 +172,7 @@ export const diffMethods = {
     this.rows = rows;
     this.pairedRows = paired;
     const lengths = rows.map((row) => row.text.length);
-    this.width = Math.max(300, ...lengths.map((length) => length * CHAR_WIDTH + 110));
+    this.width = scrollWidth(lengths);
   },
 
   loadDiff(cx) {
@@ -250,7 +255,7 @@ export const diffMethods = {
       .map((line) => (line.length > maxLength ? `${line.slice(0, maxLength)}…` : line));
     this.rows = diffRows(visible);
     this.pairedRows = splitDiffRows(this.rows);
-    this.width = Math.max(300, ...visible.map((line) => line.length * CHAR_WIDTH + 110));
+    this.width = scrollWidth(visible.map((line) => line.length));
   },
 
   conflictLabel() {
@@ -357,7 +362,7 @@ export const diffMethods = {
     const list = v_virtual_list(
       listId,
       rows.length,
-      SIZE.code,
+      rowHeight(),
       (i) => String(i),
       (range) =>
         rows
@@ -369,7 +374,7 @@ export const diffMethods = {
       .min_h(0)
       .relative()
       .font_family(codeFont())
-      .text_size(TEXT.caption)
+      .text_size(codeSize())
       .child(split ? this.scrollsTogether(list) : this.scrollsSideways(list))
       .child(Scrollbar.vertical(listId).viewport_from_layout().absolute().inset_0());
   },
@@ -415,25 +420,25 @@ export const diffMethods = {
   inlineRow(row) {
     const t = theme();
     if (row.kind === "@")
-      return div().h(SIZE.code).px(12).w_full().bg(t.raised).text_color(t.accent).child(row.text);
+      return div().h(rowHeight()).px(12).w_full().bg(t.raised).text_color(t.accent).child(row.text);
     const { color, background } = this.rowLook(row.kind);
     const gutter = (value) =>
       div()
-        .w(38)
+        .w(codeSize() * 3.5)
         .flex_none()
         .text_right()
         .text_color(t.dim)
         .child(value === undefined ? "" : String(value));
     const sign = row.kind === "+" || row.kind === "-" ? row.kind : "";
     return h_flex()
-      .h(SIZE.code)
+      .h(rowHeight())
       .w_full()
       .gap(8)
       .items_center()
       .when(Boolean(background), (el) => el.bg(background))
       .when(!this.conflictCount, (el) => el.child(gutter(row.old)))
       .child(gutter(row.next))
-      .child(div().w(12).flex_none().text_color(color).child(sign))
+      .child(div().w(codeSize()).flex_none().text_color(color).child(sign))
       .child(
         div()
           .flex_1()
@@ -448,7 +453,7 @@ export const diffMethods = {
     const t = theme();
     if (row.kind !== "pair")
       return div()
-        .h(SIZE.code)
+        .h(rowHeight())
         .px(12)
         .w_full()
         .bg(t.raised)
@@ -470,13 +475,13 @@ export const diffMethods = {
         .when(!entry, (el) => el.bg(t.raised))
         .child(
           div()
-            .w(38)
+            .w(codeSize() * 3.5)
             .flex_none()
             .text_right()
             .text_color(t.dim)
             .child(entry ? String(line ?? "") : ""),
         )
-        .child(div().w(10).flex_none().text_color(color).child(sign))
+        .child(div().w(codeSize()).flex_none().text_color(color).child(sign))
         .child(
           div()
             .flex_1()
@@ -494,7 +499,7 @@ export const diffMethods = {
         );
     };
     return h_flex()
-      .h(SIZE.code)
+      .h(rowHeight())
       .w_full()
       .child(side(row.left, row.left?.old, false))
       .child(side(row.right, row.right?.next, true));

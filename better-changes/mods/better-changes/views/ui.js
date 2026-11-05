@@ -16,7 +16,6 @@ export const SIZE = {
   row: 28,
   group: 30,
   menu: 31,
-  code: 20,
   icon: 26,
   iconSmall: 20,
 };
@@ -35,6 +34,8 @@ const STEM = 7; // From just under a 12px chevron, centred in a 28px row, to the
 const ICONS = "mods/better-changes/icons";
 
 export const codeFont = () => settings().font_family ?? "JetBrains Mono";
+// The terminals' size, which a layout can set. Rows and columns of code grow with it.
+export const codeSize = () => settings().font_size ?? 14;
 
 export const Icon = (name, size = 14) => svg(`${ICONS}/${name}.svg`).size(size).flex_none();
 

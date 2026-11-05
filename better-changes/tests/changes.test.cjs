@@ -80,6 +80,7 @@ function load(cwd, { props, saved, home = "/nonexistent" } = {}) {
   ])
     env[name] = stub;
   env.SPIN_MS = 20;
+  env.codeSize = () => 14;
   env.TextareaState = {
     new: () => ({
       text: "",
