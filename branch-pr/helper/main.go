@@ -18,25 +18,22 @@ import (
 
 type Obj = map[string]any
 type Request struct {
-	Branch  string            `json:"branch"`
-	Job     int               `json:"job"`
-	Action  string            `json:"action"`
-	Repo    string            `json:"repo"`
-	Tab     string            `json:"tab"`
-	State   string            `json:"state"`
-	Search  string            `json:"search"`
-	Cursors map[string]string `json:"cursors"`
-	Number  int               `json:"number"`
-	Run     int               `json:"run"`
-	Thread  string            `json:"thread"`
-	Body    string            `json:"body"`
-	// Pending-review and edit mutations.
-	PullRequest string `json:"pullRequest"`
-	Review      string `json:"review"`
-	Comment     string `json:"comment"`
-	Event       string `json:"event"`
-	Head        string `json:"head"`
-	Reviewer    string `json:"reviewer"`
+	Branch   string            `json:"branch"`
+	Job      int               `json:"job"`
+	Action   string            `json:"action"`
+	Repo     string            `json:"repo"`
+	Tab      string            `json:"tab"`
+	State    string            `json:"state"`
+	Search   string            `json:"search"`
+	Cursors  map[string]string `json:"cursors"`
+	Number   int               `json:"number"`
+	Run      int               `json:"run"`
+	Thread   string            `json:"thread"`
+	Body     string            `json:"body"`
+	Event    string            `json:"event"`
+	Method   string            `json:"method"`
+	Head     string            `json:"head"`
+	Reviewer string            `json:"reviewer"`
 	// Preferences from the mod's settings.
 	PageSize int               `json:"pageSize"`
 	Tail     int               `json:"tail"`
@@ -77,7 +74,7 @@ func runCommand(ctx context.Context, args []string, input []byte) ([]byte, error
 // Everything here goes through the GitHub CLI, so say plainly when it is absent or logged out.
 func describeGhError(err error, stderr string) error {
 	stderr = strings.TrimSpace(stderr)
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 		return errors.New("GitHub CLI (gh) is not installed. Install it from https://cli.github.com, run `gh auth login`, then refresh.")
 	}
 	if strings.Contains(stderr, "gh auth login") || strings.Contains(stderr, "not logged in") {
@@ -138,9 +135,33 @@ func nullCursor(s string) any {
 }
 
 const pageInfo = `pageInfo { hasNextPage endCursor }`
-const cardFields = `id number title url state isDraft updatedAt headRefName author { login } labels(first:30) { nodes { name } }`
+const cardFields = `id number title url state isDraft updatedAt headRefName reviewDecision mergeable author { login } commits(last:1) { nodes { commit { statusCheckRollup { state } } } }`
+
+var prNumberPattern = regexp.MustCompile(`^#?([1-9][0-9]*)$`)
+
+// GitHub's search doesn't match PR numbers, so a number goes straight to that
+// PR, whatever the filters say. A number that isn't a PR is searched as text.
+func exactPR(ctx context.Context, r Request) Obj {
+	match := prNumberPattern.FindStringSubmatch(strings.TrimSpace(r.Search))
+	if match == nil {
+		return nil
+	}
+	number, err := strconv.Atoi(match[1])
+	if err != nil {
+		return nil
+	}
+	parts := strings.Split(r.Repo, "/")
+	data, err := gql(ctx, `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){`+cardFields+`}}}`, Obj{"owner": parts[0], "name": parts[1], "number": number})
+	if err != nil {
+		return nil
+	}
+	return object(object(data["repository"])["pullRequest"])
+}
 
 func list(ctx context.Context, r Request) (any, error) {
+	if pr := exactPR(ctx, r); pr != nil {
+		return Obj{"items": []any{pr}, "cursors": Obj{}, "total": 1}, nil
+	}
 	viewer, e := gh(ctx, "api", "user")
 	if e != nil {
 		return nil, e
@@ -169,12 +190,14 @@ func list(ctx context.Context, r Request) (any, error) {
 	case "mine":
 		filters = map[string]string{"Created": "author:" + login}
 	case "involved":
-		filters = map[string]string{"Assigned": "assignee:" + login, "Review requested": "review-requested:" + login, "Reviewed": "reviewed-by:" + login, "Commented": "commenter:" + login}
+		// `involves` covers author, assignee, mentions and comments, but not reviews.
+		filters = map[string]string{"involves": "involves:" + login, "review-requested": "review-requested:" + login, "reviewed-by": "reviewed-by:" + login}
 	case "", "all":
 	default:
 		return nil, errors.New("invalid tab")
 	}
 	rows := map[string]Obj{}
+	var total any
 	next := map[string]string{}
 	keys := []string{}
 	for k := range filters {
@@ -186,28 +209,18 @@ func list(ctx context.Context, r Request) (any, error) {
 		if len(r.Cursors) > 0 && r.Cursors[reason] == "" {
 			continue
 		}
-		data, e := gql(ctx, `query($q:String!,$cursor:String){search(type:ISSUE,query:$q,first:`+strconv.Itoa(pageSize(r))+`,after:$cursor){`+pageInfo+` nodes {... on PullRequest {`+cardFields+`}}}}`, Obj{"q": scope + " " + filters[reason], "cursor": nullCursor(r.Cursors[reason])})
+		data, e := gql(ctx, `query($q:String!,$cursor:String){search(type:ISSUE,query:$q,first:`+strconv.Itoa(pageSize(r))+`,after:$cursor){issueCount `+pageInfo+` nodes {... on PullRequest {`+cardFields+`}}}}`, Obj{"q": scope + " " + filters[reason], "cursor": nullCursor(r.Cursors[reason])})
 		if e != nil {
 			return nil, e
 		}
 		conn := data["search"]
+		total = object(conn)["issueCount"]
 		if c := cursor(conn); c != "" {
 			next[reason] = c
 		}
 		for _, node := range connection(conn) {
-			pr := object(node)
-			id := text(pr["id"])
-			if id == "" {
-				continue
-			}
-			if old := rows[id]; old != nil {
-				pr = old
-			} else {
-				pr["reasons"] = []any{}
-				rows[id] = pr
-			}
-			if reason != "all" {
-				pr["reasons"] = append(array(pr["reasons"]), reason)
+			if pr := object(node); text(pr["id"]) != "" {
+				rows[text(pr["id"])] = pr
 			}
 		}
 	}
@@ -218,13 +231,18 @@ func list(ctx context.Context, r Request) (any, error) {
 	sort.Slice(result, func(i, j int) bool {
 		return text(object(result[i])["updatedAt"]) > text(object(result[j])["updatedAt"])
 	})
-	return Obj{"items": result, "cursors": next, "viewer": login}, nil
+	out := Obj{"items": result, "cursors": next, "viewer": login}
+	// Involved searches several ways and they overlap, so it has no single true count.
+	if len(filters) == 1 {
+		out["total"] = total
+	}
+	return out, nil
 }
 
-const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision
- comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt viewerCanUpdate author{login}}}
- reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state viewerDidAuthor viewerCanUpdate author{login}}}
- reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk viewerCanUpdate pullRequestReview{id state} author{login}}}}}
+const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision mergeable mergeStateStatus autoMergeRequest{enabledAt}
+ comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt author{login}}}
+ reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state author{login}}}
+ reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk author{login}}}}}
 }}}`
 
 func detail(ctx context.Context, r Request) (any, error) {
@@ -244,6 +262,7 @@ func detail(ctx context.Context, r Request) (any, error) {
 		if pr == nil {
 			pr = current
 			pr["mergeMethods"] = mergeMethods(object(data["repository"]))
+			pr["autoMergeAllowed"] = object(data["repository"])["autoMergeAllowed"]
 		}
 		for _, key := range []string{"comments", "reviews", "reviewThreads"} {
 			param := key
@@ -277,7 +296,7 @@ func detail(ctx context.Context, r Request) (any, error) {
 		conn := thread["comments"]
 		replies := connection(conn)
 		for c := cursor(conn); c != ""; c = cursor(conn) {
-			data, e := gql(ctx, `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){`+pageInfo+` nodes{id body url createdAt diffHunk viewerCanUpdate pullRequestReview{id state} author{login}}}}}}`, Obj{"id": thread["id"], "cursor": c})
+			data, e := gql(ctx, `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){`+pageInfo+` nodes{id body url createdAt diffHunk author{login}}}}}}`, Obj{"id": thread["id"], "cursor": c})
 			if e != nil {
 				return nil, e
 			}
@@ -348,36 +367,22 @@ func mergeReviewers(data Obj, reviews []any, author string) []any {
 	return rows
 }
 
-// A login reaches a REST body and, on GitLab, a quick action, so it can only be a name.
+// A login reaches a REST body, so it can only be a name.
 var reviewerPattern = regexp.MustCompile(`^[A-Za-z0-9_.\[\]-]+(/[A-Za-z0-9_.-]+)*$`)
 
-func checkReviewer(r Request) error {
+// Asking someone who has already reviewed is the same call as adding them.
+func requestReviewAgain(ctx context.Context, r Request) (any, error) {
 	if r.Number < 1 {
-		return errors.New("PR number required")
+		return nil, errors.New("PR number required")
 	}
 	if !reviewerPattern.MatchString(r.Reviewer) {
-		return fmt.Errorf("%q is not a login or team", r.Reviewer)
-	}
-	if r.Event != "add" && r.Event != "remove" && r.Event != "rerequest" {
-		return fmt.Errorf("unknown reviewer change %q", r.Event)
-	}
-	return nil
-}
-
-// Asking someone who has already reviewed is the same call as adding them.
-func changeReviewer(ctx context.Context, r Request) (any, error) {
-	if err := checkReviewer(r); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%q is not a login or team", r.Reviewer)
 	}
 	body := Obj{"reviewers": []string{r.Reviewer}}
 	if _, team, ok := strings.Cut(r.Reviewer, "/"); ok {
 		body = Obj{"team_reviewers": []string{team}}
 	}
-	method := "POST"
-	if r.Event == "remove" {
-		method = "DELETE"
-	}
-	_, err := runner(ctx, []string{"api", fmt.Sprintf("repos/%s/pulls/%d/requested_reviewers", r.Repo, r.Number), "--method", method, "--input", "-"}, mustJSON(body))
+	_, err := runner(ctx, []string{"api", fmt.Sprintf("repos/%s/pulls/%d/requested_reviewers", r.Repo, r.Number), "--method", "POST", "--input", "-"}, mustJSON(body))
 	if err != nil {
 		return nil, err
 	}
@@ -401,11 +406,19 @@ func checkStateChange(r Request) error {
 		return errors.New("PR number required")
 	}
 	switch r.Event {
-	case "close", "reopen":
+	case "close", "reopen", "cancel-auto":
 		return nil
 	case "merge", "squash", "rebase":
 		if r.Head == "" {
 			return errors.New("head commit required to merge")
+		}
+		return nil
+	case "auto":
+		if r.Head == "" {
+			return errors.New("head commit required to merge")
+		}
+		if r.Method != "merge" && r.Method != "squash" && r.Method != "rebase" {
+			return fmt.Errorf("unknown merge method %q", r.Method)
 		}
 		return nil
 	}
@@ -417,8 +430,15 @@ func changeState(ctx context.Context, r Request) (any, error) {
 		return nil, err
 	}
 	number := strconv.Itoa(r.Number)
-	args := []string{"pr", r.Event, number, "--repo", r.Repo}
-	if r.Event != "close" && r.Event != "reopen" {
+	var args []string
+	switch r.Event {
+	case "close", "reopen":
+		args = []string{"pr", r.Event, number, "--repo", r.Repo}
+	case "cancel-auto":
+		args = []string{"pr", "merge", number, "--repo", r.Repo, "--disable-auto"}
+	case "auto":
+		args = []string{"pr", "merge", number, "--repo", r.Repo, "--auto", "--" + r.Method, "--match-head-commit", r.Head}
+	default:
 		args = []string{"pr", "merge", number, "--repo", r.Repo, "--" + r.Event, "--match-head-commit", r.Head}
 		// The first line is the commit's subject and the rest its body, as in git.
 		if r.Event == "squash" && strings.TrimSpace(r.Body) != "" {
@@ -465,48 +485,32 @@ func branchPRs(ctx context.Context, r Request) (any, error) {
 	return Obj{"items": items}, nil
 }
 
-// A repository is `owner/name` on GitHub or `host/group/project` elsewhere,
-// where the host segment contains a dot and the project may be nested.
-func splitRepo(repo string) (host, path string, err error) {
+// A repository is `owner/name`.
+func checkRepo(repo string) error {
 	parts := strings.Split(repo, "/")
-	if strings.Contains(parts[0], ".") {
-		host, parts = parts[0], parts[1:]
-	}
-	if len(parts) < 2 || (host == "" && len(parts) != 2) {
-		return "", "", errors.New("repository must be owner/name or host/group/project")
+	if len(parts) != 2 {
+		return errors.New("repository must be owner/name")
 	}
 	for _, p := range parts {
 		if !segmentPattern.MatchString(p) || p == "." || p == ".." {
-			return "", "", errors.New("repository must be owner/name or host/group/project")
+			return errors.New("repository must be owner/name")
 		}
 	}
-	return host, strings.Join(parts, "/"), nil
+	return nil
 }
 
 func handle(ctx context.Context, r Request) (any, error) {
-	host, path, err := splitRepo(r.Repo)
-	if err != nil {
+	if err := checkRepo(r.Repo); err != nil {
 		return nil, err
 	}
 	if tool := r.Tools["github"]; tool != "" {
 		ghBinary = tool
-	}
-	if tool := r.Tools["gitlab"]; tool != "" {
-		glabBinary = tool
-	}
-	if host != "" {
-		return gitlabHandle(ctx, r, host, path)
 	}
 	switch r.Action {
 	case "branch":
 		return branchPRs(ctx, r)
 	case "list":
 		return list(ctx, r)
-	case "status":
-		if r.Number < 1 {
-			return nil, errors.New("invalid PR number")
-		}
-		return gh(ctx, "pr", "view", strconv.Itoa(r.Number), "--repo", r.Repo, "--json", "id,number,title,url,state,isDraft,headRefName,statusCheckRollup")
 	case "detail":
 		if r.Number < 1 {
 			return nil, errors.New("invalid PR number")
@@ -534,7 +538,7 @@ func handle(ctx context.Context, r Request) (any, error) {
 	case "change-state":
 		return changeState(ctx, r)
 	case "reviewer":
-		return changeReviewer(ctx, r)
+		return requestReviewAgain(ctx, r)
 	case "comment":
 		if r.Number < 1 || strings.TrimSpace(r.Body) == "" {
 			return nil, errors.New("PR number and body required")
@@ -558,11 +562,6 @@ func handle(ctx context.Context, r Request) (any, error) {
 			}
 			vars["body"] = r.Body
 			query = `mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}`
-			// With a review ID the reply joins that pending review instead of posting now.
-			if r.Review != "" {
-				vars["review"] = r.Review
-				query = `mutation($id:ID!,$body:String!,$review:ID!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,pullRequestReviewId:$review,body:$body}){comment{id}}}`
-			}
 		} else {
 			mutation := "resolveReviewThread"
 			if r.Action == "reopen" {
@@ -571,37 +570,6 @@ func handle(ctx context.Context, r Request) (any, error) {
 			query = `mutation($id:ID!){` + mutation + `(input:{threadId:$id}){thread{id isResolved}}}`
 		}
 		return gql(ctx, query, vars)
-	case "start-review":
-		if r.PullRequest == "" {
-			return nil, errors.New("pull request ID required")
-		}
-		return gql(ctx, `mutation($id:ID!,$body:String){addPullRequestReview(input:{pullRequestId:$id,body:$body}){pullRequestReview{id state}}}`, Obj{"id": r.PullRequest, "body": r.Body})
-	case "update-review":
-		if r.Review == "" {
-			return nil, errors.New("review ID required")
-		}
-		return gql(ctx, `mutation($id:ID!,$body:String!){updatePullRequestReview(input:{pullRequestReviewId:$id,body:$body}){pullRequestReview{id}}}`, Obj{"id": r.Review, "body": r.Body})
-	case "submit-review":
-		if r.Review == "" {
-			return nil, errors.New("review ID required")
-		}
-		event := r.Event
-		if event == "" {
-			event = "COMMENT"
-		}
-		if event != "COMMENT" && event != "APPROVE" && event != "REQUEST_CHANGES" {
-			return nil, errors.New("invalid review event")
-		}
-		return gql(ctx, `mutation($id:ID!,$event:PullRequestReviewEvent!){submitPullRequestReview(input:{pullRequestReviewId:$id,event:$event}){pullRequestReview{id state}}}`, Obj{"id": r.Review, "event": event})
-	case "edit-comment", "edit-reply":
-		if r.Comment == "" || strings.TrimSpace(r.Body) == "" {
-			return nil, errors.New("comment ID and body required")
-		}
-		query := `mutation($id:ID!,$body:String!){updateIssueComment(input:{id:$id,body:$body}){issueComment{id}}}`
-		if r.Action == "edit-reply" {
-			query = `mutation($id:ID!,$body:String!){updatePullRequestReviewComment(input:{pullRequestReviewCommentId:$id,body:$body}){pullRequestReviewComment{id}}}`
-		}
-		return gql(ctx, query, Obj{"id": r.Comment, "body": r.Body})
 	default:
 		return nil, errors.New("unknown action")
 	}

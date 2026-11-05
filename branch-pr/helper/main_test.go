@@ -39,7 +39,7 @@ func TestInvolvementUnionAndIndependentPagination(t *testing.T) {
 			t.Fatal(q)
 		}
 		next := ""
-		if strings.Contains(q, "commenter:") {
+		if strings.Contains(q, "reviewed-by:") {
 			next = "comment-next"
 		}
 		return mustJSON(Obj{"data": Obj{"search": conn([]any{Obj{"id": "pr", "updatedAt": "2026-01-01"}}, next)}}), nil
@@ -49,11 +49,11 @@ func TestInvolvementUnionAndIndependentPagination(t *testing.T) {
 		t.Fatal(e)
 	}
 	out := object(got)
-	if len(array(out["items"])) != 1 || len(array(object(array(out["items"])[0])["reasons"])) != 4 || calls != 4 {
+	if len(array(out["items"])) != 1 || calls != 3 {
 		t.Fatalf("%v, calls %d", out, calls)
 	}
 	calls = 0
-	_, e = list(context.Background(), Request{Repo: "owner/repo", Tab: "involved", Cursors: map[string]string{"Commented": "comment-next"}})
+	_, e = list(context.Background(), Request{Repo: "owner/repo", Tab: "involved", Cursors: map[string]string{"reviewed-by": "comment-next"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -136,48 +136,6 @@ func TestMutations(t *testing.T) {
 	}
 }
 
-func TestPendingReviewAndEditMutations(t *testing.T) {
-	cases := []struct {
-		req      Request
-		contains string
-		vars     map[string]any
-	}{
-		{Request{Action: "reply", Thread: "thread", Body: "b", Review: "rev"}, "pullRequestReviewId:$review", map[string]any{"id": "thread", "review": "rev", "body": "b"}},
-		{Request{Action: "start-review", PullRequest: "pr", Body: "summary"}, "addPullRequestReview(", map[string]any{"id": "pr", "body": "summary"}},
-		{Request{Action: "update-review", Review: "rev", Body: "new"}, "updatePullRequestReview(", map[string]any{"id": "rev", "body": "new"}},
-		{Request{Action: "submit-review", Review: "rev"}, "submitPullRequestReview(", map[string]any{"id": "rev", "event": "COMMENT"}},
-		{Request{Action: "edit-comment", Comment: "c1", Body: "x"}, "updateIssueComment(", map[string]any{"id": "c1", "body": "x"}},
-		{Request{Action: "edit-reply", Comment: "c2", Body: "y"}, "updatePullRequestReviewComment(", map[string]any{"id": "c2", "body": "y"}},
-	}
-	for _, c := range cases {
-		t.Run(c.req.Action, func(t *testing.T) {
-			mock(t, func(a []string, b []byte) ([]byte, error) {
-				p := payload(t, b)
-				if !strings.Contains(p["query"].(string), c.contains) {
-					t.Fatal(p["query"])
-				}
-				v := object(p["variables"])
-				for k, want := range c.vars {
-					if v[k] != want {
-						t.Fatalf("%s: %v != %v", k, v[k], want)
-					}
-				}
-				return []byte(`{"data":{}}`), nil
-			})
-			c.req.Repo = "owner/repo"
-			if _, e := handle(context.Background(), c.req); e != nil {
-				t.Fatal(e)
-			}
-		})
-	}
-	for _, bad := range []Request{{Action: "submit-review", Review: "rev", Event: "MERGE"}, {Action: "start-review"}, {Action: "edit-comment", Comment: "c"}} {
-		bad.Repo = "owner/repo"
-		if _, e := handle(context.Background(), bad); e == nil {
-			t.Fatalf("expected validation error for %+v", bad)
-		}
-	}
-}
-
 func TestBranchPRsMatchesExactBranchAndPaginates(t *testing.T) {
 	pages := 0
 	mock(t, func(args []string, b []byte) ([]byte, error) {
@@ -225,23 +183,6 @@ func TestDraftMergedAndClosedFilters(t *testing.T) {
 	}
 }
 
-func TestStatusReadsOnlyPRMetadataAndChecks(t *testing.T) {
-	mock(t, func(args []string, _ []byte) ([]byte, error) {
-		want := []string{"pr", "view", "42", "--repo", "owner/repo", "--json", "id,number,title,url,state,isDraft,headRefName,statusCheckRollup"}
-		if !reflect.DeepEqual(args, want) {
-			t.Fatalf("unexpected status command: %v", args)
-		}
-		return mustJSON(Obj{"number": 42, "state": "OPEN", "statusCheckRollup": []any{Obj{"conclusion": "FAILURE"}}}), nil
-	})
-	got, err := handle(context.Background(), Request{Action: "status", Repo: "owner/repo", Number: 42})
-	if err != nil || object(got)["state"] != "OPEN" {
-		t.Fatalf("%v %v", got, err)
-	}
-	if _, err := handle(context.Background(), Request{Action: "status", Repo: "owner/repo", Number: 0}); err == nil {
-		t.Fatal("accepted invalid PR number")
-	}
-}
-
 func TestGhErrorsAreExplained(t *testing.T) {
 	notFound := &exec.Error{Name: "gh", Err: exec.ErrNotFound}
 	if e := describeGhError(notFound, ""); !strings.Contains(e.Error(), "not installed") {
@@ -259,11 +200,12 @@ func TestChangeStateRunsTheMatchingGhCommand(t *testing.T) {
 	var got []string
 	mock(t, func(args []string, _ []byte) ([]byte, error) { got = args; return []byte("Merged\n"), nil })
 	cases := map[string][]string{
-		"merge":  {"pr", "merge", "42", "--repo", "owner/repo", "--merge", "--match-head-commit", "abc"},
-		"squash": {"pr", "merge", "42", "--repo", "owner/repo", "--squash", "--match-head-commit", "abc"},
-		"rebase": {"pr", "merge", "42", "--repo", "owner/repo", "--rebase", "--match-head-commit", "abc"},
-		"close":  {"pr", "close", "42", "--repo", "owner/repo"},
-		"reopen": {"pr", "reopen", "42", "--repo", "owner/repo"},
+		"merge":       {"pr", "merge", "42", "--repo", "owner/repo", "--merge", "--match-head-commit", "abc"},
+		"squash":      {"pr", "merge", "42", "--repo", "owner/repo", "--squash", "--match-head-commit", "abc"},
+		"rebase":      {"pr", "merge", "42", "--repo", "owner/repo", "--rebase", "--match-head-commit", "abc"},
+		"close":       {"pr", "close", "42", "--repo", "owner/repo"},
+		"reopen":      {"pr", "reopen", "42", "--repo", "owner/repo"},
+		"cancel-auto": {"pr", "merge", "42", "--repo", "owner/repo", "--disable-auto"},
 	}
 	for event, want := range cases {
 		if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: event, Head: "abc"}); err != nil {
@@ -282,8 +224,11 @@ func TestChangeStateRunsTheMatchingGhCommand(t *testing.T) {
 	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "merge", Head: "abc", Body: "ignored"}); err != nil || !reflect.DeepEqual(got, cases["merge"]) {
 		t.Fatalf("a plain merge took a message: %v %v", got, err)
 	}
+	if _, err := handle(context.Background(), Request{Action: "change-state", Repo: "owner/repo", Number: 42, Event: "auto", Method: "squash", Head: "abc"}); err != nil || !reflect.DeepEqual(got, []string{"pr", "merge", "42", "--repo", "owner/repo", "--auto", "--squash", "--match-head-commit", "abc"}) {
+		t.Fatalf("auto-merge ran %v: %v", got, err)
+	}
 	got = nil
-	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}} {
+	for _, r := range []Request{{Event: "merge"}, {Event: "delete", Head: "abc"}, {Event: "--admin", Head: "abc"}, {Event: "auto", Head: "abc"}, {Event: "auto", Method: "--admin", Head: "abc"}, {Event: "auto", Method: "squash"}} {
 		r.Action, r.Repo, r.Number = "change-state", "owner/repo", 42
 		if _, err := handle(context.Background(), r); err == nil || got != nil {
 			t.Fatalf("%+v was not refused, ran %v", r, got)
@@ -327,7 +272,7 @@ func TestMergeReviewersShowsEachPersonsCurrentStanding(t *testing.T) {
 	}
 }
 
-func TestChangeReviewerUsesRequestedReviewers(t *testing.T) {
+func TestRequestReviewAgain(t *testing.T) {
 	var args []string
 	var input Obj
 	mock(t, func(a []string, in []byte) ([]byte, error) {
@@ -336,23 +281,90 @@ func TestChangeReviewerUsesRequestedReviewers(t *testing.T) {
 		_ = json.Unmarshal(in, &input)
 		return []byte("{}"), nil
 	})
-	run := func(event, who string) error {
-		_, err := handle(context.Background(), Request{Action: "reviewer", Repo: "owner/repo", Number: 42, Event: event, Reviewer: who})
+	run := func(who string) error {
+		_, err := handle(context.Background(), Request{Action: "reviewer", Repo: "owner/repo", Number: 42, Reviewer: who})
 		return err
 	}
-	if err := run("add", "ann"); err != nil || args[1] != "repos/owner/repo/pulls/42/requested_reviewers" || args[3] != "POST" || !reflect.DeepEqual(input["reviewers"], []any{"ann"}) {
+	if err := run("ann"); err != nil || args[1] != "repos/owner/repo/pulls/42/requested_reviewers" || args[3] != "POST" || !reflect.DeepEqual(input["reviewers"], []any{"ann"}) {
 		t.Fatal(args, input, err)
 	}
-	if err := run("rerequest", "ann"); err != nil || args[3] != "POST" {
-		t.Fatal(args, err)
-	}
-	if err := run("remove", "org/core"); err != nil || args[3] != "DELETE" || !reflect.DeepEqual(input["team_reviewers"], []any{"core"}) {
+	if err := run("org/core"); err != nil || !reflect.DeepEqual(input["team_reviewers"], []any{"core"}) {
 		t.Fatal(args, input, err)
 	}
 	args = nil
-	for _, bad := range [][2]string{{"add", ""}, {"add", "ann\n/close"}, {"add", "@ann me"}, {"approve", "ann"}} {
-		if err := run(bad[0], bad[1]); err == nil || args != nil {
-			t.Fatalf("%v was not refused, ran %v", bad, args)
+	for _, bad := range []string{"", "ann\n/close", "@ann me"} {
+		if err := run(bad); err == nil || args != nil {
+			t.Fatalf("%q was not refused, ran %v", bad, args)
 		}
+	}
+}
+
+func TestOnlyGitHubRepositoriesAreAccepted(t *testing.T) {
+	for _, repo := range []string{"gitlab.com/group/project", "owner", "owner/repo/extra", "../bad"} {
+		if _, err := handle(context.Background(), Request{Action: "list", Repo: repo}); err == nil {
+			t.Fatalf("%q was accepted", repo)
+		}
+	}
+}
+
+func TestListReportsGitHubsTotalOnlyWhenOneSearchAnswers(t *testing.T) {
+	mock(t, func(a []string, b []byte) ([]byte, error) {
+		if reflect.DeepEqual(a, []string{"api", "user"}) {
+			return mustJSON(Obj{"login": "me"}), nil
+		}
+		search := conn([]any{Obj{"id": "pr", "updatedAt": "2026-01-01"}}, "next")
+		search["issueCount"] = 137
+		return mustJSON(Obj{"data": Obj{"search": search}}), nil
+	})
+	got, e := list(context.Background(), Request{Repo: "owner/repo"})
+	if e != nil || object(got)["total"] != float64(137) {
+		t.Fatalf("%v %v", got, e)
+	}
+	got, e = list(context.Background(), Request{Repo: "owner/repo", Tab: "involved"})
+	if _, has := object(got)["total"]; e != nil || has {
+		t.Fatalf("%v %v", got, e)
+	}
+}
+
+func TestANumberFindsThatPRWhateverTheFilters(t *testing.T) {
+	asked := []string{}
+	mock(t, func(a []string, b []byte) ([]byte, error) {
+		if reflect.DeepEqual(a, []string{"api", "user"}) {
+			asked = append(asked, "user")
+			return mustJSON(Obj{"login": "me"}), nil
+		}
+		v := object(payload(t, b)["variables"])
+		if v["number"] == float64(482) {
+			asked = append(asked, "exact")
+			return mustJSON(Obj{"data": Obj{"repository": Obj{"pullRequest": Obj{"id": "pr", "number": 482}}}}), nil
+		}
+		if v["number"] != nil {
+			asked = append(asked, "missing")
+			return mustJSON(Obj{"data": Obj{"repository": Obj{"pullRequest": nil}}}), nil
+		}
+		asked = append(asked, "search")
+		return mustJSON(Obj{"data": Obj{"search": conn([]any{}, "")}}), nil
+	})
+	got, e := list(context.Background(), Request{Repo: "owner/repo", Search: "#482", State: "merged"})
+	if e != nil || len(array(object(got)["items"])) != 1 || !reflect.DeepEqual(asked, []string{"exact"}) {
+		t.Fatalf("%v %v %v", got, e, asked)
+	}
+	asked = nil
+	if _, e = list(context.Background(), Request{Repo: "owner/repo", Search: "7"}); e != nil || !reflect.DeepEqual(asked, []string{"missing", "user", "search"}) {
+		t.Fatalf("%v %v", e, asked)
+	}
+	asked = nil
+	if _, e = list(context.Background(), Request{Repo: "owner/repo", Search: "offline 7"}); e != nil || !reflect.DeepEqual(asked, []string{"user", "search"}) {
+		t.Fatalf("%v %v", e, asked)
+	}
+}
+
+func TestAGhPathThatDoesNotExistCountsAsMissing(t *testing.T) {
+	old := ghBinary
+	t.Cleanup(func() { ghBinary = old })
+	ghBinary = "/nonexistent/gh"
+	_, err := runCommand(context.Background(), []string{"api", "user"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "is not installed") {
+		t.Fatalf("got %v", err)
 	}
 }

@@ -1,579 +1,858 @@
+// The panel against stand-ins for Herdr and the helper. Nothing here reaches GitHub.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
-function harness(existingStorage) {
-  const pending = [], storage = existingStorage ?? new Map(), timers = [];
-  const cx = { focus_handle:()=>({focus(){}}), stop_propagation() {}, notify() {}, open_url() {}, spawn(fn) { const p = fn(cx); pending.push(p); }, timer: { every() {}, after(_ms,fn) { timers.push(fn); } } };
+const dir = path.join(__dirname, '../mods/branch-pr');
+const FILES = ['settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'main.js'];
+const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+  .join('\n')
+  .replace(/^import\s+[\s\S]*?;$/gm, '')
+  .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
+  .replace(/^export /gm, '')
+  + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName });';
+
+function harness({ storage = new Map(), exec, hc } = {}) {
+  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
+  const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
-    const data = { nodes: [], handlers: {} }; let proxy;
-    proxy = new Proxy(data,{get(t,k){if(k in t)return t[k];if(k==='child')return c=>{t.nodes.push(c);return proxy};if(k==='children')return cs=>{t.nodes.push(...cs);return proxy};if(k==='when')return(b,f)=>{if(b)f(proxy);return proxy};return(...a)=>{if(k==='id')t.elementId=a[0];if(k==='trigger'||k==='content')t.nodes.push(a[0]);if(k.startsWith('on_'))t.handlers[k.slice(3)]=a[0];if(k==='on_click')t.handlers.click=a[0];return proxy}}}); return proxy;
+    const data = { nodes: [], handlers: {} };
+    const proxy = new Proxy(data, {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === 'child' || k === 'trigger' || k === 'content') return (c) => { t.nodes.push(c); return proxy; };
+        if (k === 'children') return (c) => { t.nodes.push(...c); return proxy; };
+        if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; };
+        return (...a) => {
+          if (k === 'id') t.elementId = a[0];
+          if (k === 'on_click') t.handlers.click = a[0];
+          if (k === 'on_key_down') t.handlers.key = a[0];
+          if (k === 'on_open_change') t.handlers.open = a[0];
+          if (k === 'tooltip') t.tooltip = a[0];
+          return proxy;
+        };
+      },
+    });
+    return proxy;
   }
-  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers:{}, on(event,fn) { this.handlers[event]=fn; }, focus() { this.focused=true; }, type(v,cx) { this.text=v; this.handlers.change?.({},cx); } });
-  const live = { spaces: [], panes: [], agents: [], terminals: [] };
-  const context = { View: class {}, div: el, svg: el, Popover:{new:(id)=>el().id(id)}, v_flex: el, h_flex: el, InputState: {new:state}, TextareaState:{new:state}, Input:{new:el}, Textarea:{new:el}, TextView:{markdown:(_id,text)=>el().child(text)},
-    spaces:()=>live.spaces, panes:()=>live.panes, agents:()=>live.agents, terminals:()=>live.terminals,
-    readTextFile:async()=>null,shared:()=>null,setShared:()=>{},settings:()=>({font_size:14,ui_font_family:"Configured UI",font_family:"Configured Code"}),run:()=>{},props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),layout:()=>null,home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),knownAgents:async()=>[{key:'claude',name:'Claude Code',run:['claude'],installed:true},{key:'codex',name:'Codex',run:['codex'],installed:false}],
-    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},console };
-  vm.createContext(context);
-  const typography=fs.readFileSync('mods/branch-pr/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
-  vm.runInContext(typography,context);
-  const settingsSource=fs.readFileSync('mods/branch-pr/settings.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function').replaceAll('export async function','async function');
-  vm.runInContext(settingsSource,context);
-  const source=fs.readFileSync('mods/branch-pr/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class PullRequests','globalThis.Mod = class PullRequests');
-  vm.runInContext(source,context);
-  const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.repo='owner/repo';mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';
-  return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};
-}
-const pr = () => ({id:'pr',number:2,title:'Example',url:'https://github.com/o/r/pull/2',body:'Description',headRefOid:'abc',baseRefName:'main',headRefName:'fix',state:'OPEN',author:{login:'alice'},comments:[{id:'c',body:'General',url:'https://github.com/o/r/pull/2#issuecomment-1',createdAt:'2026-01-01',author:{login:'alice'}}],reviews:[],threads:[{id:'thread',path:'file.go',line:3,isResolved:false,viewerCanReply:true,viewerCanResolve:true,comments:[{id:'r',body:'Review concern',url:'https://github.com/o/r/pull/2#discussion_r1',author:{login:'bob'},createdAt:'2026-01-01',diffHunk:'@@\ncode'}]}],checks:[{name:'test',status:'COMPLETED',conclusion:'FAILURE',detailsUrl:'https://github.com/o/r/actions/runs/9'}]});
-function strings(node) { if(typeof node==='string')return node;return (node?.nodes??[]).map(strings).join('\n'); }
-
-test('detail, author filter, checks and composer render',()=>{
- const {mod}=harness();mod.pr=pr(); mod.section="conversation"; assert.match(strings(mod.render()),/Review concern/);
- mod.author='alice';assert.doesNotMatch(strings(mod.render()),/Review concern/);
- mod.author='bob';assert.match(strings(mod.render()),/Review concern/);
- mod.section='checks';mod.checkOpen['pr:0']=true;mod.jobs['9']={jobs:[{id:4,name:'test',conclusion:'failure',steps:[{number:1,name:'Run tests',conclusion:'failure'}]}]};assert.match(strings(mod.render()),/Failed step output/);
- mod.composer={kind:'agent'};assert.match(strings(mod.render()),/No live AI instances/);
-});
-test('stale list response does not replace another space',async()=>{
- const h=harness();let complete;h.mod.api=()=>new Promise(resolve=>complete=resolve);h.mod.loadList(h.cx);
- h.mod.changeSpace(null,'other',h.cx);complete({items:[{id:'old'}],cursors:{}});await h.flush();assert.equal(h.mod.items.length,0);
-});
-test('failed posting retains draft; successful posting clears it',async()=>{
- const h=harness();h.mod.pr=pr();h.mod.compose('reply','thread',null,h.cx);h.mod.editor.set_value('Keep this');h.storage.set(h.mod.draftKey,'Keep this');
- h.mod.api=async()=>{throw Error('offline')};h.mod.mutate('reply',h.cx,'thread');await h.flush();assert.equal(h.mod.editor.value(),'Keep this');assert.equal(h.storage.get(h.mod.draftKey),'Keep this');assert.match(h.mod.error,/offline/);
- h.mod.api=async r=>r.action==='detail'?pr():{};h.mod.mutate('reply',h.cx,'thread');await h.flush();assert.equal(h.mod.composer,null);assert.equal([...h.storage.keys()].filter(k=>k.startsWith('pr-draft:')).length,0);
-});
-test('repo detection follows the active terminal cwd',()=>{
- const h=harness();h.live.spaces=[{active:true,id:'s',folder:'/home',tabs:[{active:true,id:'tab'}]}];h.live.panes=[{tab:'tab',cwd:'/repo',focused:true}];assert.equal(vm.runInContext('activeSpace().folder',h.context),'/repo');
-});
-test('agent delivery requires selection and includes revision context',async()=>{
- const h=harness();h.mod.pr=pr();h.mod.compose('agent','thread','bob: Review concern',h.cx);
- let sent;h.context.hc=async args=>{sent=args;return{code:0}};
- h.mod.sendAgent(h.cx);await h.flush();assert.equal(sent,undefined);
- h.live.agents=[{address:'t7',space:'space',tab_name:'Analyst',status:'working'}];h.mod.target='t7';h.mod.sendAgent(h.cx);await h.flush();
- assert.equal(sent[0],'send');assert.equal(sent[1],'t7');assert.match(sent[2],/"head":"abc"/);assert.match(sent[2],/Review concern/);assert.match(sent[2],/Do not post comments/);assert.equal(h.mod.composer,null);
-});
-test('search waits for typing to stop, requires three characters, and resets when shortened',async()=>{
- const h=harness(),requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};
- h.mod.search.set_value('ab');h.mod.searchChanged(h.cx);h.tick();await h.flush();assert.equal(requests.length,0);
- h.mod.search.set_value('abc');h.mod.searchChanged(h.cx);h.mod.search.set_value('abcd');h.mod.searchChanged(h.cx);assert.equal(requests.length,0);
- h.tick();await h.flush();assert.equal(requests.length,1);assert.equal(requests[0].search,'abcd');
- h.mod.search.set_value('ab');h.mod.searchChanged(h.cx);h.tick();await h.flush();assert.equal(requests[1].search,'');
-});
-test('repository detection prefers upstream and executes git on the space machine',async()=>{
- const h=harness(),calls=[];h.context.exec=async(cmd,args,options)=>{calls.push({cmd,args,options});return{code:0,stdout:'git@github.com:upstream/project.git\n'}};
- assert.equal(await h.mod.detectRepo({folder:'/repo',machine:'remote'}),'upstream/project');assert.equal(calls.length,1);assert.equal(calls[0].args.join(' '),'remote get-url upstream');assert.equal(calls[0].options.on,'remote');
-});
-test('repository detection falls back to branch tracking then origin',async()=>{
- const h=harness(),calls=[];h.context.exec=async(cmd,args)=>{calls.push(args.join(' '));if(args[0]==='symbolic-ref')return{code:0,stdout:'feature\n'};if(args[0]==='config')return{code:0,stdout:'fork\n'};if(args[2]==='origin')return{code:0,stdout:'https://github.com/owner/project.git'};return{code:1,stdout:''}};
- assert.equal(await h.mod.detectRepo({folder:'/repo'}),'owner/project');assert.equal(calls.at(-2),'remote get-url fork');assert.equal(calls.at(-1),'remote get-url origin');
- assert.equal(vm.runInContext('repositoryFromRemote("https://gitlab.com/group/sub/project.git")',h.context),'gitlab.com/group/sub/project');
- assert.equal(vm.runInContext('repositoryFromRemote("git@gitlab.example.com:team/app.git")',h.context),'gitlab.example.com/team/app');
- assert.equal(vm.runInContext('repositoryFromRemote("ssh://git@github.com:22/o/r.git")',h.context),'o/r');
- for(const bad of['https://github.com/o/r/extra.git','git@gitlab.com:only.git','/local/path','https://gitlab.com/../x.git'])assert.throws(()=>vm.runInContext(`repositoryFromRemote(${JSON.stringify(bad)})`,h.context),bad);
- assert.equal(vm.runInContext('hostOf("gitlab.com/g/p")+" "+siteName("gitlab.com/g/p")+" "+repoUrl("gitlab.com/g/p")+" "+siteName("o/r")+" "+repoUrl("o/r")',h.context),'gitlab.com GitLab https://gitlab.com/g/p GitHub https://github.com/o/r');
-});
-test('list chrome has dropdown filters and no manual repository or search buttons',()=>{
- const h=harness(),text=strings(h.mod.render());assert.match(text,/All PRs/);assert.ok(findElement(h.mod.render(),'pr-scope'));assert.ok(findElement(h.mod.render(),'pr-search-input'));assert.match(text,/owner\/repo/);assert.doesNotMatch(text,/Use repo|Search GitHub|Clear|Refresh/);
-});
-function findElement(node,id) { if(node?.elementId===id)return node;for(const child of node?.nodes??[]){const found=findElement(child,id);if(found)return found} }
-test('native status popover exposes its trigger and selects each filter',async()=>{
- const h=harness(),requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};
- for(const [state,label] of [['draft','Draft'],['merged','Merged'],['closed','Closed'],['all','All'],['open','Open']]){
-  const closed=h.mod.render(),popover=findElement(closed,'pr-state');
-  assert.ok(findElement(popover,'pr-state-trigger'),'native popover must own the trigger');
-  assert.equal(findElement(closed,'pr-state-menu'),undefined);
-  popover.handlers.open_change(true,h.cx);
-  const opened=h.mod.render();assert.ok(findElement(opened,'pr-state-menu'));
-  findElement(opened,`pr-state-${state}`).handlers.click({},h.cx);await h.flush();
-  assert.equal(h.mod.state,state);assert.equal(h.mod.stateOpen,false);assert.equal(requests.at(-1).state,state);
-  assert.match(strings(findElement(h.mod.render(),'pr-state-trigger')),new RegExp(label));
- }
-});
-test('status popover supports keyboard selection and native dismissal',async()=>{
- const h=harness();h.mod.api=async()=>({items:[],cursors:{}});
- findElement(h.mod.render(),'pr-state-trigger').handlers.key_down({key:'down'},h.cx);assert.equal(h.mod.stateOpen,true);
- let opened=h.mod.render();findElement(opened,'pr-state-menu').handlers.key_down({key:'down'},h.cx);
- opened=h.mod.render();findElement(opened,'pr-state-menu').handlers.key_down({key:'enter'},h.cx);await h.flush();
- assert.equal(h.mod.state,'draft');assert.equal(h.mod.stateOpen,false);
- findElement(h.mod.render(),'pr-state').handlers.open_change(true,h.cx);
- findElement(h.mod.render(),'pr-state').handlers.open_change(false,h.cx);assert.equal(h.mod.stateOpen,false);
-});
-test('remote menu discovers GitHub and GitLab remotes and disables unparseable ones',async()=>{
- const h=harness(),calls=[];h.context.exec=async(cmd,args,options)=>{
-  calls.push({args,options});if(args.length===1)return{code:0,stdout:'origin\nupstream\narchive\n'};
-  return{code:0,stdout:args.at(-1)==='archive'?'/mnt/backup/archive.git':`git@github.com:${args.at(-1)}/repo.git`};
- };
- const remotes=await h.mod.discoverRemotes({folder:'/checkout',machine:'remote'});
- assert.equal(remotes.length,3);assert.equal(remotes.find(r=>r.name==='archive').repo,null);assert.equal(remotes.find(r=>r.name==='upstream').repo,'upstream/repo');assert.ok(calls.every(c=>c.options.on==='remote'&&c.options.cwd==='/checkout'));
- h.mod.remotes=remotes;h.mod.remote='origin';findElement(h.mod.remoteSelector({}),'pr-remote').handlers.open_change(true,h.cx);
- const opened=h.mod.remoteSelector({});assert.match(strings(findElement(opened,'pr-remote-menu')),/Not a GitHub or GitLab remote/);assert.equal(findElement(opened,'pr-remote-archive').handlers.click,undefined);
-});
-test('selecting remote updates PR scope, preserves drafts, and invalidates stale requests',async()=>{
- const h=harness(),requests=[];let finishOld;
- h.mod.api=r=>{requests.push(r);if(requests.length===1)return new Promise(resolve=>finishOld=resolve);return Promise.resolve({items:[],cursors:{}})};
- h.mod.loadList(h.cx);h.mod.pr=pr();h.mod.compose('reply','thread',null,h.cx);h.storage.set(h.mod.draftKey,'Saved reply');
- h.mod.remotes=[{name:'origin',repo:'fork/repo'},{name:'upstream',repo:'owner/repo'}];h.mod.remote='upstream';
- findElement(h.mod.remoteSelector({}),'pr-remote').handlers.open_change(true,h.cx);
- findElement(h.mod.remoteSelector({}),'pr-remote-origin').handlers.click({},h.cx);
- finishOld({items:[{id:'stale'}],cursors:{}});await h.flush();
- assert.equal(h.mod.repo,'fork/repo');assert.equal(h.mod.remote,'origin');assert.equal(h.mod.pr,null);assert.equal(h.mod.items.length,0);assert.equal(requests.at(-1).repo,'fork/repo');assert.ok([...h.storage.values()].includes('Saved reply'));assert.equal(h.storage.get(h.mod.remotePreferenceKey()),'origin');
-});
-test('saved remote is restored and missing preference falls back to upstream',async()=>{
- const h=harness();h.mod.discoverRemotes=async()=>[{name:'origin',repo:'fork/repo'},{name:'upstream',repo:'owner/repo'}];h.mod.detectRepo=async()=> 'owner/repo';h.mod.api=async()=>({items:[],cursors:{}});
- h.storage.set(h.mod.remotePreferenceKey(),'origin');h.mod.resolveRepo(h.cx);await h.flush();assert.equal(h.mod.repo,'fork/repo');assert.equal(h.mod.remote,'origin');
- h.storage.set(h.mod.remotePreferenceKey(),'deleted');h.mod.resolveRepo(h.cx);await h.flush();assert.equal(h.mod.repo,'owner/repo');assert.equal(h.mod.remote,'upstream');assert.equal(h.storage.get(h.mod.remotePreferenceKey()),undefined);
-});
-test('branch sidebar loads matching PR details directly and supports choosing another PR',async()=>{
- const h=harness();h.mod.mode='branch';h.mod.discoverRemotes=async()=>[{name:'origin',repo:'fork/repo'},{name:'upstream',repo:'owner/repo'}];
- h.context.exec=async()=>({code:0,stdout:'feature\n'});
- const candidates=[{id:'a',number:1,repository:'owner/repo',headRepository:{nameWithOwner:'fork/repo'},state:'OPEN',updatedAt:'2026-01-02',title:'First'},{id:'b',number:2,repository:'owner/repo',headRepository:{nameWithOwner:'fork/repo'},state:'OPEN',updatedAt:'2026-01-01',title:'Second'},{id:'unrelated',number:3,repository:'owner/repo',headRepository:{nameWithOwner:'other/repo'},state:'OPEN',updatedAt:'2026-01-03'}];
- h.mod.api=async r=>r.action==='branch'?{items:r.repo==='owner/repo'?candidates:[]}:{...pr(),number:r.number,id:r.number===1?'a':'b'};
- h.mod.loadBranchPRs(h.cx);await h.flush();assert.equal(h.mod.branchPRs.length,2);assert.equal(h.mod.pr.number,1);assert.equal(findElement(h.mod.render(),'pr-back'),undefined);assert.equal(findElement(h.mod.render(),'pr-remote'),undefined);
- findElement(h.mod.render(),'branch-pr').handlers.open_change(true,h.cx);
- findElement(h.mod.render(),'branch-pr-b').handlers.click({},h.cx);await h.flush();assert.equal(h.mod.pr.number,2);
- h.mod.loadBranchPRs(h.cx);await h.flush();assert.equal(h.mod.pr.number,2);
-});
-test('branch sidebar handles detached HEAD and branches without PRs',async()=>{
- const h=harness();h.mod.mode='branch';h.context.exec=async()=>({code:1,stdout:''});h.mod.loadBranchPRs(h.cx);await h.flush();assert.match(strings(h.mod.render()),/Check out a branch/);
- h.context.exec=async()=>({code:0,stdout:'new-feature'});h.mod.discoverRemotes=async()=>[{repo:'owner/repo'}];h.mod.api=async()=>({items:[]});h.mod.loadBranchPRs(h.cx);await h.flush();assert.match(strings(h.mod.render()),/No pull requests found for new-feature/);
-});
-test('temporary public preview loads chosen PRs, blocks writes, and can be disabled',async()=>{
- const h=harness();h.mod.mode='branch';const requests=[];h.mod.api=async r=>{requests.push(r);return{...pr(),id:`preview-${r.number}`,number:r.number}};
- h.context.exec=async()=>{throw Error('preview must not run git')};h.mod.setPreview('cli/cli#14854,14858',h.cx);await h.flush();
- assert.equal(h.mod.pr.number,14854);assert.equal(h.mod.branchPRs.length,2);assert.equal(h.mod.repo,'cli/cli');assert.match(strings(h.mod.render()),/read-only/);
- const count=requests.length;h.mod.mutate('comment',h.cx);await h.flush();assert.equal(requests.length,count);assert.match(h.mod.error,/read-only/);
- h.context.exec=async()=>({code:1,stdout:''});h.mod.setPreview('off',h.cx);await h.flush();assert.equal(h.mod.preview,null);assert.equal(h.mod.pr,null);
-});
-test('branch sidebar All PRs opens a pinned browser tab without Better Tabs',()=>{
- const h=harness(),calls=[],state={};h.mod.mode='branch';h.context.run=(name,args)=>calls.push({name,args});
- h.context.shared=key=>state[key];h.context.setShared=(key,value)=>state[key]=value;
- h.live.spaces=[{id:'space',active:true,folder:'/main',tabs:[{id:'shell',active:true}]}];
- h.live.panes=[{tab:'shell',cwd:'/worktree',focused:true}];
- const open=()=>findElement(h.mod.render(),'pr-browser-toggle').handlers.click({},h.cx);
- open();assert.equal(calls.length,1);assert.equal(calls[0].name,'tab.new');assert.equal(calls[0].args.mod,'branch-pr');
- assert.equal(calls[0].args.props.source.cwd,'/worktree');open();assert.equal(calls.length,1);
- h.live.spaces[0].tabs.push({id:'browser'});h.live.panes.push({mod:'branch-pr',tab:'browser'});
- open();assert.equal(calls.at(-1).name,'tab.select');assert.equal(calls.at(-1).args.id,'browser');
-});
-test('browser tab has no internal close or stack toggle control',()=>{
- const h=harness();const root=h.mod.render();
- for(const id of ['pr-browser-close','pr-refresh','pr-github','pr-remote','pr-browser-toggle'])assert.equal(findElement(root,id),undefined);
- const row=findElement(root,'pr-filter-row');assert.ok(findElement(row,'pr-search-input'));assert.ok(findElement(row,'pr-scope'));assert.ok(findElement(row,'pr-state'));
-});
-test('browser list and details have no footer; branch sidebar keeps its status footer',()=>{
- const h=harness();assert.equal(findElement(h.mod.render(),'pr-footer'),undefined);
- h.mod.pr=pr();assert.equal(findElement(h.mod.render(),'pr-footer'),undefined);
- h.mod.mode='branch';assert.ok(findElement(h.mod.render(),'pr-footer'));
- h.mod.pr=null;assert.ok(findElement(h.mod.render(),'pr-footer'));
-});
-test('browser header shows the repository URL and opens only on modifier-click',()=>{
- const h=harness(),opened=[];h.cx.open_url=url=>opened.push(url);
- const link=findElement(h.mod.render(),'pr-repo-url');assert.ok(link);assert.match(strings(link),/https:\/\/github.com\/owner\/repo/);
- link.handlers.click({modifiers:{}},h.cx);assert.equal(opened.length,0);
- link.handlers.click({modifiers:{platform:true}},h.cx);assert.equal(opened[0],'https://github.com/owner/repo');
- link.handlers.click({modifiers:{control:true}},h.cx);assert.equal(opened.length,2);
- h.mod.repo='';assert.equal(findElement(h.mod.render(),'pr-repo-url'),undefined);
- h.mod.repo='owner/repo';h.mod.mode='branch';assert.equal(findElement(h.mod.render(),'pr-repo-url'),undefined);
-});
-test('browser tab pins its source checkout even while another space is selected',()=>{
- const h=harness();h.mod.mode='browser';h.mod.browserSpace='space';h.mod.source={cwd:'/worktree',on:'remote'};
- h.live.spaces=[{id:'space',folder:'/main',machine:'remote',tabs:[]},{id:'other',active:true,folder:'/other',tabs:[]}];
- assert.equal(h.mod.currentSpace().folder,'/worktree');assert.equal(h.mod.currentSpace().id,'space');
- h.live.spaces=[];assert.equal(h.mod.currentSpace(),null);
-});
-test('branch sidebar retains the browser checkout while a mod tab is selected',()=>{
- const h=harness();h.mod.mode='branch';h.live.spaces=[{id:'space',active:true,folder:'/main',tabs:[{id:'browser',active:true}]}];
- h.live.panes=[{mod:'branch-pr',tab:'browser'}];
- h.context.shared=key=>key==='branch-pr.browser-tabs'?{space:{source:{cwd:'/worktree',on:null}}}:null;
- assert.equal(h.mod.currentSpace().folder,'/worktree');
-});
-test('scope dropdown selects All PRs, Created and Involved',async()=>{
- const h=harness(),requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};
- for(const id of ['mine','involved','all']){
-  findElement(h.mod.render(),'pr-scope').handlers.open_change(true,h.cx);
-  findElement(h.mod.render(),`pr-tab-${id}`).handlers.click({},h.cx);await h.flush();assert.equal(h.mod.tab,id);assert.equal(requests.at(-1).tab,id);assert.equal(h.mod.scopeOpen,false);
- }
-});
-test('PR selection distinguishes open, draft, merged and closed',()=>{
- const h=harness();for(const [pr,label,icon] of [[{state:'OPEN'},'Open','pull-request'],[{state:'OPEN',isDraft:true},'Draft','draft'],[{state:'MERGED',isDraft:true},'Merged','merged'],[{state:'CLOSED'},'Closed','closed']]){const status=h.mod.prStatus(pr);assert.equal(status.label,label);assert.equal(status.icon,icon)}
- h.mod.mode='branch';assert.match(strings(findElement(h.mod.render(),'pr-browser-toggle')),/All PRs/);
-});
-test('All PRs preview browses a public repository and persists through refresh',async()=>{
- const h=harness(),requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};h.context.exec=async()=>{throw Error('preview must not inspect git')};
- h.mod.setPreview('cli/cli',h.cx);await h.flush();assert.equal(h.mod.repo,'cli/cli');assert.equal(requests[0].action,'list');assert.equal(requests[0].repo,'cli/cli');assert.match(strings(h.mod.render()),/read-only/);
- h.mod.refresh(h.cx);await h.flush();assert.equal(requests.at(-1).repo,'cli/cli');
- h.mod.detectRepo=async()=> 'owner/repo';h.mod.discoverRemotes=async()=>[{name:'origin',repo:'owner/repo'}];h.mod.setPreview('off',h.cx);await h.flush();assert.equal(h.mod.preview,null);assert.equal(h.mod.repo,'owner/repo');
-});
-test('shared center preview reaches the browser independently of the sidebar instance',async()=>{
- const h=harness(),requests=[];h.context.shared=()=> 'cli/cli';h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};
- h.mod.syncBrowserPreview(h.cx);await h.flush();assert.equal(h.mod.repo,'cli/cli');assert.equal(requests.length,1);
- h.mod.syncBrowserPreview(h.cx);await h.flush();assert.equal(requests.length,1);
-});
-test('PR details use one title row and independent full-description, conversation and check tabs',()=>{
- const h=harness();h.mod.pr={...pr(),body:'Full text '.repeat(100)+'END OF DESCRIPTION'};
- let rendered=h.mod.render();const header=findElement(rendered,'pr-detail-header');assert.ok(findElement(header,'pr-back'));assert.ok(findElement(header,'pr-detail-github'));assert.match(strings(header),/#2 Example/);
- assert.match(strings(rendered),/END OF DESCRIPTION/);assert.equal(findElement(rendered,'pr-description-toggle'),undefined);assert.doesNotMatch(strings(rendered),/Review concern/);
- findElement(rendered,'pr-conversation').handlers.click({},h.cx);rendered=h.mod.render();assert.match(strings(rendered),/Review concern/);assert.doesNotMatch(strings(rendered),/END OF DESCRIPTION/);assert.ok(findElement(rendered,'pr-detail-tabs'));
- findElement(rendered,'pr-checks').handlers.click({},h.cx);rendered=h.mod.render();assert.match(strings(rendered),/Checks & workflows/);assert.doesNotMatch(strings(rendered),/Review concern/);
- findElement(rendered,'pr-description').handlers.click({},h.cx);assert.match(strings(h.mod.render()),/END OF DESCRIPTION/);
-});
-test('reply dropdown opens an inline composer with Edit and Preview inside the thread',()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='conversation';
- findElement(h.mod.render(),'pr-reply-thread-main').handlers.click({},h.cx);
- let card=findElement(h.mod.render(),'conversation-thread');assert.ok(findElement(card,'pr-composer-thread'));assert.equal(h.mod.editor.value(),'');
- h.mod.editor.set_value('**A reply**');findElement(card,'pr-editor-preview').handlers.click({},h.cx);
- card=findElement(h.mod.render(),'conversation-thread');assert.match(strings(findElement(card,'pr-editor-rendered-preview')),/A reply/);assert.equal(findElement(card,'pr-inline-input'),undefined);
- findElement(card,'pr-editor-edit').handlers.click({},h.cx);assert.equal(h.mod.editor.value(),'**A reply**');
- findElement(h.mod.render(),'pr-reply-thread-dropdown').handlers.open_change(true,h.cx);
- findElement(h.mod.render(),'pr-reply-thread-option-quote').handlers.click({},h.cx);assert.match(h.mod.editor.value(),/^> bob: Review concern/);
- findElement(h.mod.render(),'pr-cancel').handlers.click({},h.cx);assert.equal(h.mod.composer,null);
-});
-test('Send to Agent defaults to the first space agent, allows another, and sends the comment URL with the prompt',async()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='conversation';h.live.agents=[{space:'space',address:'t1',tab_name:'First'},{space:'other',address:'t9',tab_name:'Elsewhere'},{space:'space',address:'t2',tab_name:'Second'}];
- const control=findElement(h.mod.render(),'pr-agent-thread');assert.match(strings(control),/Send to First/);
- findElement(control,'pr-agent-thread-main').handlers.click({},h.cx);assert.equal(h.mod.target,'t1');assert.ok(findElement(findElement(h.mod.render(),'conversation-thread'),'pr-composer-thread'));
- findElement(h.mod.render(),'pr-agent-thread-dropdown').handlers.open_change(true,h.cx);assert.equal(findElement(h.mod.render(),'pr-agent-thread-option-t1'),undefined);assert.equal(findElement(h.mod.render(),'pr-agent-thread-option-t9'),undefined);
- findElement(h.mod.render(),'pr-agent-thread-option-t2').handlers.click({},h.cx);assert.equal(h.mod.target,'t2');h.mod.editor.set_value('Please analyze the edge cases.');let sent;h.context.hc=async args=>{sent=args;return{code:0}};
- findElement(h.mod.render(),'pr-submit').handlers.click({},h.cx);await h.flush();assert.equal(sent[1],'t2');assert.match(sent[2],/Please analyze the edge cases/);assert.match(sent[2],/https:\/\/github.com\/o\/r\/pull\/2#discussion_r1/);assert.match(sent[2],/Review concern/);assert.equal(h.mod.composer,null);
-});
-test('GitHub-style checks group by workflow, expand jobs, and normalize result states',()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='checks';h.mod.pr.checks=[{name:'unit',workflowName:'CI',status:'COMPLETED',conclusion:'SUCCESS',detailsUrl:'https://github.com/o/r/actions/runs/8/job/4'},{name:'lint',workflowName:'CI',status:'COMPLETED',conclusion:'SKIPPED',detailsUrl:'https://github.com/o/r/actions/runs/8/job/5'}];
- let rendered=h.mod.render();assert.match(strings(rendered),/All checks have passed/);assert.equal(findElement(rendered,'check-toggle-0'),undefined);
- findElement(rendered,'workflow-toggle-CI:8').handlers.click({},h.cx);rendered=h.mod.render();assert.ok(findElement(rendered,'check-toggle-0'));assert.ok(findElement(rendered,'check-toggle-1'));
- h.mod.jobs['8']={jobs:[{id:4,name:'unit',steps:[{name:'Run tests',conclusion:'success'}]}]};findElement(rendered,'check-toggle-0').handlers.click({},h.cx);assert.match(strings(h.mod.render()),/Run tests/);
- assert.equal(h.mod.checkStatus({conclusion:'cancelled'}).kind,'skipped');assert.equal(h.mod.checkStatus({status:'in_progress'}).kind,'running');
-});
-test('GitHub qualifier and body-only results remain visible without literal filtering',async()=>{
- for(const query of ['author:alice','label:bug','phrase only in the PR body']){
-  const h=harness();h.mod.api=async()=>({items:[{id:'match',number:42,title:'Server matched this PR',author:{login:'alice'},updatedAt:'2026-01-01',reasons:[]}],cursors:{}});
-  h.mod.search.set_value(query);h.mod.searchChanged(h.cx);h.tick();await h.flush();
-  assert.ok(findElement(h.mod.render(),'pr-match'),query);
- }
-});
-test('rapid short keystrokes preserve reload after invalidating the initial request',async()=>{
- const h=harness(),requests=[];let oldResponse;
- h.mod.api=r=>{requests.push(r);return requests.length===1?new Promise(resolve=>oldResponse=resolve):Promise.resolve({items:[{id:'fresh',number:1,title:'Fresh',updatedAt:'2026-01-01',reasons:[]}],cursors:{}})};
- h.mod.loadList(h.cx);h.mod.search.set_value('a');h.mod.searchChanged(h.cx);h.mod.search.set_value('ab');h.mod.searchChanged(h.cx);
- oldResponse({items:[{id:'old'}],cursors:{}});h.tick();await h.flush();
- assert.equal(requests.length,2);assert.equal(requests[1].search,'');assert.equal(h.mod.items[0].id,'fresh');assert.equal(h.mod.searchPending,false);assert.equal(h.mod.loading,false);
-});
-test('switching directory during debounce uses the visible query in the new directory',async()=>{
- const h=harness(),requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};h.mod.detectRepo=async()=> 'other/repo';h.mod.discoverRemotes=async()=>[{name:'origin',repo:'other/repo'}];
- h.mod.search.set_value('author:alice');h.mod.searchChanged(h.cx);h.mod.changeSpace({folder:'/other',id:'other'},'other',h.cx);h.tick();await h.flush();
- assert.equal(requests.length,1);assert.equal(requests[0].repo,'other/repo');assert.equal(requests[0].search,'author:alice');
-});
-test('saved repository context restores filters, query, selected PR and its detail tab',async()=>{
- const h=harness();h.mod.browseKey=h.mod.viewKey();h.mod.tab='mine';h.mod.state='draft';h.mod.search.set_value('author:alice');h.mod.adoptPR(pr());h.mod.author='alice';h.mod.unresolved=true;h.mod.selectSection('checks',h.cx);h.mod.rememberView();
- const restored=harness(h.storage);restored.mod.api=async r=>r.action==='list'?{items:[],cursors:{}}:pr();restored.mod.restoreView('owner/repo');restored.mod.loadList(restored.cx);await restored.flush();
- assert.equal(restored.mod.tab,'mine');assert.equal(restored.mod.state,'draft');assert.equal(restored.mod.search.value(),'author:alice');assert.equal(restored.mod.pr.number,2);assert.equal(restored.mod.section,'checks');assert.equal(restored.mod.author,'alice');assert.equal(restored.mod.unresolved,true);
-});
-test('read markers detect new and edited comments and persist after leaving conversations',()=>{
- const h=harness();h.mod.adoptPR(pr());assert.equal(h.mod.unreadIds.size,2);h.mod.selectSection('conversation',h.cx);h.mod.markRead();assert.equal(h.mod.unreadIds.size,0);
- const next=pr();next.comments[0].body='Edited comment';next.comments.push({id:'new',body:'New comment',author:{login:'alice'}});h.mod.adoptPR(next);assert.equal(h.mod.unreadIds.size,2);assert.ok(h.mod.unreadIds.has('new'));assert.ok(h.mod.unreadIds.has('c'));
- assert.match(strings(h.mod.render()),/Mark 2 read/);h.mod.leavePR();h.mod.adoptPR(next);assert.equal(h.mod.unreadIds.size,0);
-});
-test('failed reads retain last successful timestamp and Retry only reloads data',async()=>{
- const h=harness();h.mod.lastUpdated=123;h.mod.api=async()=>{throw Error('network unavailable')};h.mod.loadList(h.cx);await h.flush();assert.equal(h.mod.lastUpdated,123);assert.ok(findElement(h.mod.render(),'pr-retry'));
- h.mod.detectRepo=async()=> 'owner/repo';h.mod.discoverRemotes=async()=>[{name:'origin',repo:'owner/repo'}];h.mod.api=async()=>({items:[],cursors:{}});h.context.hc=()=>{throw Error('must not send agent message')};findElement(h.mod.render(),'pr-retry').handlers.click({},h.cx);await h.flush();assert.equal(h.mod.error,null);assert.ok(h.mod.lastUpdated>123);
-});
-test('review-comment workflow returns a proposal for editing and posts only after explicit submission',async()=>{
- const h=harness(),apiRequests=[];h.mod.pr=pr();h.mod.section='conversation';h.live.agents=[{space:'space',address:'t1',tab_name:'Analyst'}];let sent;h.context.hc=async args=>{sent=args;return{code:0}};h.mod.api=async r=>{apiRequests.push(r);return r.action==='detail'?pr():{}};
- findElement(h.mod.render(),'pr-workflow-thread').handlers.click({},h.cx);assert.equal(h.mod.composer.workflow,true);findElement(h.mod.render(),'pr-submit').handlers.click({},h.cx);await h.flush();assert.match(sent[2],/Write ONLY the result file/);assert.equal(apiRequests.length,0);
- const key=h.mod.proposalKey(),record=h.mod.readStored(key).thread;assert.equal(record.status,'waiting');
- h.context.readTextFile=async()=>JSON.stringify({schema:1,requestId:record.id,repo:record.repo,number:record.number,head:record.head,entry:record.entry,analysis:'The concern is valid.',proposedFix:'Add a boundary check.',reply:'I propose adding a boundary check.'});
- h.mod.pollProposals(h.cx,true);await h.flush();assert.equal(h.mod.readStored(key).thread.status,'ready');assert.equal(apiRequests.length,0);
- findElement(h.mod.render(),'pr-proposal-use-thread').handlers.click({},h.cx);assert.equal(h.mod.editor.value(),'I propose adding a boundary check.');assert.equal(apiRequests.length,0);
- findElement(h.mod.render(),'pr-submit').handlers.click({},h.cx);await h.flush();assert.equal(apiRequests.filter(r=>r.action==='reply').length,1);assert.equal(h.mod.readStored(key).thread.status,'posted');
-});
-test('proposal posting is blocked when the head or comment changes',async()=>{
- const h=harness();h.mod.pr=pr();h.mod.compose('reply','thread',null,h.cx,{entry:'thread',proposal:{head:'abc',entry:'thread',context:h.mod.entryContext('thread')}});h.mod.editor.set_value('Reviewed reply');let writes=0;
- h.mod.api=async r=>{if(r.action==='detail')return{...pr(),headRefOid:'different'};writes++;return{}};h.mod.mutate('reply',h.cx,'thread');await h.flush();assert.equal(writes,0);assert.match(h.mod.error,/changed since this draft/);assert.equal(h.mod.editor.value(),'Reviewed reply');
-});
-test('proposal results must match request, repository, commit and comment',()=>{
- const h=harness(),record={id:'id',repo:'owner/repo',number:2,head:'abc',entry:'thread'};
- const value={schema:1,requestId:'id',repo:'owner/repo',number:2,head:'abc',entry:'thread',analysis:'Analysis',proposedFix:'Fix',reply:'Reply'};assert.equal(h.mod.validateProposal(value,record).reply,'Reply');for(const field of ['requestId','repo','number','head','entry'])assert.throws(()=>h.mod.validateProposal({...value,[field]:'wrong'},record));
-});
-test('typography derives relative sizes from live Herdr settings and configured font families',()=>{
- const h=harness();assert.equal(vm.runInContext('em(1)',h.context),14);
- h.context.settings=()=>({font_size:18,font_family:'User Code',ui_font_family:'User UI'});
- assert.equal(vm.runInContext('em(1)',h.context),18);assert.equal(vm.runInContext('em(0.8)',h.context),14.4);assert.equal(vm.runInContext('codeFont()',h.context),'User Code');
- h.context.settings=()=>({ui_font_size:20,font_size:18});assert.equal(vm.runInContext('em(1.2)',h.context),24);
- for(const mod of ['branch-pr']){
-  assert.doesNotMatch(fs.readFileSync(`mods/${mod}/main.js`,'utf8'),/\.text_size\(\d/);
-  assert.equal(fs.readFileSync(`mods/${mod}/typography.js`,'utf8'),fs.readFileSync('mods/branch-pr/typography.js','utf8'));
- }
-});
-
-function worktreeHarness() {
- const h=harness(),calls=[],opened=[];h.mod.pr=pr();h.mod.pr.headRefOid='a'.repeat(40);h.mod.showWorktree(h.cx);
- h.mod.worktreeForm.branch.set_value('review/custom');h.mod.worktreeForm.name.set_value('my-review');
- h.context.exec=async(cmd,args,options)=>{
-  calls.push({cmd,args,options});
-  if(args[0]==='check-ref-format')return{code:0,stdout:args[2]};
-  if(args[0]==='remote'&&args.length===1)return{code:0,stdout:'origin\nfork'};
-  if(args[0]==='remote')return{code:0,stdout:'https://github.com/owner/repo.git'};
-  if(args[0]==='show-ref')return{code:1,stdout:''};
-  if(args[0]==='rev-parse')return{code:0,stdout:'a'.repeat(40)};
-  return{code:0,stdout:''};
- };
- h.mod.api=async()=>h.mod.pr;h.context.run=(command,args)=>opened.push({command,args});
- return{...h,calls,opened};
-}
-test('worktree form replaces the Create worktree button in All PRs details and submits on Enter',()=>{
- const h=worktreeHarness();let tree=h.mod.render();assert.equal(findElement(tree,'pr-create-worktree'),undefined);assert.ok(findElement(tree,'pr-worktree-branch'));assert.ok(findElement(tree,'pr-worktree-name'));
- assert.ok(h.mod.worktreeForm.branch.focused);assert.equal(typeof h.mod.worktreeForm.name.handlers.submit,'function');
- h.mod.worktreeForm=null;tree=h.mod.render();assert.ok(findElement(tree,'pr-create-worktree'));assert.equal(findElement(tree,'pr-worktree-branch'),undefined);
- h.mod.mode='branch';assert.equal(findElement(h.mod.render(),'pr-create-worktree'),undefined);
-});
-test('PR worktree uses chosen names, fetched head and a terminal in the captured space',async()=>{
- const h=worktreeHarness();h.mod.sp.machine='remote';h.mod.worktreeForm.sp.machine='remote';
- const original=h.context.exec;h.context.exec=async(cmd,args,options)=>cmd==='sh'?{code:0,stdout:'/remote/home'}:original(cmd,args,options);
- h.mod.createWorktree(h.cx);h.mod.createWorktree(h.cx);await h.flush();
- const fetch=h.calls.find(c=>c.args[0]==='fetch');assert.deepEqual(Array.from(fetch.args),['fetch','--no-tags','--','https://github.com/owner/repo.git','refs/pull/2/head']);
- const add=h.calls.filter(c=>c.args[0]==='worktree');assert.equal(add.length,1);assert.deepEqual(Array.from(add[0].args),['worktree','add','-b','review/custom','--','/remote/home/.herdr/worktrees/owner-repo/my-review','a'.repeat(40)]);assert.equal(add[0].options.on,'remote');
- assert.equal(h.opened[0].command,'space.new');assert.equal(h.opened[0].args.machine,'remote');assert.equal(h.opened[0].args.folder,add[0].args[5]);assert.equal(h.opened[0].args.tab,'my-review');assert.equal(h.opened[0].args.argv,undefined);
-});
-test('GitLab worktrees fetch the merge-request ref and nest the host in the folder name',async()=>{
- const h=worktreeHarness();h.mod.repo='gitlab.com/group/sub/repo';h.mod.worktreeForm.repo='gitlab.com/group/sub/repo';
- const original=h.context.exec;h.context.exec=async(cmd,args,options)=>args[0]==='remote'&&args.length>1?{code:0,stdout:'git@gitlab.com:group/sub/repo.git'}:original(cmd,args,options);
- h.mod.createWorktree(h.cx);await h.flush();
- const fetch=h.calls.find(c=>c.args[0]==='fetch');assert.equal(fetch.args[4],'refs/merge-requests/2/head');
- const add=h.calls.find(c=>c.args[0]==='worktree');assert.equal(add.args[5],'/home/user/.herdr/worktrees/gitlab.com-group-sub-repo/my-review');
- const bind=h.calls.find(c=>c.args[0]==='config'&&c.args[1]==='branch.review/custom.herdr-pr');assert.equal(bind.args[2],'gitlab.com/group/sub/repo#2');
-});
-test('pipeline checks group by runId and the detail header links to GitLab',()=>{
- const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr=pr();h.mod.pr.checks=[{name:'test',status:'COMPLETED',conclusion:'FAILURE',detailsUrl:'https://gitlab.com/g/p/-/jobs/100',workflowName:'Pipeline #55',runId:'55'},{name:'lint',status:'COMPLETED',conclusion:'SUCCESS',detailsUrl:'https://gitlab.com/g/p/-/jobs/101',workflowName:'Pipeline #55',runId:'55'}];
- h.mod.section='checks';const tree=h.mod.render();assert.ok(findElement(tree,'workflow-Pipeline #55:55'));assert.equal(findElement(tree,'workflow-Pipeline #55:external'),undefined);
- h.mod.checkOpen[`${h.mod.pr.id}:0`]=true;assert.match(strings(findElement(h.mod.render(),'check-0')),/View on GitLab/);
-});
-test('worktree creation rejects invalid paths, existing branches and unrelated repositories',async()=>{
- for(const scenario of ['path','branch','repo','head','git']){
-  const h=worktreeHarness(),original=h.context.exec;
-  if(scenario==='path')h.mod.worktreeForm.name.set_value('../escape');
-  h.context.exec=async(cmd,args,options)=>{
-   if(scenario==='branch'&&args[0]==='show-ref')return{code:0,stdout:''};
-   if(scenario==='repo'&&args[0]==='remote'&&args.length>1)return{code:0,stdout:'https://github.com/other/repo.git'};
-   if(scenario==='head'&&args[0]==='rev-parse')return{code:0,stdout:'b'.repeat(40)};
-   if(scenario==='git'&&args[0]==='worktree')return{code:128,stderr:'Path already exists'};
-   return original(cmd,args,options);
+  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {} });
+  const live = { spaces: [], panes: [], agents: [] };
+  const context = {
+    View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
+    Popover: { new: (id) => el().id(id) }, Input: { new: () => el() }, Textarea: { new: () => el() },
+    TextView: { markdown: (_id, text) => el().child(text) },
+    InputState: { new: state }, TextareaState: { new: state },
+    spaces: () => live.spaces, panes: () => live.panes, agents: () => live.agents,
+    exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
+    hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
+    run: (name, args) => ran.push([name, args]),
+    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
+    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
+    
+    nextCommand: () => new Promise(() => {}), knownAgents: async () => [],
+    localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
+    console,
   };
-  h.mod.createWorktree(h.cx);await h.flush();assert.ok(h.mod.worktreeForm.error,scenario);assert.equal(h.opened.length,0,scenario);assert.equal(h.mod.worktreeForm.busy||false,false);
- }
+  vm.createContext(context);
+  vm.runInContext(source, context);
+  const mod = new context.Mod();
+  mod.init({}, cx);
+  pending.length = 0;
+  mod.repo = 'owner/repo'; mod.sp = { id: 'space', folder: '/repo' }; mod.spaceKey = 'space'; mod.branchLoaded = true; mod.listLoaded = true;
+  return { mod, cx, live, storage, ran, sent, opened, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
+}
+const same = (actual, expected) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
+const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
+const strings = (node) => (typeof node === 'string' ? node : (node?.nodes ?? []).map(strings).join(' '));
+const click = (tree, id, h, event = {}) => { const node = find(tree, id); assert.ok(node, `no ${id}`); assert.ok(node.handlers.click, `${id} isn't clickable`); node.handlers.click(event, h.cx); };
+
+const PR = (over = {}) => ({
+  id: 'pr', number: 2, repository: 'owner/repo', title: 'Example', url: 'https://github.com/owner/repo/pull/2', body: 'Why it matters', state: 'OPEN', isDraft: false,
+  headRefOid: 'abc', headRefName: 'fix', baseRefName: 'main', author: { login: 'ann' }, reviewDecision: null, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN',
+  mergeMethods: ['squash', 'merge'], autoMergeAllowed: true, reviewers: [], checks: [], reviews: [], threads: [],
+  comments: [{ id: 'c1', body: 'First', url: 'https://x/c1', createdAt: '2026-01-01T00:00:00Z', author: { login: 'bob' } }],
+  ...over,
 });
-test('public previews cannot create a worktree and terminal failures preserve the checkout for retry',async()=>{
- const h=worktreeHarness();h.mod.preview={repo:'owner/repo'};h.mod.createWorktree(h.cx);await h.flush();assert.equal(h.calls.length,0);
- h.mod.preview=null;h.context.run=()=>{throw Error('unavailable')};h.mod.createWorktree(h.cx);await h.flush();assert.ok(h.mod.worktreeForm.path);assert.match(h.mod.worktreeForm.error,/Could not open/);
- h.mod.createWorktree(h.cx);await h.flush();assert.equal(h.calls.filter(c=>c.args[0]==='worktree').length,1);
- h.context.run=(command,args)=>h.opened.push({command,args});h.mod.openWorktree(h.mod.worktreeForm,h.cx);assert.equal(h.opened[0].command,'space.new');
-});
-test('Add to review starts a pending review for replies, appends general comments to its summary, shows Pending badges, and submits',async()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='conversation';const calls=[];
- h.mod.api=async r=>{calls.push(r);if(r.action==='start-review')return{addPullRequestReview:{pullRequestReview:{id:'rev1',state:'PENDING'}}};if(r.action==='detail')return h.mod.pr;return{}};
- h.mod.compose('reply','thread',null,h.cx,{entry:'thread'});h.mod.editor.set_value('hold this');
- findElement(h.mod.render(),'pr-pending').handlers.click({},h.cx);await h.flush();
- assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review??null,c.pullRequest??null,c.body??null]),[['start-review',null,'pr',null],['reply','rev1',null,'hold this']]);
- assert.match(h.mod.notice,/pending review/);assert.equal(h.mod.composer,null);
- const p=pr();p.reviews=[{id:'rev1',state:'PENDING',viewerDidAuthor:true,body:'',author:{login:'me'}}];p.threads[0].comments.push({id:'pend',body:'hold this',createdAt:'2026-01-03',author:{login:'me'},pullRequestReview:{id:'rev1',state:'PENDING'}});h.mod.pr=p;calls.length=0;
- let rendered=h.mod.render();assert.ok(findElement(rendered,'pr-pending-pend'));assert.equal(findElement(rendered,'conversation-rev1'),undefined);
- h.mod.compose('comment',null,null,h.cx);h.mod.editor.set_value('Overall fine');
- findElement(h.mod.render(),'pr-pending').handlers.click({},h.cx);await h.flush();
- assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review,c.body]),[['update-review','rev1','Overall fine']]);
- p.reviews[0].body='Overall fine';h.mod.pr=p;calls.length=0;rendered=h.mod.render();
- assert.ok(findElement(rendered,'conversation-rev1'));assert.match(strings(findElement(rendered,'conversation-rev1')),/Pending \(not submitted\)/);
- const submit=findElement(rendered,'pr-submit-review');assert.match(strings(submit),/Submit review \(2\)/);
- submit.handlers.click({},h.cx);await h.flush();
- assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.review,c.event]),[['submit-review','rev1','COMMENT']]);assert.match(h.mod.notice,/submitted/);
-});
-test('every comment card offers Copy link, which writes the comment URL to the clipboard',()=>{
- const h=harness();const p=pr();p.comments[0].url='https://github.com/o/r/pull/1#issuecomment-1';h.mod.pr=p;h.mod.section='conversation';const copied=[];h.cx.write_to_clipboard=text=>copied.push(text);
- findElement(h.mod.render(),'pr-copy-c').handlers.click({},h.cx);
- assert.deepEqual(copied,['https://github.com/o/r/pull/1#issuecomment-1']);assert.match(h.mod.notice,/copied/);
-});
-test('own comments and review replies get an Edit control that saves through the matching mutation',async()=>{
- const h=harness();const p=pr();p.comments[0].viewerCanUpdate=true;p.threads[0].comments[0].viewerCanUpdate=true;h.mod.pr=p;h.mod.section='conversation';const calls=[];
- h.mod.api=async r=>{calls.push(r);return r.action==='detail'?p:{}};
- let rendered=h.mod.render();assert.equal(findElement(rendered,'pr-edit-missing'),undefined);
- findElement(rendered,'pr-edit-c').handlers.click({},h.cx);assert.equal(h.mod.composer.kind,'edit');assert.equal(h.mod.editor.value(),'General');
- rendered=h.mod.render();assert.equal(findElement(rendered,'pr-pending'),undefined);assert.match(strings(findElement(rendered,'pr-submit')),/Save/);
- h.mod.editor.set_value('General, edited');findElement(rendered,'pr-submit').handlers.click({},h.cx);await h.flush();
- assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.comment,c.body]),[['edit-comment','c','General, edited']]);assert.equal(h.mod.composer,null);
- calls.length=0;const first=p.threads[0].comments[0];findElement(h.mod.render(),`pr-edit-${first.id}`).handlers.click({},h.cx);h.mod.editor.set_value('fixed');
- findElement(h.mod.render(),'pr-submit').handlers.click({},h.cx);await h.flush();
- assert.deepEqual(calls.filter(c=>c.action!=='detail').map(c=>[c.action,c.comment]),[['edit-reply',first.id]]);
- h.mod.preview={repo:'o/r'};assert.equal(findElement(h.mod.render(),'pr-edit-c'),undefined);
-});
-test('author filter is a native dropdown with a trigger, options and keyboard selection',()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='conversation';
- let rendered=h.mod.render();assert.ok(findElement(rendered,'pr-author-trigger'));assert.equal(findElement(rendered,'pr-author-menu'),undefined);
- findElement(rendered,'pr-author').handlers.open_change(true,h.cx);rendered=h.mod.render();
- const menu=findElement(rendered,'pr-author-menu');assert.ok(menu);assert.match(strings(menu),/All authors/);assert.match(strings(menu),/alice/);
- findElement(menu,'pr-author-2').handlers.click({},h.cx);assert.equal(h.mod.author,'bob');assert.equal(h.mod.authorOpen,false);
- findElement(h.mod.render(),'pr-author').handlers.open_change(true,h.cx);const open=findElement(h.mod.render(),'pr-author-menu');
- open.handlers.key_down({key:'up'},h.cx);open.handlers.key_down({key:'enter'},h.cx);assert.equal(h.mod.author,'alice');
-});
-test('worktree form lists installed agents and opens the new space with the chosen one in its first tab',async()=>{
- const h=worktreeHarness();await h.flush();
- let tree=h.mod.render();assert.match(strings(findElement(tree,'pr-worktree-launch-trigger')),/Terminal/);assert.equal(findElement(tree,'pr-worktree-launch-menu'),undefined);
- findElement(tree,'pr-worktree-launch').handlers.open_change(true,h.cx);tree=h.mod.render();const menu=findElement(tree,'pr-worktree-launch-menu');
- assert.match(strings(menu),/Claude Code/);assert.doesNotMatch(strings(menu),/Codex/);
- findElement(menu,'pr-worktree-launch-claude').handlers.click({},h.cx);tree=h.mod.render();assert.match(strings(findElement(tree,'pr-worktree-launch-trigger')),/Claude Code/);
- h.mod.createWorktree(h.cx);await h.flush();
- assert.equal(h.opened[0].command,'space.new');assert.deepEqual(h.opened[0].args.argv,['claude']);assert.equal(h.opened[0].args.tab,'my-review');assert.match(h.opened[0].args.folder,/my-review$/);assert.equal(h.mod.worktreeForm,null);
- assert.equal(findElement(h.mod.render(),'pr-worktree-launch-trigger'),undefined);
-});
-test('the form proposes the PR head branch and PR-<number> as the worktree',()=>{
- const h=harness();h.mod.pr=pr();h.mod.showWorktree(h.cx);const f=h.mod.worktreeForm;
- assert.equal(f.branch.value(),h.mod.pr.headRefName);assert.equal(f.name.value(),`PR-${h.mod.pr.number}`);
- f.branch.type('feature/one two',h.cx);assert.equal(f.name.value(),`PR-${h.mod.pr.number}`,'the worktree name is independent of the branch');
-});
-test('PR detail lists existing worktrees and a click switches to their space or opens one',async()=>{
- const h=harness(),opened=[];h.mod.pr=pr();h.mod.mode='browser';h.context.run=(command,args)=>opened.push({command,args});
- h.context.exec=async(cmd,args)=>{
-  if(args[0]==='config')return{code:0,stdout:'branch.fix.herdr-pr owner/repo#2\nbranch.fix-2.herdr-pr owner/repo#2\nbranch.other.herdr-pr owner/repo#9\n'};
-  if(args[0]==='worktree')return{code:0,stdout:'worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\nworktree /wt/pr-2\nHEAD bbb\nbranch refs/heads/fix\n\nworktree /wt/two\nHEAD ccc\nbranch refs/heads/fix-2\n\nworktree /wt/other\nHEAD ddd\nbranch refs/heads/other\n'};
-  return{code:0,stdout:''};
- };
- h.live.spaces=[{id:'wt',folder:'/wt/pr-2',machine:null,tabs:[]}];
- h.mod.loadWorktrees(h.cx);await h.flush();
- assert.equal(h.mod.currentWorktrees().map(w=>w.name).join(','),'pr-2,two');
- const tree=h.mod.render();const first=findElement(tree,'pr-worktree-row-0'),second=findElement(tree,'pr-worktree-row-1');
- assert.match(strings(first),/pr-2[\s\S]*Open$/);assert.match(strings(second),/two[\s\S]*fix-2[\s\S]*Open space/);
- first.handlers.click({},h.cx);assert.equal(opened[0].command,'space.select');assert.equal(opened[0].args.id,'wt');
- second.handlers.click({},h.cx);assert.equal(opened[1].command,'space.new');assert.equal(opened[1].args.folder,'/wt/two');
- h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.branch.value(),'fix-3');assert.equal(h.mod.worktreeForm.name.value(),'PR-2-2','an existing pr-2 folder is the same name on macOS');
+const openActions = (h) => find(h.mod.render(), 'pr-actions').handlers.open(true, h.cx);
+const THREAD = (over = {}) => ({ id: 't1', path: 'a.go', line: 3, isResolved: false, viewerCanReply: true, viewerCanResolve: true, comments: [{ id: 'tc', body: 'Rename this', url: 'https://x/t1', createdAt: '2026-01-02T00:00:00Z', diffHunk: '1\n2\n3\n4\n5\n6\n7\n8', author: { login: 'cam' } }], ...over });
+const FAILED = { name: 'build', conclusion: 'FAILURE', detailsUrl: 'https://github.com/owner/repo/actions/runs/77/job/88' };
+const AGENT = (address, over = {}) => ({ address, pane: `p-${address}`, space: 'space', tab_name: `Agent ${address}`, status: 'idle', ...over });
+
+// ── What GitHub's answers mean ──────────────────────────────────────────────
+
+test('the blocked-by line names each reason, worst first, and where to read about it', () => {
+  const { context: m } = harness();
+  const labels = (over) => m.mergeBlockers(PR(over)).map((b) => b.label);
+  same(labels({}), []);
+  same(labels({ checks: [FAILED, { name: 'lint', status: 'IN_PROGRESS' }], threads: [THREAD(), THREAD({ id: 't2', isResolved: true })], reviewDecision: 'CHANGES_REQUESTED', mergeable: 'CONFLICTING', mergeStateStatus: 'BEHIND' }),
+    ['Conflicts', '1 check failed', 'Changes requested', '1 unresolved', '1 check running', 'Behind main']);
+  same(labels({ isDraft: true, reviewDecision: 'REVIEW_REQUIRED' }), ['Draft', 'Review required']);
+  same(labels({ mergeStateStatus: 'BLOCKED' }), ['Blocked by branch rules']);
+  same(labels({ state: 'MERGED', checks: [FAILED] }), []);
+  const failed = m.mergeBlockers(PR({ checks: [FAILED] }))[0];
+  assert.equal(failed.section, 'checks');
+  assert.equal(failed.tone, 'danger');
 });
 
-test('GitLab checks load their pipeline jobs and match a job by its URL',async()=>{
- const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr=pr();h.mod.section='checks';const requests=[];
- h.mod.pr.checks=[{name:'test',status:'COMPLETED',conclusion:'FAILURE',detailsUrl:'https://gitlab.com/g/p/-/jobs/100',workflowName:'Pipeline #55',runId:'55'}];
- h.mod.api=async r=>{requests.push(r);return[{jobs:[{id:100,name:'test',conclusion:'failure',steps:[]},{id:101,name:'lint',conclusion:'success',steps:[]}]}]};
- h.mod.workflowOpen['Pipeline #55:55']=true;
- findElement(h.mod.render(),'check-toggle-0').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].action,'jobs');assert.equal(requests[0].run,55);
- const row=findElement(h.mod.render(),'check-0');assert.ok(findElement(row,'pr-log-100'));assert.equal(findElement(row,'pr-log-101'),undefined);
+test('actions follow the PR, offering merge when ready only while something is in the way', () => {
+  const { context: m } = harness();
+  const events = (over) => [...m.stateEvents(PR(over))];
+  same(events({}), ['squash', 'merge', 'close']);
+  same(events({ checks: [FAILED] }), ['auto', 'squash', 'merge', 'close']);
+  same(events({ checks: [FAILED], autoMergeAllowed: false }), ['squash', 'merge', 'close']);
+  same(events({ autoMergeRequest: { enabledAt: 'x' } }), ['cancel-auto', 'close']);
+  same(events({ isDraft: true }), ['close']);
+  same(events({ state: 'CLOSED' }), ['reopen']);
+  same(events({ state: 'MERGED' }), []);
 });
-test('list defaults reload the list unless a saved view exists',async()=>{
- const settings=async()=>JSON.stringify({settings:{list:{default:{state:'draft'}}}});
- let h=harness();h.context.readTextFile=settings;h.mod.mode='browser';h.mod.repo='o/r';let loads=0;h.mod.loadList=()=>loads++;
- h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.state,'draft');assert.equal(loads,1);
- h=harness();h.context.readTextFile=settings;h.mod.mode='browser';h.mod.repo='o/r';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
- h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.state,'open');assert.equal(loads,0);
+
+test('only GitHub remotes are accepted, including SSH aliases', () => {
+  const { context: m } = harness();
+  assert.equal(m.repositoryFromRemote('git@github.com:o/r.git\n'), 'o/r');
+  assert.equal(m.repositoryFromRemote('https://github.com/o/r'), 'o/r');
+  assert.equal(m.repositoryFromRemote('git@github-work:o/r.git'), 'o/r');
+  for (const bad of ['git@gitlab.com:g/p.git', 'https://github.com/o/r/x', 'git@work:o/r.git', 'nonsense'])
+    assert.throws(() => m.repositoryFromRemote(bad));
 });
-test('reloading the list on screen keeps loaded pages and their cursor',async()=>{
- const h=harness();h.mod.repo='o/r';h.mod.settings={...h.mod.settings,list:{...h.mod.settings.list,page_size:2}};
- const card=n=>({id:`p${n}`,number:n,updatedAt:`2026-01-0${9-n}`,reasons:[]});
- h.mod.items=[1,2,3,4].map(card);h.mod.cursors={all:'next'};h.mod.cache[h.mod.listKey()]={items:h.mod.items,cursors:h.mod.cursors};
- h.mod.api=async()=>({items:[{...card(1),title:'New'},card(2)],cursors:{all:'first'}});
- h.mod.loadList(h.cx);await h.flush();
- assert.equal(h.mod.items.length,4);assert.equal(h.mod.items[0].title,'New');assert.equal(h.mod.cursors.all,'next');
- h.mod.state='draft';h.mod.loadList(h.cx);await h.flush();assert.equal(h.mod.items.length,2);assert.equal(h.mod.cursors.all,'first');
+
+test('an agent is on a PR through its worktree, or by branch in this space', () => {
+  const { context: m } = harness();
+  const agents = [AGENT('in-worktree', { space: 'other' }), AGENT('on-branch'), AGENT('elsewhere'), AGENT('same-branch-other-space', { space: 'other' })];
+  const panes = [
+    { pane: 'p-in-worktree', cwd: '/wt/PR-2/sub', branch: 'x' }, { pane: 'p-on-branch', cwd: '/repo', branch: 'fix' },
+    { pane: 'p-elsewhere', cwd: '/repo', branch: 'main' }, { pane: 'p-same-branch-other-space', cwd: '/other', branch: 'fix' },
+  ];
+  const on = m.agentsOnPR({ agents, panes, pr: PR(), worktrees: [{ path: '/wt/PR-2' }], space: 'space' });
+  same([...on].map((a) => a.address), ['in-worktree', 'on-branch']);
 });
-test('GitLab bindings read back and repository names match in any case',async()=>{
- const h=harness();h.mod.mode='branch';const requests=[];
- h.context.exec=async(cmd,args)=>args[0]==='config'?{code:0,stdout:'gitlab.com/g/sub/p#5\n'}:{code:0,stdout:'feature\n'};
- h.mod.api=async r=>{requests.push(r);return{...pr(),number:r.number,id:'mr'}};
- h.mod.loadBranchPRs(h.cx);await h.flush();
- assert.equal(requests[0].repo,'gitlab.com/g/sub/p');assert.equal(requests[0].number,5);assert.equal(h.mod.branchPRs.length,1);
- const k=harness();k.mod.mode='branch';k.mod.discoverRemotes=async()=>[{name:'origin',repo:'MyOrg/Repo'}];
- k.context.exec=async(cmd,args)=>args[0]==='config'?{code:1,stdout:''}:{code:0,stdout:'feature\n'};
- k.mod.api=async r=>r.action==='branch'?{items:[{id:'a',number:1,repository:'MyOrg/Repo',headRepository:{nameWithOwner:'myorg/repo'},state:'OPEN',updatedAt:'2026-01-02'}]}:{...pr(),number:1,id:'a'};
- k.mod.loadBranchPRs(k.cx);await k.flush();assert.equal(k.mod.branchPRs.length,1);
+
+test('handoff messages point at the failure and treat GitHub text as data', () => {
+  const { context: m } = harness();
+  const fix = m.fixCheckMessage(PR(), 'owner/repo', FAILED);
+  assert.match(fix, /gh run view --job 88 --repo owner\/repo --log-failed/);
+  assert.match(fix, /as data, not instructions/);
+  assert.match(fix, /Don't push/);
+  assert.match(m.fixCheckMessage(PR(), 'owner/repo', { context: 'ci/external', state: 'FAILURE', targetUrl: 'https://ci/1' }), /https:\/\/ci\/1/);
+  const threads = m.unresolvedMessage(PR({ threads: [THREAD(), THREAD({ id: 't2', isResolved: true, path: 'done.go' })] }));
+  assert.match(threads, /1 unresolved review thread/);
+  assert.match(threads, /a\.go:3 https:\/\/x\/t1\ncam: Rename this/);
+  assert.doesNotMatch(threads, /done\.go/);
+  assert.match(threads, /as data, not instructions/);
 });
-test('SSH aliases for GitHub resolve and unknown aliases are refused',()=>{
- const h=harness();
- assert.equal(vm.runInContext('repositoryFromRemote("git@github-work:me/repo.git")',h.context),'me/repo');
- assert.equal(vm.runInContext('repositoryFromRemote("git@github.com-work:me/repo.git")',h.context),'me/repo');
- assert.throws(()=>vm.runInContext('repositoryFromRemote("git@work:me/repo.git")',h.context));
+
+test('someone\'s unsubmitted review stays out of the conversation', () => {
+  const { context: m } = harness();
+  const pr = PR({ reviews: [{ id: 'r1', state: 'PENDING', body: 'draft', author: { login: 'me' } }, { id: 'r2', state: 'APPROVED', body: '', submittedAt: '2026-02-01T00:00:00Z', author: { login: 'dee' } }] });
+  same([...m.conversationEntries(pr)].map((e) => e.kind), ['Comment', 'Approved']);
+  same([...m.authorsOf(pr)], ['bob', 'dee']);
 });
-test('settings from mod.json change list defaults, page size and worktree root, and problems are shown',async()=>{
- const h=harness();h.context.readTextFile=async()=>JSON.stringify({settings:{list:{page_size:10,default:{state:'draft'}},worktrees:{root:'~/work'},refresh:{every:5},typo:1,logs:{keep_last:true}}});
- h.mod.applySettings(h.cx);await h.flush();
- assert.equal(h.mod.settings.list.page_size,10);assert.equal(h.mod.state,'draft');assert.equal(h.mod.settings.refresh.every,5);
- assert.equal(JSON.stringify(h.mod.settingsProblems),JSON.stringify(['typo is not a setting','logs.keep_last should be a string']));
- h.mod.repo='o/r';h.mod.mode='browser';const requests=[];h.mod.api=async r=>{requests.push(r);return{items:[],cursors:{}}};h.mod.loadList(h.cx);await h.flush();
- assert.equal(requests[0].pageSize,10);
- const execs=[];h.context.exec=async(cmd,args)=>{execs.push(JSON.parse(args[0]));return{code:0,stdout:'{}'}};delete h.mod.api;await h.mod.api({action:'detail'});assert.equal(execs[0].tools.github,'gh');
- h.mod.pr=pr();h.mod.showWorktree(h.cx);assert.match(strings(h.mod.worktreeView({})),/~\/work\/o-r\//);
- assert.match(strings(h.mod.render()),/typo is not a setting/);
+
+// ── The detail views ────────────────────────────────────────────────────────
+
+test('an open PR shows the same stats on one line, and each goes to where it is explained', () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [FAILED, { name: 'ok', conclusion: 'SUCCESS' }], threads: [THREAD()], reviewDecision: 'CHANGES_REQUESTED', reviewers: [{ login: 'a', state: 'CHANGES_REQUESTED' }, { login: 'b', state: 'APPROVED' }, { login: 'c', state: 'COMMENTED' }] });
+  let tree = h.mod.render();
+  const text = (key) => strings(find(tree, `pr-stat-${key}`)).replace(/\s+/g, ' ').trim();
+  assert.equal(text('checks'), 'Checks 1/2');
+  assert.equal(text('reviews'), 'Reviews 1/2');
+  assert.equal(find(tree, 'pr-stat-reviews').tooltip, 'Changes requested');
+  assert.equal(text('unresolved'), 'Unresolved 1');
+  assert.equal(find(tree, 'pr-stat-merge'), undefined, 'the others already say it is blocked');
+  assert.equal(find(tree, 'pr-stat-checks').tooltip, '1 failed, 1 passed');
+  assert.match(strings(find(tree, 'pr-about')), /ann · fix → main/);
+  click(tree, 'pr-stat-unresolved', h);
+  assert.equal(h.mod.section, 'conversation');
+  assert.equal(h.mod.unresolved, true);
+  click(h.mod.render(), 'pr-stat-checks', h);
+  assert.equal(h.mod.section, 'checks');
+  h.mod.pr = PR();
+  tree = h.mod.render();
+  assert.equal(text('merge'), 'Merge Ready');
+  assert.equal(text('checks'), 'Checks –');
+  assert.equal(text('unresolved'), 'Unresolved 0');
+  h.mod.pr = PR({ mergeable: 'CONFLICTING' });
+  tree = h.mod.render();
+  assert.equal(text('merge'), 'Merge Conflicts');
+  h.mod.pr = PR({ autoMergeRequest: { enabledAt: 'x' } });
+  tree = h.mod.render();
+  assert.equal(text('merge'), 'Merge Auto');
+  h.mod.pr = PR({ state: 'MERGED' });
+  assert.equal(find(h.mod.render(), 'pr-stats'), undefined);
 });
-test('merge, close and reopen ask first, follow the PR state and reload it',async()=>{
- const h=harness(),requests=[];h.mod.repo='o/r';const open={...pr(),mergeMethods:['squash','rebase']};h.mod.pr=open;
- h.mod.api=async r=>{requests.push(r);return r.action==='detail'?{...pr(),state:'MERGED'}:{ok:true}};
- let tree=h.mod.render();
- assert.match(strings(findElement(tree,'pr-change')),/Squash and merge/);
- h.mod.actionMenu='pr-change';tree=h.mod.render();
- assert.ok(findElement(tree,'pr-change-option-rebase'));assert.ok(findElement(tree,'pr-change-option-close'));assert.equal(findElement(tree,'pr-change-option-merge'),undefined);
- h.mod.actionMenu=null;
- findElement(h.mod.render(),'pr-change-main').handlers.click({},h.cx);await h.flush();
- assert.equal(requests.length,0,'choosing only asks');
- tree=h.mod.render();assert.match(strings(findElement(tree,'pr-change-confirm')),/Squash and merge #2 from fix into main\? This cannot be undone/);
- findElement(tree,'pr-change-cancel').handlers.click({},h.cx);assert.equal(findElement(h.mod.render(),'pr-change-confirm'),undefined);
- findElement(h.mod.render(),'pr-change-main').handlers.click({},h.cx);
- assert.ok(findElement(h.mod.render(),'pr-squash-message'));assert.equal(h.mod.squashMessage.value(),'Example (#2)\n\nDescription','prefilled from the PR');
- h.mod.squashMessage.set_value('  ');findElement(h.mod.render(),'pr-change-yes').handlers.click?.({},h.cx);await h.flush();assert.equal(requests.length,0,'a blank message cannot be sent');
- h.mod.squashMessage.set_value('Tidy up (#2)\n\nWhy');assert.equal(h.mod.editor.value(),'','a comment draft is untouched');
- h.mod.items=[{id:'old'}];
- findElement(h.mod.render(),'pr-change-yes').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].action,'change-state');assert.equal(requests[0].event,'squash');assert.equal(requests[0].head,'abc');assert.equal(requests[0].number,2);assert.equal(requests[0].body,'Tidy up (#2)\n\nWhy');
- assert.equal(requests[1].action,'detail');assert.equal(h.mod.items.length,0);assert.equal(h.mod.notice,'Squashed and merged.');assert.equal(h.mod.stateChange,null);
- assert.equal(findElement(h.mod.render(),'pr-change'),undefined,'a merged PR has no state action');
- h.mod.pr={...pr(),state:'CLOSED'};tree=h.mod.render();assert.equal(findElement(tree,'pr-change'),undefined);assert.ok(findElement(tree,'pr-change-reopen'));
- h.mod.pr={...pr(),isDraft:true};tree=h.mod.render();assert.equal(findElement(tree,'pr-change'),undefined);assert.ok(findElement(tree,'pr-change-close'),'a draft cannot merge');
- h.mod.pr=pr();h.mod.preview={repo:'o/r'};assert.equal(findElement(h.mod.render(),'pr-change'),undefined,'previews are read-only');
+
+test('merging asks first, names the head it saw, and a failure keeps the question', async () => {
+  const h = harness();
+  h.mod.pr = PR({ body: 'Body' });
+  const calls = [];
+  h.mod.api = async (r) => { calls.push(r); if (r.action === 'change-state' && h.fail) throw Error('Refused'); return r.action === 'detail' ? PR() : {}; };
+  openActions(h);
+  click(h.mod.render(), 'pr-actions-option-squash', h);
+  assert.equal(calls.length, 0, 'nothing happens before confirming');
+  assert.equal(h.mod.squashMessage.value(), 'Example (#2)\n\nBody');
+  h.fail = true;
+  click(h.mod.render(), 'pr-change-yes', h); await h.flush();
+  assert.match(h.mod.error, /Refused/);
+  assert.ok(find(h.mod.render(), 'pr-change-confirm'));
+  h.fail = false;
+  click(h.mod.render(), 'pr-change-yes', h); await h.flush();
+  const merge = calls.filter((c) => c.action === 'change-state').pop();
+  assert.equal(merge.event, 'squash'); assert.equal(merge.head, 'abc'); assert.match(merge.body, /Example \(#2\)/);
+  assert.equal(find(h.mod.render(), 'pr-change-confirm'), undefined);
 });
-test('a failed merge keeps the confirmation and shows why',async()=>{
- const h=harness();h.mod.repo='o/r';h.mod.pr=pr();h.mod.api=async()=>{throw Error('GitHub: required checks have not passed')};
- h.mod.askStateChange('merge',h.cx);assert.equal(findElement(h.mod.render(),'pr-squash-message'),undefined,'only a squash has a message');h.mod.changeState(h.cx);await h.flush();
- assert.match(h.mod.error,/required checks/);assert.ok(h.mod.stateChange);assert.equal(h.mod.mutating,false);
+
+test('merge when ready uses the repository\'s first method and can be cancelled', async () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [FAILED] });
+  const calls = [];
+  h.mod.api = async (r) => { calls.push(r); return r.action === 'detail' ? PR({ autoMergeRequest: { enabledAt: 'x' } }) : {}; };
+  openActions(h);
+  click(h.mod.render(), 'pr-actions-option-auto', h);
+  click(h.mod.render(), 'pr-change-yes', h); await h.flush();
+  assert.equal(calls[0].event, 'auto'); assert.equal(calls[0].method, 'squash'); assert.equal(calls[0].head, 'abc');
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-stat-merge')), /Auto/);
+  openActions(h);
+  assert.ok(find(h.mod.render(), 'pr-actions-option-cancel-auto'));
 });
-test('reviewers show who stands where and can be re-requested, added and removed',async()=>{
- const h=harness(),requests=[];h.mod.repo='o/r';
- const rows=[{login:'ann',state:'APPROVED'},{login:'bob',state:'CHANGES_REQUESTED'},{login:'dan',state:'REQUESTED'},{login:'org/core',state:'REQUESTED',team:true}];
- h.mod.pr={...pr(),reviewDecision:'CHANGES_REQUESTED',reviewers:rows};
- h.mod.api=async r=>{requests.push(r);return r.action==='detail'?h.mod.pr:{ok:true}};
- let tree=h.mod.render();
- assert.match(strings(findElement(tree,'pr-reviewers')),/Reviewers[\s\S]*Changes requested/);
- assert.match(strings(findElement(tree,'pr-reviewer-ann')),/ann[\s\S]*Approved/);
- assert.match(strings(findElement(tree,'pr-reviewer-bob')),/bob[\s\S]*Changes requested/);
- assert.match(strings(findElement(tree,'pr-reviewer-dan')),/dan[\s\S]*Review requested/);
- assert.ok(findElement(tree,'pr-reviewer-rerequest-ann'));assert.equal(findElement(tree,'pr-reviewer-remove-ann'),undefined,'a submitted GitHub review cannot be removed');
- assert.ok(findElement(tree,'pr-reviewer-remove-dan'));assert.equal(findElement(tree,'pr-reviewer-rerequest-dan'),undefined,'a waiting reviewer has nothing to re-request');
- findElement(tree,'pr-reviewer-rerequest-bob').handlers.click({},h.cx);await h.flush();
- assert.deepEqual({...requests[0]},{action:'reviewer',repo:'o/r',number:2,event:'rerequest',reviewer:'bob'});assert.equal(requests[1].action,'detail');assert.match(h.mod.notice,/bob to review again/);
- requests.length=0;
- findElement(h.mod.render(),'pr-reviewer-remove-org/core').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].event,'remove');assert.equal(requests[0].reviewer,'org/core');
- requests.length=0;
- findElement(h.mod.render(),'pr-reviewer-add').handlers.click({},h.cx);
- tree=h.mod.render();assert.ok(findElement(tree,'pr-reviewer-input'));assert.equal(findElement(tree,'pr-reviewer-add'),undefined);
- h.mod.reviewerInput.set_value(' @eve ');findElement(h.mod.render(),'pr-reviewer-save').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].event,'add');assert.equal(requests[0].reviewer,'eve');assert.equal(findElement(h.mod.render(),'pr-reviewer-input'),undefined);
- for(const closed of [{state:'MERGED'},{state:'CLOSED'}]){h.mod.pr={...pr(),...closed,reviewers:rows};tree=h.mod.render();assert.match(strings(findElement(tree,'pr-reviewers')),/ann/);assert.equal(findElement(tree,'pr-reviewer-add'),undefined);assert.equal(findElement(tree,'pr-reviewer-rerequest-ann'),undefined);}
- h.mod.pr={...pr(),reviewers:rows};h.mod.preview={repo:'o/r'};tree=h.mod.render();assert.equal(findElement(tree,'pr-reviewer-add'),undefined);assert.equal(findElement(tree,'pr-reviewer-remove-dan'),undefined);
+
+test('the list has Branch and Repo tabs, remembered, with no center tab', async () => {
+  const storage = new Map();
+  const h = harness({ storage });
+  h.mod.branchPRs = [{ id: 'a', number: 1, title: 'Mine', state: 'OPEN', updatedAt: new Date().toISOString(), repository: 'owner/repo', author: { login: 'ann' } }];
+  const theirs = [{ id: 'b', number: 9, title: 'Theirs', state: 'OPEN', headRefName: 'other', updatedAt: new Date().toISOString(), author: { login: 'bob' } }];
+  h.mod.items = theirs;
+  h.mod.cursors = { all: 'next' };
+  h.mod.api = async () => ({ items: theirs, cursors: {} });
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-view-branch')), /Branch 1/);
+  assert.match(strings(find(tree, 'pr-view-all')), /Repo 1\+/);
+  assert.ok(find(tree, 'pr-a')); assert.equal(find(tree, 'pr-b'), undefined);
+  assert.equal(find(tree, 'pr-filter-row'), undefined, 'filters belong to All PRs');
+  assert.ok(find(tree.nodes[0], 'pr-refresh'), 'refresh stays in the header');
+  click(tree, 'pr-view-all', h); await h.flush();
+  tree = h.mod.render();
+  assert.ok(find(tree, 'pr-b')); assert.equal(find(tree, 'pr-a'), undefined);
+  assert.ok(find(tree, 'pr-filter-row'));
+  assert.equal(storage.get('view'), 'all');
+  assert.equal(harness({ storage }).mod.view, 'all');
+  assert.equal(h.ran.length, 0, 'nothing opens a tab');
 });
-test('GitLab reviewers can be removed after reviewing, and an unreadable list says so',async()=>{
- const h=harness();h.mod.repo='gitlab.com/g/p';h.mod.pr={...pr(),reviewers:[{login:'ann',state:'APPROVED'}]};
- assert.ok(findElement(h.mod.render(),'pr-reviewer-remove-ann'));
- h.mod.repo='o/r';h.mod.pr={...pr(),reviewers:[],reviewersError:'needs read:org'};assert.match(strings(findElement(h.mod.render(),'pr-reviewers')),/Could not read reviewers/);
- h.mod.pr={...pr(),reviewers:[]};assert.match(strings(findElement(h.mod.render(),'pr-reviewers')),/No reviewers yet/);
- h.mod.pr={...pr(),reviewers:[]};h.mod.api=async()=>{throw Error('GitHub: not a collaborator')};h.mod.changeReviewer('add','eve',h.cx);await h.flush();assert.match(h.mod.error,/not a collaborator/);assert.equal(h.mod.mutating,false);
+
+test('a PR opens like a commit: the tabs stay, a busy view shows while it loads', async () => {
+  const h = harness();
+  const other = { id: 'z', number: 8, title: 'Other', state: 'CLOSED', updatedAt: '', repository: 'up/stream', author: { login: 'ann' } };
+  h.mod.branchPRs = [{ id: 'a', number: 7, title: 'Fork PR', state: 'OPEN', updatedAt: '', repository: 'up/stream', author: { login: 'ann' } }, other];
+  const asked = [];
+  let finish;
+  h.mod.api = (r) => { asked.push(r); return r.action === 'detail' ? new Promise((done) => { finish = () => done(PR({ number: 7 })); }) : Promise.resolve({ items: [], cursors: {} }); };
+  click(h.mod.render(), 'pr-a', h);
+  assert.equal(asked[0].repo, 'up/stream', 'its own repository, not the list\'s');
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-busy')), /Loading #7/);
+  assert.ok(find(tree, 'pr-view-branch'), 'the tabs stay');
+  assert.equal(find(tree, 'pr-a'), undefined, 'the whole content is busy');
+  assert.ok(find(tree, 'pr-back'), 'and you can still leave');
+  finish(); await h.flush();
+  assert.equal(h.mod.pr.repository, 'up/stream');
+  tree = h.mod.render();
+  assert.equal(find(tree, 'pr-busy'), undefined);
+  assert.ok(find(tree.nodes[0], 'pr-view-branch'), 'tabs on top, as with a commit');
+  assert.ok(find(tree.nodes[0], 'pr-refresh'));
+  assert.equal(tree.nodes[1].elementId, 'pr-about', 'no row just for the number');
+  const about = tree.nodes[1];
+  assert.match(strings(about.nodes[0]), /Example[\s\S]*#7/);
+  assert.ok(find(about.nodes[0], 'pr-detail-github'), 'GitHub with the title');
+  assert.ok(find(about.nodes[1], 'pr-actions'), 'Actions with the branches');
+  assert.match(strings(about.nodes[1]), /ann · fix → main/);
+  const ids = tree.nodes.map((n) => n.elementId);
+  assert.ok(ids.indexOf('pr-about') < ids.indexOf('pr-detail-tabs'));
+  assert.ok(find(tree, 'pr-create-worktree'), 'worktrees are here too');
+  assert.ok(find(tree, 'pr-footer'));
+  click(tree, 'pr-back', h);
+  assert.equal(h.mod.pr, null);
+  assert.ok(find(h.mod.render(), 'pr-a'));
 });
-test('the checks tab shows the overall state as an icon',()=>{
- const h=harness(),base=h.context.svg;h.context.svg=path=>base().id(path);h.mod.pr=pr();
- const icon=checks=>{h.mod.pr.checks=checks;return findElement(h.mod.render(),'pr-checks').nodes.filter(n=>/check-/.test(n?.elementId??'')).map(n=>n.elementId).join()};
- assert.equal(icon([{status:'IN_PROGRESS'}]),'mods/branch-pr/check-running.svg');
- assert.equal(icon([{status:'COMPLETED',conclusion:'SUCCESS'}]),'mods/branch-pr/check-success.svg');
- assert.equal(icon([{status:'COMPLETED',conclusion:'SUCCESS'},{status:'COMPLETED',conclusion:'FAILURE'},{status:'IN_PROGRESS'}]),'mods/branch-pr/check-failure.svg');
- assert.equal(icon([]),'');
+
+test('a branch with one PR shows it straight away, with no back button', async () => {
+  const card = { id: 'a', number: 1, title: 'Only', state: 'OPEN', updatedAt: '', repository: 'owner/repo', author: { login: 'ann' }, headRepository: { nameWithOwner: 'owner/repo' } };
+  const h = harness({ exec: git([['symbolic-ref', 'fix\n'], ['remote get-url origin', 'git@github.com:owner/repo.git'], ['git remote', 'origin\n']]) });
+  h.mod.listLoaded = true;
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r.action); if (r.action === 'branch') return { items: [card] }; if (r.action === 'detail') return PR({ number: 1 }); return { items: [], cursors: {} }; };
+  h.mod.loadBranchPRs(h.cx); await h.flush();
+  assert.equal(h.mod.pr.number, 1);
+  let tree = h.mod.render();
+  assert.equal(find(tree, 'pr-back'), undefined);
+  assert.ok(find(tree, 'pr-actions'));
+  const reads = asked.length;
+  click(tree, 'pr-view-branch', h); await h.flush();
+  assert.equal(h.mod.pr.number, 1, 'its own tab keeps it open');
+  assert.equal(asked.length, reads);
+  click(tree, 'pr-view-all', h); await h.flush();
+  assert.equal(h.mod.pr, null);
+  assert.equal(h.mod.view, 'all');
+  click(h.mod.render(), 'pr-view-branch', h); await h.flush();
+  assert.equal(h.mod.pr.number, 1, 'and coming back opens it again');
+  // A second PR on the branch brings the list and back button back.
+  h.mod.branchPRs = [card, { ...card, id: 'b', number: 2 }];
+  assert.ok(find(h.mod.render(), 'pr-back'));
 });
-test('add comment opens a focused editor outside the scrolling conversation',()=>{
- const h=harness();h.mod.pr=pr();h.mod.section='conversation';
- findElement(h.mod.render(),'pr-add-comment').handlers.click({},h.cx);
- assert.equal(h.mod.editor.focused,true);
- const root=h.mod.render();
- assert.ok(findElement(root,'pr-composer-general'));
- assert.equal(findElement(findElement(root,`pr-detail-owner/repo-pr-conversation`),'pr-composer-general'),undefined);
+
+test('tabs show a spinner, not a number, and can\'t be clicked until first loaded', async () => {
+  const h = harness();
+  h.mod.branchLoaded = false; h.mod.listLoaded = false;
+  let tree = h.mod.render();
+  for (const id of ['pr-view-branch', 'pr-view-all']) {
+    assert.equal(find(tree, id).handlers.click, undefined);
+    assert.doesNotMatch(strings(find(tree, id)), /\d/);
+  }
+  h.mod.branchLoaded = true; h.mod.listLoaded = true; h.mod.total = 4;
+  h.mod.branchPRs = [];
+  tree = h.mod.render();
+  assert.ok(find(tree, 'pr-view-branch').handlers.click); assert.ok(find(tree, 'pr-view-all').handlers.click);
+  assert.match(strings(find(tree, 'pr-view-all')), /Repo 4/);
+  // Refreshing a filter already read keeps its number; a new filter doesn't.
+  h.mod.cache[h.mod.listKey()] = { items: [], cursors: {} };
+  h.mod.loading = true;
+  assert.match(strings(find(h.mod.render(), 'pr-view-all')), /Repo 4/);
+  h.mod.cache = {};
+  assert.doesNotMatch(strings(find(h.mod.render(), 'pr-view-all')), /\d/);
+});
+
+test('a load that never answers can\'t keep the tabs locked', () => {
+  const h = harness();
+  h.mod.spaceKey = ''; // no space here, so the poll doesn't see a change of space
+  h.mod.listLoaded = false; h.mod.branchLoaded = false;
+  h.mod.contextSince = Date.now();
+  h.tick();
+  assert.equal(h.mod.listLoaded, false);
+  h.mod.contextSince = Date.now() - 31000;
+  h.tick();
+  assert.equal(h.mod.listLoaded, true);
+  assert.equal(h.mod.branchLoaded, true);
+});
+
+test('a missing or logged-out gh takes over the panel and can be retried', async () => {
+  const h = harness();
+  h.mod.api = async () => { throw Error('GitHub CLI is not logged in. Run `gh auth login` in a terminal, then refresh.'); };
+  h.mod.loadList(h.cx); await h.flush();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-gh-problem')), /isn't logged in[\s\S]*gh auth login/);
+  assert.equal(find(tree, 'pr-get-gh'), undefined);
+  h.mod.error = 'GitHub CLI (gh) is not installed. Install it from https://cli.github.com, run `gh auth login`, then refresh.';
+  tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-gh-problem')), /isn't installed/);
+  find(tree, 'pr-get-gh').handlers.click({}, h.cx);
+  same(h.opened, ['https://cli.github.com']);
+  // An open PR gives way too, and any other error stays a line.
+  h.mod.pr = PR();
+  assert.ok(find(h.mod.render(), 'pr-gh-problem'));
+  h.mod.error = 'Something else';
+  assert.equal(find(h.mod.render(), 'pr-gh-problem'), undefined);
+  assert.match(strings(find(h.mod.render(), 'pr-error')), /Something else/);
+  // Retry clears it.
+  h.mod.error = 'GitHub CLI is not logged in. Run gh auth login';
+  h.mod.pr = null;
+  h.mod.refresh = () => { h.refreshed = true; };
+  find(h.mod.render(), 'pr-gh-retry').handlers.click({}, h.cx);
+  assert.equal(h.refreshed, true);
+  assert.equal(h.mod.error, null);
+});
+
+test('refreshing waits while the panel is hidden, and resumes when it shows', () => {
+  const { context: m } = harness();
+  const panel = (active) => ({ type: 'row', children: [{ id: 'panel', type: 'column', children: [{ id: 'panel-body', type: 'stack', active, children: [{ id: 'files', content: { mod: 'files' } }, { id: 'pulls', content: { mod: 'branch-pr' } }] }] }] });
+  assert.equal(m.panelShown(panel('pulls'), 'branch-pr'), true);
+  assert.equal(m.panelShown(panel('files'), 'branch-pr'), false);
+  const hiddenColumn = panel('pulls'); hiddenColumn.children[0].hidden = true;
+  assert.equal(m.panelShown(hiddenColumn, 'branch-pr'), false);
+  assert.equal(m.panelShown(null, 'branch-pr'), false);
+  const noActive = panel('pulls'); delete noActive.children[0].children[0].active;
+  assert.equal(m.panelShown(noActive, 'branch-pr'), false, 'a stack with none chosen shows its first');
+  noActive.children[0].children[0].children.reverse();
+  assert.equal(m.panelShown(noActive, 'branch-pr'), true);
+});
+
+test('the next batch is offered at the end of the list, saying how many', async () => {
+  const h = harness();
+  h.mod.view = 'all'; h.mod.branchLoaded = true; h.mod.listLoaded = true;
+  const row = (n) => ({ id: `p${n}`, number: n, title: 'T', state: 'OPEN', headRefName: 'b', updatedAt: `2026-01-${10 + n}`, author: { login: 'a' } });
+  h.mod.items = [row(1), row(2)];
+  h.mod.total = 30; h.mod.cursors = { all: 'next' };
+  h.mod.settings = { ...h.mod.settings, list: { ...h.mod.settings.list, page_size: 25 } };
+  assert.match(strings(find(h.mod.render(), 'pr-more')), /\+ 25 more/);
+  h.mod.total = 4;
+  assert.match(strings(find(h.mod.render(), 'pr-more')), /\+ 2 more/);
+  h.mod.total = null;
+  assert.match(strings(find(h.mod.render(), 'pr-more')), /\+ more/);
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return { items: [row(3)], cursors: {} }; };
+  click(h.mod.render(), 'pr-more', h); await h.flush();
+  assert.equal(asked[0].cursors.all, 'next');
+  assert.equal(h.mod.items.length, 3);
+  assert.equal(find(h.mod.render(), 'pr-more'), undefined);
+});
+
+test('going back while a PR loads cancels it, and a failure returns to the list', async () => {
+  const h = harness();
+  const other = { id: 'z', number: 8, title: 'Other', state: 'CLOSED', updatedAt: '', repository: 'o/r', author: { login: 'ann' } };
+  h.mod.branchPRs = [{ id: 'a', number: 7, title: 'T', state: 'OPEN', updatedAt: '', repository: 'o/r', author: { login: 'ann' } }, other];
+  let finish;
+  h.mod.api = (r) => (r.action === 'detail' ? new Promise((done) => { finish = () => done(PR({ number: 7 })); }) : Promise.resolve({ items: [], cursors: {} }));
+  click(h.mod.render(), 'pr-a', h);
+  click(h.mod.render(), 'pr-back', h);
+  finish(); await h.flush();
+  assert.equal(h.mod.pr, null);
+  assert.equal(find(h.mod.render(), 'pr-busy'), undefined);
+  h.mod.api = async () => { throw Error('down'); };
+  click(h.mod.render(), 'pr-a', h); await h.flush();
+  const tree = h.mod.render();
+  assert.equal(find(tree, 'pr-busy'), undefined);
+  assert.ok(find(tree, 'pr-a')); assert.ok(find(tree, 'pr-retry'));
+});
+
+test('a tab click from a PR goes to that list', async () => {
+  const h = harness();
+  h.mod.api = async () => ({ items: [], cursors: {} });
+  h.mod.pr = PR();
+  click(h.mod.render(), 'pr-view-all', h); await h.flush();
+  assert.equal(h.mod.pr, null);
+  assert.equal(h.mod.view, 'all');
+});
+
+test('the count is GitHub\'s total for the filter, not what happens to be loaded', async () => {
+  const h = harness();
+  h.mod.api = async () => ({ items: [{ id: 'x', number: 1, title: 'T', state: 'OPEN', updatedAt: '', headRefName: 'b', author: { login: 'a' } }], cursors: { all: 'next' }, total: 137 });
+  h.mod.loadList(h.cx); await h.flush();
+  assert.match(strings(find(h.mod.render(), 'pr-view-all')), /Repo 137/);
+  h.mod.api = async () => ({ items: [{ id: 'x', number: 1, title: 'T', state: 'OPEN', updatedAt: '', headRefName: 'b', author: { login: 'a' } }], cursors: { involves: 'next' } });
+  h.mod.tab = 'involved';
+  h.mod.loadList(h.cx); await h.flush();
+  assert.match(strings(find(h.mod.render(), 'pr-view-all')), /Repo 1\+/);
+});
+
+test('every action is in the header menu, Close set apart, and none on a merged PR', () => {
+  const h = harness();
+  h.mod.pr = PR();
+  assert.equal(find(h.mod.render(), 'pr-change-close'), undefined);
+  openActions(h);
+  const tree = h.mod.render();
+  for (const id of ['squash', 'merge', 'close']) assert.ok(find(tree, `pr-actions-option-${id}`));
+  h.mod.pr = PR({ state: 'MERGED' });
+  assert.equal(find(h.mod.render(), 'pr-actions'), undefined);
+});
+
+test('the confirmation shows from any tab', () => {
+  const h = harness();
+  h.mod.pr = PR();
+  h.mod.section = 'checks';
+  openActions(h);
+  click(h.mod.render(), 'pr-actions-option-close', h);
+  assert.ok(find(h.mod.render(), 'pr-change-confirm'));
+});
+
+test('Overview groups collapse and stay that way; a resolved thread starts shut', () => {
+  const storage = new Map();
+  const h = harness({ storage });
+  h.mod.pr = PR({ reviewers: [{ login: 'ann', state: 'APPROVED' }], threads: [THREAD({ isResolved: true })] });
+  let tree = h.mod.render();
+  assert.ok(find(tree, 'pr-reviewer-ann'));
+  click(tree, 'pr-group-reviewers', h);
+  tree = h.mod.render();
+  assert.equal(find(tree, 'pr-reviewer-ann'), undefined);
+  assert.match(strings(find(tree, 'pr-group-reviewers')), /Reviewers\s+1/);
+  const again = harness({ storage });
+  again.mod.pr = h.mod.pr;
+  assert.equal(find(again.mod.render(), 'pr-reviewer-ann'), undefined);
+  h.mod.section = 'conversation';
+  tree = h.mod.render();
+  assert.doesNotMatch(strings(tree), /Rename this/);
+  click(tree, 'pr-entry-toggle-t1', h);
+  assert.match(strings(h.mod.render()), /Rename this/);
+});
+
+test('agents on the PR are listed and a click goes to them', () => {
+  const h = harness();
+  h.mod.pr = PR();
+  h.live.agents = [AGENT('t1', { status: 'working' })];
+  h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-agent-t1')), /Agent t1 working/);
+  find(tree, 'pr-agent-t1').handlers.click({}, h.cx);
+  same(h.ran.at(-1), ['agent.focus', { terminal: 't1' }]);
+});
+
+test('reviewers show their standing and can be asked again, but only while open', async () => {
+  const h = harness();
+  h.mod.pr = PR({ reviewDecision: 'CHANGES_REQUESTED', reviewers: [{ login: 'ann', state: 'CHANGES_REQUESTED' }, { login: 'bob', state: 'REQUESTED' }] });
+  const calls = [];
+  h.mod.api = async (r) => { calls.push(r); return r.action === 'detail' ? h.mod.pr : {}; };
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-group-reviewers')), /Reviewers\s+2\s+Changes requested/);
+  assert.equal(find(tree, 'pr-reviewer-again-bob'), undefined, 'still waiting on them');
+  click(tree, 'pr-reviewer-again-ann', h, {}); await h.flush();
+  assert.equal(calls[0].action, 'reviewer'); assert.equal(calls[0].reviewer, 'ann');
+  h.mod.pr = PR({ state: 'CLOSED', reviewers: [{ login: 'ann', state: 'APPROVED' }] });
+  assert.equal(find(h.mod.render(), 'pr-reviewer-again-ann'), undefined);
+});
+
+test('checks group by run, fetch jobs on opening, and a failure goes to the agent in one click', async () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [{ name: 'lint', conclusion: 'SUCCESS', workflowName: 'CI', detailsUrl: 'https://github.com/o/r/actions/runs/77/job/1' }, { ...FAILED, workflowName: 'CI' }] });
+  h.mod.section = 'checks';
+  h.live.agents = [AGENT('t1')];
+  h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
+  const calls = [];
+  h.mod.api = async (r) => { calls.push(r); return r.action === 'jobs' ? [{ jobs: [{ id: 88, name: 'build', conclusion: 'failure', steps: [{ name: 'Run tests', conclusion: 'failure' }] }] }] : { text: 'boom', truncated: false }; };
+  let tree = h.mod.render();
+  assert.match(strings(tree), /CI 2/);
+  assert.equal(find(tree, 'pr-fix-0'), undefined, 'nothing to fix on a passing check');
+  click(tree, 'pr-fix-1', h); await h.flush();
+  assert.equal(h.sent[0][0], 'send'); assert.equal(h.sent[0][1], 't1');
+  assert.match(h.sent[0][2], /--job 88/);
+  assert.equal(h.mod.notice, 'Sent to Agent t1.');
+  click(tree, 'check-toggle-1', h); await h.flush();
+  assert.equal(calls[0].run, 77);
+  tree = h.mod.render();
+  assert.match(strings(tree), /Run tests/);
+  click(tree, 'pr-log-88', h); await h.flush();
+  assert.match(strings(h.mod.render()), /boom/);
+});
+
+test('without an agent the handoff says so and sends nothing', () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [FAILED] });
+  h.mod.section = 'checks';
+  const fix = find(h.mod.render(), 'pr-fix-0');
+  assert.match(strings(fix), /no agent/);
+  assert.equal(fix.handlers.click, undefined);
+});
+
+test('several agents offer a choice, and the one on the PR comes first', async () => {
+  const h = harness();
+  h.mod.pr = PR({ checks: [FAILED] });
+  h.mod.section = 'checks';
+  h.live.agents = [AGENT('free'), AGENT('onit')];
+  h.live.panes = [{ pane: 'p-free', cwd: '/repo', branch: 'main' }, { pane: 'p-onit', cwd: '/repo', branch: 'fix' }];
+  click(h.mod.render(), 'pr-fix-0', h); await h.flush();
+  assert.equal(h.sent[0][1], 'onit');
+  const group = () => find(h.mod.render(), 'pr-fix-0-agents');
+  group().handlers.open(true, h.cx);
+  click(h.mod.render(), 'pr-fix-0-agents-option-free', h); await h.flush();
+  assert.equal(h.sent[1][1], 'free');
+});
+
+test('a failed delivery says why and notes no success', async () => {
+  const h = harness({ hc: async () => ({ code: 1, stderr: 'gone' }) });
+  h.mod.pr = PR({ checks: [FAILED] });
+  h.mod.fixCheck(FAILED, AGENT('t1'), h.cx); await h.flush();
+  assert.equal(h.mod.error, 'gone');
+  assert.equal(h.mod.notice ?? null, null);
+  assert.equal(h.mod.mutating, false);
+});
+
+test('all unresolved threads go to the agent together', async () => {
+  const h = harness();
+  h.mod.pr = PR({ threads: [THREAD(), THREAD({ id: 't2', path: 'b.go' })] });
+  h.mod.section = 'conversation';
+  h.live.agents = [AGENT('t1')];
+  h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-send-unresolved')), /Send 2 to agent/);
+  click(tree, 'pr-send-unresolved', h); await h.flush();
+  assert.match(h.sent[0][2], /a\.go:3/); assert.match(h.sent[0][2], /b\.go:3/);
+});
+
+test('a comment goes to an agent through an editable prompt that only Send delivers', async () => {
+  const h = harness();
+  h.mod.pr = PR({ threads: [THREAD()] });
+  h.mod.section = 'conversation';
+  h.live.agents = [AGENT('t1')];
+  h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'fix' }];
+  click(h.mod.render(), 'pr-agent-send-t1', h);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.mod.composer.kind, 'agent');
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'pr-submit', h); await h.flush();
+  assert.match(h.sent[0][2], /^Look at this/);
+  assert.match(h.sent[0][2], /cam: Rename this/);
+  assert.equal(h.mod.composer, null);
+});
+
+test('a comment has an icon to copy its link, and Send to agent on the right', () => {
+  const h = harness();
+  h.mod.pr = PR({ threads: [THREAD()] });
+  h.mod.section = 'conversation';
+  h.live.agents = [AGENT('t1')];
+  const tree = h.mod.render();
+  assert.equal(strings(find(tree, 'pr-copy-tc')).trim(), '', 'an icon, not the words');
+  const block = find(tree, 'conversation-t1');
+  const actions = find(block, 'pr-agent-send-t1');
+  assert.ok(actions);
+});
+
+test('comments filter by author and unresolved, and a hunk shows only its end', () => {
+  const h = harness();
+  h.mod.pr = PR({ threads: [THREAD()] });
+  h.mod.section = 'conversation';
+  let text = strings(h.mod.render());
+  assert.match(text, /First/); assert.match(text, /Rename this/);
+  assert.match(text, /3\n4\n5\n6\n7\n8/); assert.doesNotMatch(text, /1\n2\n3/);
+  h.mod.author = 'cam';
+  text = strings(h.mod.render());
+  assert.doesNotMatch(text, /First/); assert.match(text, /Rename this/);
+  h.mod.author = '';
+  h.mod.unresolved = true;
+  assert.doesNotMatch(strings(h.mod.render()), /First/);
+});
+
+test('the author filter works from the keyboard', () => {
+  const h = harness();
+  h.mod.pr = PR();
+  h.mod.section = 'conversation';
+  find(h.mod.render(), 'pr-author').handlers.open(true, h.cx);
+  const menu = () => find(h.mod.render(), 'pr-author-menu');
+  menu().handlers.key({ key: 'down' }, h.cx);
+  menu().handlers.key({ key: 'enter' }, h.cx);
+  assert.equal(h.mod.author, 'bob');
+  assert.equal(h.mod.openMenu, null);
+});
+
+test('a failed post keeps the draft; a good one clears it', async () => {
+  const h = harness();
+  h.mod.pr = PR();
+  h.mod.compose('reply', 'thread', null, h.cx, { entry: 'e' });
+  h.mod.editor.set_value('Keep this');
+  h.storage.set(h.mod.draftKey, 'Keep this');
+  h.mod.api = async () => { throw Error('offline'); };
+  h.mod.mutate('reply', h.cx, 'thread'); await h.flush();
+  assert.equal(h.mod.editor.value(), 'Keep this');
+  assert.ok(h.mod.composer);
+  h.mod.api = async (r) => (r.action === 'detail' ? PR() : {});
+  const draft = h.mod.draftKey;
+  h.mod.mutate('reply', h.cx, 'thread'); await h.flush();
+  assert.equal(h.mod.composer, null);
+  assert.equal(h.storage.has(draft), false);
+});
+
+test('read markers notice new and edited comments, and survive leaving', () => {
+  const storage = new Map();
+  const h = harness({ storage });
+  h.mod.adoptPR(PR());
+  assert.equal(h.mod.unreadIds.size, 1);
+  h.mod.markRead();
+  h.mod.adoptPR(PR());
+  assert.equal(h.mod.unreadIds.size, 0);
+  const edited = PR(); edited.comments[0].body = 'Changed';
+  h.mod.adoptPR(edited);
+  assert.equal(h.mod.unreadIds.size, 1);
+});
+
+// ── Lists and discovery ─────────────────────────────────────────────────────
+
+test('list rows show the state and the checks, and open the PR', async () => {
+  const h = harness();
+  h.mod.view = 'all';
+  h.mod.items = [{ id: 'a', number: 7, title: 'Thing', state: 'OPEN', headRefName: 'b', updatedAt: new Date().toISOString(), author: { login: 'ann' }, commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } }];
+  h.mod.api = async () => PR({ number: 7 });
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-a')), /Thing[\s\S]*ann · just now · b[\s\S]*#7/);
+  click(tree, 'pr-a', h); await h.flush();
+  assert.equal(h.mod.pr.number, 7);
+});
+
+test('a stale list answer does not replace another space', async () => {
+  const h = harness();
+  let finish;
+  h.mod.api = () => new Promise((r) => { finish = r; });
+  h.mod.loadList(h.cx);
+  h.mod.changeSpace(null, 'other', h.cx);
+  finish({ items: [{ id: 'old', updatedAt: '' }], cursors: {} }); await h.flush();
+  assert.equal(h.mod.items.length, 0);
+});
+
+test('a number is worth searching at any length', async () => {
+  const h = harness();
+  same(['7', '#7', 'ab', 'abc', ' 482 '].map(h.context.searchQuery), ['7', '#7', '', 'abc', '482']);
+});
+
+test('search waits for typing to stop and needs three characters', async () => {
+  const h = harness();
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r.search); return { items: [], cursors: {} }; };
+  h.mod.search.set_value('ab');
+  h.mod.search.handlers.change({}, h.cx);
+  h.fireAfter(); await h.flush();
+  same(asked, []);
+  h.mod.search.set_value('abc');
+  h.mod.search.handlers.change({}, h.cx);
+  h.mod.search.set_value('abcd');
+  h.mod.search.handlers.change({}, h.cx);
+  h.fireAfter(); await h.flush();
+  same(asked, ['abcd']);
+});
+
+const git = (answers) => async (bin, args) => {
+  const line = `${bin} ${args.join(' ')}`;
+  for (const [pattern, stdout] of answers) if (line.includes(pattern)) return { code: 0, stdout, stderr: '' };
+  return { code: 1, stdout: '', stderr: '' };
+};
+
+test('All PRs prefers upstream, and shows a remote it cannot use as disabled', async () => {
+  const h = harness({ exec: git([['remote get-url upstream', 'git@github.com:up/repo.git'], ['remote get-url origin', 'git@gitlab.com:g/p.git'], ['git remote', 'origin\nupstream\n']]) });
+  h.mod.view = 'all';
+  h.mod.repo = '';
+  h.mod.api = async () => ({ items: [], cursors: {} });
+  h.mod.resolveRepo(h.cx); await h.flush();
+  assert.equal(h.mod.repo, 'up/repo');
+  assert.equal(h.mod.remote, 'upstream');
+  const tree = h.mod.render();
+  find(tree, 'pr-remote').handlers.open(true, h.cx);
+  const open = h.mod.render();
+  assert.match(strings(find(open, 'pr-remote-option-origin')), /Not a GitHub remote/);
+  assert.equal(find(open, 'pr-remote-option-origin').handlers.click, undefined);
+});
+
+test('This branch lists every PR from the branch, without forks of the same name', async () => {
+  const card = (id, number, repo, state = 'OPEN') => ({ id, number, title: `T${number}`, state, updatedAt: `2026-01-0${number}`, repository: 'owner/repo', author: { login: 'ann' }, headRepository: { nameWithOwner: repo } });
+  const h = harness({ exec: git([['symbolic-ref', 'fix\n'], ['remote get-url origin', 'git@github.com:owner/repo.git'], ['git remote', 'origin\n']]) });
+  h.mod.api = async () => ({ items: [card('a', 1, 'owner/repo', 'CLOSED'), card('b', 2, 'stranger/repo'), card('c', 3, 'owner/repo')] });
+  h.mod.loadBranchPRs(h.cx); await h.flush();
+  same([...h.mod.branchPRs].map((p) => p.id), ['c', 'a']);
+  assert.equal(h.mod.pr ?? null, null, 'opening one is your choice');
+  const tree = h.mod.render();
+  assert.ok(find(tree, 'pr-c')); assert.ok(find(tree, 'pr-a'));
+});
+
+test('a branch linked to its PR shows just that one, with its checks', async () => {
+  const h = harness({ exec: git([['symbolic-ref', 'fix\n'], ['herdr-pr', 'owner/repo#2\n']]) });
+  h.mod.api = async () => PR({ checks: [FAILED], updatedAt: new Date().toISOString() });
+  h.mod.loadBranchPRs(h.cx); await h.flush();
+  assert.equal(h.mod.branchPRs.length, 1);
+  assert.equal(h.mod.pr.number, 2, 'and opens it');
+  assert.match(strings(find(h.mod.render(), 'pr-stat-checks')), /0\/1/);
+});
+
+test('a branch with no PR, and no branch at all, say so', async () => {
+  const h = harness({ exec: git([]) });
+  h.mod.loadBranchPRs(h.cx); await h.flush();
+  assert.match(strings(h.mod.render()), /Check out a branch/);
+  h.mod.branch = 'fix';
+  assert.match(strings(h.mod.render()), /No pull requests from fix/);
+});
+
+test('a reload reopens the saved PR once, and a failed read keeps the screen', async () => {
+  const storage = new Map();
+  const first = harness({ storage });
+  first.mod.restoreView('owner/repo');
+  first.mod.tab = 'involved'; first.mod.state = 'merged';
+  first.mod.adoptPR(PR(), 'up/stream');
+  first.mod.rememberView();
+  const second = harness({ storage });
+  second.mod.browseKey = null;
+  second.mod.restoreView('owner/repo');
+  assert.equal(second.mod.tab, 'involved'); assert.equal(second.mod.state, 'merged');
+  const asked = [];
+  second.mod.api = async (r) => { asked.push(r); return r.action === 'detail' ? PR() : { items: [], cursors: {} }; };
+  second.mod.loadList(second.cx); await second.flush();
+  assert.equal(asked.find((r) => r.action === 'detail').repo, 'up/stream');
+  assert.equal(second.mod.pr.number, 2);
+  // Back on the list, a later load doesn't reopen it.
+  second.mod.backToList(second.cx);
+  second.mod.restoreSelection = { number: 2 };
+  second.mod.loadList(second.cx); await second.flush();
+  assert.equal(second.mod.pr, null);
+  second.mod.pr = PR();
+  second.mod.api = async () => { throw Error('down'); };
+  second.mod.openPR(2, second.cx); await second.flush();
+  assert.equal(second.mod.error, 'down');
+  assert.equal(second.mod.pr.number, 2);
+  assert.ok(find(second.mod.render(), 'pr-retry'));
+});
+
+test('settings set list defaults and page size, and problems show at the top', async () => {
+  const h = harness();
+  h.mod.settingsProblems = ['refresh.every: wrong type'];
+  assert.match(strings(find(h.mod.render(), 'pr-settings-problems')), /wrong type/);
+  const asked = [];
+  h.mod.settings = { ...h.mod.settings, list: { page_size: 5, default: { tab: 'mine', state: 'draft' } } };
+  h.mod.api = async (r) => { asked.push(r); return { items: [], cursors: {} }; };
+  h.mod.loadList(h.cx); await h.flush();
+  assert.equal(asked[0].pageSize, 5);
+});
+
+// ── Worktrees ───────────────────────────────────────────────────────────────
+
+test('a PR\'s worktrees are listed and a click switches to or opens their space', async () => {
+  const h = harness({ exec: git([['--get-regexp', 'branch.fix.herdr-pr owner/repo#2\n'], ['worktree list', 'worktree /wt/PR-2\nHEAD abc\nbranch refs/heads/fix\n\n']]) });
+  h.mod.pr = PR({ repository: 'owner/repo' });
+  h.mod.loadWorktrees(h.cx); await h.flush();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-worktree-row-0')), /PR-2 fix .*Open space/);
+  find(tree, 'pr-worktree-row-0').handlers.click({}, h.cx);
+  assert.equal(h.ran.at(-1)[0], 'space.new');
+  h.live.spaces = [{ id: 'wt', folder: '/wt/PR-2' }];
+  tree = h.mod.render();
+  find(tree, 'pr-worktree-row-0').handlers.click({}, h.cx);
+  same(h.ran.at(-1), ['space.select', { id: 'wt' }]);
+});
+
+test('a new worktree fetches the verified head and opens as a space', async () => {
+  const head = 'a'.repeat(40);
+  const log = [];
+  const exec = async (bin, args) => {
+    const line = `${bin} ${args.join(' ')}`;
+    log.push(line);
+    if (line.includes('check-ref-format')) return { code: 0, stdout: 'fix\n' };
+    if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
+    if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\n' };
+    if (line.includes('show-ref')) return { code: 1, stdout: '' };
+    if (line.includes('rev-parse')) return { code: 0, stdout: `${head}\n` };
+    if (line.includes('--get-regexp') || line.includes('worktree list')) return { code: 1, stdout: '' };
+    return { code: 0, stdout: '' };
+  };
+  const h = harness({ exec });
+  h.mod.pr = PR({ headRefOid: head });
+  h.mod.api = async () => PR({ headRefOid: head });
+  h.mod.showWorktree(h.cx); await h.flush();
+  assert.equal(h.mod.worktreeForm.branch.value(), 'fix');
+  assert.equal(h.mod.worktreeForm.name.value(), 'PR-2');
+  click(h.mod.render(), 'pr-worktree-submit', h); await h.flush();
+  assert.ok(log.some((l) => l.includes('fetch --no-tags -- git@github.com:owner/repo.git refs/pull/2/head')));
+  assert.ok(log.some((l) => l.includes(`worktree add -b fix -- /home/sam/.herdr/worktrees/owner-repo/PR-2 ${head}`)));
+  assert.ok(log.some((l) => l.includes('config branch.fix.herdr-pr owner/repo#2')));
+  assert.equal(h.ran.at(-1)[0], 'space.new');
+  assert.equal(h.mod.worktreeForm, null);
+});
+
+test('a worktree name with a path in it is refused, and a moved PR stops the checkout', async () => {
+  const log = [];
+  const exec = async (bin, args) => {
+    const line = `${bin} ${args.join(' ')}`;
+    log.push(line);
+    if (line.includes('check-ref-format')) return { code: 0, stdout: 'fix\n' };
+    if (line.includes('remote get-url')) return { code: 0, stdout: 'git@github.com:owner/repo.git\n' };
+    if (line.endsWith('git remote')) return { code: 0, stdout: 'origin\n' };
+    if (line.includes('show-ref')) return { code: 1, stdout: '' };
+    if (line.includes('rev-parse')) return { code: 0, stdout: `${'b'.repeat(40)}\n` };
+    return { code: 0, stdout: '' };
+  };
+  const h = harness({ exec });
+  h.mod.pr = PR();
+  h.mod.showWorktree(h.cx); await h.flush();
+  h.mod.worktreeForm.name.set_value('../evil');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(h.mod.worktreeForm.error, /letters, numbers/);
+  h.mod.worktreeForm.name.set_value('PR-2');
+  h.mod.api = async () => PR({ headRefOid: 'a'.repeat(40) });
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(h.mod.worktreeForm.error, /changed while fetching/);
+  assert.equal(log.some((l) => l.includes('worktree add')), false);
+});
+
+test('nothing left of GitLab, previews, pending reviews, proposals or a center tab', () => {
+  assert.doesNotMatch(source, /gitlab|glab|merge-requests|proposal|pendingReview|start-review|setPreview|\.workflow\/|tab\.new|openBrowser/i);
 });

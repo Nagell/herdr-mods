@@ -1,5 +1,5 @@
 {
-  "version": "1.3.2",
+  "version": "2.0.0",
   "place": "none",
   "title": "Branch PR",
   "settings": {
@@ -22,8 +22,7 @@
       "keep_last": "60KB"
     },
     "tools": {
-      "github": "gh",
-      "gitlab": "glab"
+      "github": "gh"
     }
   }
 }
