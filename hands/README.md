@@ -61,7 +61,7 @@ hands actions
 hands permissions [--ask[=accessibility|screen]]
 ```
 
-`--app` takes a name, bundle id or pid, matched exactly first and by prefix second. `click`, `set`, `focus`, `key`, `scroll` and `type` wait 500 ms before returning so the app settles between steps; `--delay 100` shortens that, `--delay 0` removes it. On `type` the same value is also the pause between characters, which defaults to 8 ms. Element numbers refer to the last `hands see` in that terminal; agents in other terminals keep their own. If the element has changed since the listing, the command does nothing and says so; run `see` again. Frames are global screen points with the origin at the top left of the main display. Every command takes `--json`. The menu bar is skipped unless `--menus` is given, since it is large and rarely needed; use `hands key` for menu shortcuts.
+`--app` takes a name, bundle id or pid, matched exactly first and by prefix second. `click`, `set`, `focus`, `key`, `scroll` and `type` wait 500 ms before returning so the app settles between steps; `--delay 100` shortens that, `--delay 0` removes it. `type` has its own pause between characters, 100 ms by default, which `--key-delay` changes for one call. Element numbers refer to the last `hands see` in that terminal; agents in other terminals keep their own. If the element has changed since the listing, the command does nothing and says so; run `see` again. Frames are global screen points with the origin at the top left of the main display. Every command takes `--json`. The menu bar is skipped unless `--menus` is given, since it is large and rarely needed; use `hands key` for menu shortcuts.
 
 Prefer `hands set N "text"` over typing into a text field: it writes the value through Accessibility in one step and falls back to select-all-and-type only when the field refuses. `hands type` sends keystrokes to whatever is focused in the target app, using the keys of the active keyboard layout. `hands key` understands `cmd`, `shift`, `ctrl`, `alt`/`option`, `fn`, letters, digits, punctuation, `enter`, `tab`, `space`, `esc`, `backspace`, arrows, `home`, `end`, `pageup`, `pagedown` and `f1`–`f15`.
 
@@ -73,7 +73,7 @@ The installed `mods/hands/mod.json` has a `settings` block that both the CLI and
 
 ```json
 "settings": {
-  "pause": { "after_action": "500ms", "between_keys": "8ms" },
+  "pause": { "after_action": "500ms", "between_keys": "100ms" },
   "see": { "max_lines": 300, "max_depth": 60 },
   "record": { "frames_per_second": 30 },
   "pane": { "refresh": "5s" },
@@ -81,7 +81,7 @@ The installed `mods/hands/mod.json` has a `settings` block that both the CLI and
 }
 ```
 
-`pause.after_action` is the wait before an action command returns and `between_keys` the pause between typed characters; `--delay` overrides both for one call. `see` sets the listing defaults that `--max` and `--depth` override. `record.frames_per_second` applies to window recordings. `pane.refresh` is the pane's poll interval. `state_dir` holds the snapshot and recording state; the `HANDS_STATE_DIR` environment variable wins over it. The CLI finds the file beside its own binary, so a copy of the binary elsewhere uses built-in defaults.
+`pause.after_action` is the wait before an action command returns, overridden for one call by `--delay`, and `between_keys` the pause between typed characters, overridden by `--key-delay`. `see` sets the listing defaults that `--max` and `--depth` override. `record.frames_per_second` applies to window recordings. `pane.refresh` is the pane's poll interval. `state_dir` holds the snapshot and recording state; the `HANDS_STATE_DIR` environment variable wins over it. The CLI finds the file beside its own binary, so a copy of the binary elsewhere uses built-in defaults.
 
 ## Development
 

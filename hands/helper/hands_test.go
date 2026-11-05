@@ -231,16 +231,24 @@ func TestStopKeepsStateWhileTheRecorderLives(t *testing.T) {
 }
 
 func TestDelayDefaultsAndRejectsNonsense(t *testing.T) {
-	if d, err := delayFrom(map[string]string{}, 8*time.Millisecond); err != nil || d != 8*time.Millisecond {
-		t.Fatalf("default %v %v", d, err)
+	if d, err := delayFrom(map[string]string{}, "delay", 8*time.Millisecond); err != nil || d != 8*time.Millisecond {
+		t.Fatalf("default delay %v %v", d, err)
 	}
-	if d, err := delayFrom(map[string]string{"delay": "250"}, 500*time.Millisecond); err != nil || d != 250*time.Millisecond {
-		t.Fatalf("explicit %v %v", d, err)
+	if d, err := delayFrom(map[string]string{"delay": "250"}, "delay", 500*time.Millisecond); err != nil || d != 250*time.Millisecond {
+		t.Fatalf("given delay %v %v", d, err)
 	}
-	for _, bad := range []string{"-1", "soon"} {
-		if _, err := delayFrom(map[string]string{"delay": bad}, 0); err == nil {
-			t.Fatalf("expected %q to fail", bad)
+	for _, bad := range []string{"soon", "-1"} {
+		if _, err := delayFrom(map[string]string{"delay": bad}, "delay", 0); err == nil {
+			t.Fatalf("accepted %q", bad)
 		}
+	}
+	// Typing has its own pause: --delay must not slow it down.
+	opts := map[string]string{"delay": "1500"}
+	if d, _ := delayFrom(opts, "key-delay", 100*time.Millisecond); d != 100*time.Millisecond {
+		t.Fatalf("--delay changed typing: %v", d)
+	}
+	if d, _ := delayFrom(map[string]string{"key-delay": "20"}, "key-delay", 100*time.Millisecond); d != 20*time.Millisecond {
+		t.Fatalf("--key-delay ignored: %v", d)
 	}
 }
 

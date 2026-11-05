@@ -111,5 +111,5 @@ func (s Settings) afterAction() time.Duration {
 	return parseDuration(string(s.Pause.AfterAction), 500*time.Millisecond)
 }
 func (s Settings) betweenKeys() time.Duration {
-	return parseDuration(string(s.Pause.BetweenKeys), 8*time.Millisecond)
+	return parseDuration(string(s.Pause.BetweenKeys), 100*time.Millisecond)
 }

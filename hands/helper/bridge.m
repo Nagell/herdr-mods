@@ -195,16 +195,52 @@ static char *inputProblem(int pid) {
     return NULL;
 }
 
+static CGRect windowBounds(uint32_t window) {
+    CGRect bounds = CGRectNull;
+    CFArrayRef list = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, window);
+    NSDictionary *info = ((__bridge NSArray *)list).firstObject;
+    if (info) CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &bounds);
+    CFRelease(list);
+    return bounds;
+}
+
+static NSEventType appKitType(CGEventType type) {
+    switch (type) {
+        case kCGEventLeftMouseDown: return NSEventTypeLeftMouseDown;
+        case kCGEventLeftMouseUp: return NSEventTypeLeftMouseUp;
+        case kCGEventRightMouseDown: return NSEventTypeRightMouseDown;
+        case kCGEventRightMouseUp: return NSEventTypeRightMouseUp;
+        default: return NSEventTypeMouseMoved;
+    }
+}
+
+// Built by AppKit with its window attached: apps that read a press through their
+// window, Herdr among them, ignore a raw CGEvent's press though they see its hover.
+// AppKit turns this location into the event's own by flipping it against the main
+// display's height, not the window's, so that is what it's measured from.
 static void postMouse(int pid, CGEventType type, CGPoint point, CGMouseButton button, int clicks) {
+    uint32_t window = windowAt(pid, point);
+    CGRect bounds = window ? windowBounds(window) : CGRectNull;
+    if (!CGRectIsNull(bounds)) {
+        CGFloat height = CGDisplayBounds(CGMainDisplayID()).size.height;
+        NSPoint location = NSMakePoint(point.x - bounds.origin.x, height - (point.y - bounds.origin.y));
+        bool pressing = type == kCGEventLeftMouseDown || type == kCGEventRightMouseDown;
+        NSEvent *event = [NSEvent mouseEventWithType:appKitType(type)
+                                            location:location
+                                       modifierFlags:0
+                                           timestamp:[NSProcessInfo processInfo].systemUptime
+                                        windowNumber:window
+                                             context:nil
+                                         eventNumber:0
+                                          clickCount:clicks
+                                            pressure:pressing ? 1.0 : 0.0];
+        if (event.CGEvent) {
+            CGEventPostToPid(pid, event.CGEvent);
+            return;
+        }
+    }
     CGEventRef event = CGEventCreateMouseEvent(NULL, type, point, button);
     CGEventSetIntegerValueField(event, kCGMouseEventClickState, clicks);
-    // An event posted to a process still needs the window it lands in; without
-    // these fields some apps, Finder among them, drop it.
-    uint32_t window = windowAt(pid, point);
-    if (window) {
-        CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointer, window);
-        CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent, window);
-    }
     CGEventPostToPid(pid, event);
     CFRelease(event);
 }
@@ -217,10 +253,15 @@ char *hands_click(int pid, double x, double y, int button, int clicks) {
         CGMouseButton mouseButton = button == 1 ? kCGMouseButtonRight : kCGMouseButtonLeft;
         CGEventType down = button == 1 ? kCGEventRightMouseDown : kCGEventLeftMouseDown;
         CGEventType up = button == 1 ? kCGEventRightMouseUp : kCGEventLeftMouseUp;
+        // As long as a real click takes, so the app sees the hover and then the press.
+        const useconds_t pause = 50000;
         postMouse(pid, kCGEventMouseMoved, point, mouseButton, 0);
+        usleep(pause);
         for (int i = 1; i <= clicks; i++) {
             postMouse(pid, down, point, mouseButton, i);
+            usleep(pause);
             postMouse(pid, up, point, mouseButton, i);
+            usleep(pause);
         }
         return dupJSON(@{@"ok": @YES, @"via": @"mouse", @"x": @(x), @"y": @(y)});
     }

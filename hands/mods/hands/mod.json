@@ -5,7 +5,7 @@
   "settings": {
     "pause": {
       "after_action": "500ms",
-      "between_keys": "8ms"
+      "between_keys": "100ms"
     },
     "see": {
       "max_lines": 300,

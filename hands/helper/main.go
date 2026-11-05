@@ -26,7 +26,7 @@ const usage = `hands: a coding agent's hands on the Mac
   hands click --at X,Y [--app A]       click a screen point
   hands set N "text"                   set element N's value (text fields: prefer this over typing)
   hands focus N                        focus element N
-  hands type "text" [--app A]          type text into the app (default: last snapshot's app)
+  hands type "text" [--app A] [--key-delay MS]   type text into the app (default: last snapshot's app)
   hands key cmd+shift+s [--app A]      press a chord: letters, digits, enter, tab, esc, arrows, f1–f15
   hands scroll N --dy -3 [--dx 0]      scroll over element N (or --at X,Y); negative dy scrolls down
   hands shot --app A [--window T] out.png   screenshot one window
@@ -38,8 +38,8 @@ const usage = `hands: a coding agent's hands on the Mac
 
   --app takes a name, bundle id or pid. --json prints machine-readable output.
   --delay MS waits that long after click, set, focus, key, scroll and type
-  before returning (default 500) so the app settles between steps; on type it
-  is also the pause between characters (default 8). Defaults come from the
+  before returning (default 500) so the app settles between steps. --key-delay MS
+  is the pause between typed characters (default 100). Defaults come from the
   settings block of mods/hands/mod.json.
   Element frames are global screen points with the origin at the top left.`
 
@@ -74,14 +74,14 @@ func parseArgs(args []string) (map[string]string, []string) {
 	return opts, rest
 }
 
-// delayFrom reads --delay in milliseconds, falling back to the given default.
-func delayFrom(opts map[string]string, fallback time.Duration) (time.Duration, error) {
-	if opts["delay"] == "" {
+// delayFrom reads a flag in milliseconds, falling back to the given default.
+func delayFrom(opts map[string]string, flag string, fallback time.Duration) (time.Duration, error) {
+	if opts[flag] == "" {
 		return fallback, nil
 	}
-	ms, err := strconv.Atoi(opts["delay"])
+	ms, err := strconv.Atoi(opts[flag])
 	if err != nil || ms < 0 {
-		return 0, fmt.Errorf("--delay must be a number of milliseconds, got %q", opts["delay"])
+		return 0, fmt.Errorf("--%s must be a number of milliseconds, got %q", flag, opts[flag])
 	}
 	return time.Duration(ms) * time.Millisecond, nil
 }
@@ -150,7 +150,7 @@ func run(args []string, out *os.File) (err error) {
 	}()
 	asJSON := opts["json"] == "true"
 	prefs := loadSettings()
-	settle, err := delayFrom(opts, prefs.afterAction())
+	settle, err := delayFrom(opts, "delay", prefs.afterAction())
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func run(args []string, out *os.File) (err error) {
 			return err
 		}
 		text := strings.Join(rest[1:], " ")
-		between, err := delayFrom(opts, prefs.betweenKeys())
+		between, err := delayFrom(opts, "key-delay", prefs.betweenKeys())
 		if err != nil {
 			return err
 		}
