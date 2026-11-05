@@ -61,7 +61,7 @@ With Better Tabs, a button can open it (`target` is that block's layout ID):
 ```json
 {
   "id": "prs",
-  "label": "PR",
+  "label": "PRs",
   "icon": "mods/branch-pr/icons/pull-request.svg",
   "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "pull-requests" }
 }

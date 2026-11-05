@@ -57,7 +57,7 @@ With Better Tabs, a button can open it (`target` is that block's layout ID):
 ```json
 {
   "id": "issues",
-  "label": "Issue",
+  "label": "Issues",
   "icon": "mods/branch-issue/icons/issue.svg",
   "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "linear-issues" }
 }
