@@ -55,19 +55,21 @@ Each mod's README covers its features and requirements; its `RECIPE.md` guides i
 
 ## Versions and settings
 
-Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with an `install.py` keep your settings and print the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
+Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and print the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
 
 ## Test
 
-Requires Node.js for development tests:
+Requires Node.js and Go for development tests:
 
 ```sh
 (cd better-changes && node --test tests/*.test.cjs)
 (cd better-sidebar && node --test tests/*.test.cjs)
 (cd better-tabs && node --test tests/*.test.cjs)
-(cd branch-pr && node --test tests/*.test.cjs && python3 -m unittest discover -s tests)
+(cd branch-pr && node --test tests/*.test.cjs)
 (cd branch-pr/helper && go test ./... && go vet ./...)
-(cd hands && node --test tests/*.test.cjs && python3 -m unittest discover -s tests)
+(cd branch-issue && node --test tests/*.test.cjs)
+(cd branch-issue/helper && go test ./... && go vet ./...)
+(cd hands && node --test tests/*.test.cjs)
 (cd hands/helper && go test ./... && go vet ./...)
 ```
 

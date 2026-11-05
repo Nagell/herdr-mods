@@ -20,7 +20,7 @@ A Linear panel for [Herdr Desktop](https://herdr.dev/), built to look like Herdr
 - **The All issues center tab** is gone: the **All** tab in the sidebar replaces it. Close any old tab, and remove any `props: { "mode": "browser" }` tab or command you set up.
 - **The commands** `open-browser`, `toggle`, `open`, `back`, `description`, `comments`, `links` and `worktree` are gone. `refresh` stays.
 - **Editing comments, Markdown preview and editing labels** are gone. Linear still has all of them.
-- **The `tracker` setting** is gone, since Linear is the only one. `install.py --update` keeps your other settings.
+- **The `tracker` setting** is gone, since Linear is the only one. Updating keeps your other settings.
 - **Icons moved** to `icons/`, so change a Better Tabs button's `mods/branch-issue/issue.svg` to `mods/branch-issue/icons/issue.svg`.
 
 ## Install only this mod
@@ -29,7 +29,7 @@ Copy this prompt into your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-issue
 
-Requirements: Python 3 for the installer, **Go 1.23+** to build the helper, Git on the machines your spaces run on, and a **Linear personal API key**. Agent actions use `hc` and a running agent.
+Requirements: **Go 1.23+** to run the installer and build the helper, Git on the machines your spaces run on, and a **Linear personal API key**. Agent actions use `hc` and a running agent.
 
 The helper talks to Linear's GraphQL API with the key from the **`LINEAR_API_KEY`** environment variable and nothing else: there's no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell. The helper reads its own environment, then asks your login shell, so a key exported in `.zshrc` or by home-manager is found even when Herdr was launched from the Dock. If the key is missing or rejected, the panel says so, shows what to run, and offers Try again.
 
@@ -38,8 +38,8 @@ Read [RECIPE.md](RECIPE.md) and the source before installing. The helper sends y
 From this folder:
 
 ```sh
-python3 install.py          # first install
-python3 install.py --update # later
+go -C helper run ./install          # first install
+go -C helper run ./install --update # later
 ```
 
 The installer builds the helper, copies only `mods/branch-issue/` to `~/.config/herdr-app/mods/branch-issue/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
@@ -94,7 +94,6 @@ The installed `mods/branch-issue/mod.json` has a `settings` block, kept across `
 
 ```sh
 node --test tests/*.test.cjs
-python3 -m unittest discover -s tests
 (cd helper && go test ./... && go vet ./...)
 herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"
 ```

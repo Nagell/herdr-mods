@@ -20,7 +20,7 @@ Clicks are AppKit mouse events with their window attached, about 50 ms apart, po
 
 ## Built from
 
-`hands/` holds `helper/` (`go.mod` with no requirements, `main.go`, `tree.go`, `keys.go`, `record.go`, `actions.go`, `bridge.go`, `bridge.h`, `bridge.m`, `hands_test.go`), `mods/hands/` (`mod.json`, `main.js`, `settings.js`, `views/` with `permissions.js`, `days.js`, `actions.js`, `recordings.js` and `ui.js`, and `icons/`), `install.py`, `tests/` (`test_install.py`, `packaging.test.cjs`), `README.md`, `SKILL.md`, `.gitignore` for `mods/hands/bin/`. The bridge links AppKit, ApplicationServices, CoreGraphics, ScreenCaptureKit, ImageIO, UniformTypeIdentifiers and Foundation with ARC. `install.py` builds with `CGO_ENABLED=1`, copies only the runtime files and binary to `~/.config/herdr-app/mods/hands/`, runs `herdr-app check`, and symlinks `~/.local/bin/hands` unless a real file is there.
+`hands/` holds `helper/` (`go.mod` with no requirements, `main.go`, `tree.go`, `keys.go`, `record.go`, `actions.go`, `bridge.go`, `bridge.h`, `bridge.m`, `hands_test.go`), `mods/hands/` (`mod.json`, `main.js`, `settings.js`, `views/` with `permissions.js`, `days.js`, `actions.js`, `recordings.js` and `ui.js`, and `icons/`), `tests/` (`packaging.test.cjs`), `README.md`, `SKILL.md`, `.gitignore` for `mods/hands/bin/`. The bridge links AppKit, ApplicationServices, CoreGraphics, ScreenCaptureKit, ImageIO, UniformTypeIdentifiers and Foundation with ARC. `helper/install/` builds with `CGO_ENABLED=1`, copies only the runtime files and binary to `~/.config/herdr-app/mods/hands/`, runs `herdr-app check`, and symlinks `~/.local/bin/hands` unless a real file is there.
 
 ## Watch out
 
@@ -33,6 +33,6 @@ A `settings` block in the installed `mods/hands/mod.json` carries the person's p
 
 ## Done when
 
-- `go test ./...` and `go vet ./...` pass in `helper/`; `python3 -m unittest discover -s tests` and `node --test tests/*.test.cjs` pass; `herdr-app check ~/.config/herdr-app/mods/hands` passes.
+- `go test ./...` and `go vet ./...` pass in `helper/`; `node --test tests/*.test.cjs` pass; `herdr-app check ~/.config/herdr-app/mods/hands` passes.
 - From a Herdr terminal: `hands see --app Finder` prints a numbered tree; `hands click N` opens a sidebar item; `hands set` fills a text field in TextEdit; `hands shot --app Finder out.png` writes a PNG; `hands record start x.mov`, a few actions, `hands record stop` yields a playable movie.
 - The root README table has a hands row and `hands/README.md` reads like the other mods'.

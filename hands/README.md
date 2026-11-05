@@ -14,7 +14,7 @@ Hands for a coding agent on the rest of the Mac, as a Herdr mod for [Herdr Deskt
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/hands
 
-Requirements: macOS 14 or later, Herdr, Python 3 for the installer, **Go 1.23+** and the **Xcode command line tools** (`clang`) to build the helper. There are no runtime dependencies.
+Requirements: macOS 14 or later, Herdr, **Go 1.23+** to run the installer, and Go with the **Xcode command line tools** (`clang`) to build the helper. There are no runtime dependencies.
 
 **Permissions.** A command-line tool has no identity of its own: macOS attributes it to the app that launched it. Run from a Herdr terminal, `hands` is attributed to Herdr, so you grant **Accessibility** and **Screen Recording** to Herdr once and every agent in a Herdr terminal has them. Run `hands permissions --ask` from a Herdr terminal to trigger the system prompts, allow Herdr in System Settings › Privacy & Security, and restart the terminal. Run from another app's terminal, the same binary has that app's permissions instead.
 
@@ -23,9 +23,9 @@ What this grants: with Accessibility, anything run in a Herdr terminal can read 
 From this package directory:
 
 ```sh
-python3 install.py
+go -C helper run ./install
 # Later, update an existing installation owned by this package:
-python3 install.py --update
+go -C helper run ./install --update
 ```
 
 The installer builds the helper, copies **only** `mods/hands/` and the binary to `~/.config/herdr-app/mods/hands/`, runs `herdr-app check`, and symlinks the binary to `~/.local/bin/hands` so agents find it on PATH (`--link-dir` changes that; a real file there is left alone). It does not edit layouts or keys.
@@ -69,7 +69,7 @@ Prefer `hands set N "text"` over typing into a text field: it writes the value t
 
 ## Settings
 
-The installed `mods/hands/mod.json` has a `settings` block that both the CLI and the pane read, kept across `python3 install.py --update`:
+The installed `mods/hands/mod.json` has a `settings` block that both the CLI and the pane read, kept across `go -C helper run ./install --update`:
 
 ```json
 "settings": {
@@ -87,7 +87,6 @@ The installed `mods/hands/mod.json` has a `settings` block that both the CLI and
 
 ```sh
 (cd helper && go test ./... && go vet ./...)
-python3 -m unittest discover -s tests
 node --test tests/*.test.cjs
 herdr-app check "$HOME/.config/herdr-app/mods/hands"
 ```

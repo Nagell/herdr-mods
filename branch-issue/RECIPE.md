@@ -38,7 +38,7 @@ Writes never retry by themselves. A failure keeps the draft and says to refresh 
 
 ## Built from
 
-`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `install.py` builds it to `mods/branch-issue/bin/herdr-linear`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-issue/bin/herdr-linear`. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 
@@ -50,7 +50,7 @@ Herdr's shipped layouts are read-only, so the mod only shows in a layout the per
 
 ## Done when
 
-- Node tests, Python installer tests, Go tests and vet, and `herdr-app check` pass.
+- Node tests, Go tests and vet, including the installer's, and `herdr-app check` pass.
 - A missing or rejected key takes over the panel with what to do, and Try again.
 - Both lists and an issue render without errors with real issues, all inside the sidebar.
 - A branch named for an issue opens it directly, and Start work opens a new space on Linear's branch name.

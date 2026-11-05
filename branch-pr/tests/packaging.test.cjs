@@ -12,7 +12,7 @@ test('package owns its helper and has no custom-mod or layout dependency', () =>
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))).title, 'Branch PR');
   for (const file of ['main.js', 'settings.js', 'mod.json', 'views/ui.js', 'github/model.js', 'icons/pull-request.svg', 'icons/merged.svg', 'icons/draft.svg', 'icons/closed.svg', 'icons/github.svg'])
     assert.ok(fs.existsSync(path.join(runtime, file)), file);
-  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/main_test.go', 'install.py', 'README.md', 'RECIPE.md'])
+  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/main_test.go', 'helper/install/main.go', 'README.md', 'RECIPE.md'])
     assert.ok(fs.existsSync(path.join(root, file)), file);
   // Every icon a view names exists, and every icon that exists is used.
   const code = ['main.js', ...['views', 'actions', 'github', 'state'].flatMap((d) => fs.readdirSync(path.join(runtime, d)).map((f) => `${d}/${f}`))].map((f) => fs.readFileSync(path.join(runtime, f), 'utf8')).join('\n');

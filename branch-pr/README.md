@@ -25,7 +25,7 @@ A pull-request panel for [Herdr Desktop](https://herdr.dev/), built to look like
 - **Pending reviews, editing comments, quote replies, adding or removing reviewers, and Draft fix & reply** are gone. Agents do this work now; GitHub still has all of them.
 - **Icons moved** to `icons/`, so change a Better Tabs button's `mods/branch-pr/pull-request.svg` to `mods/branch-pr/icons/pull-request.svg`.
 
-`install.py --update` keeps your settings and drops `tools.gitlab`.
+Updating keeps your settings and drops `tools.gitlab`.
 
 ## Install only this mod
 
@@ -33,7 +33,7 @@ Copy this prompt into your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-pr
 
-Requirements: Python 3 for the installer, **Go 1.23+** to build the helper, Git on the machines your spaces run on, and the **GitHub CLI** logged in with `gh auth login` on this computer. Agent actions use `hc` and a running agent.
+Requirements: **Go 1.23+** to run the installer and build the helper, Git on the machines your spaces run on, and the **GitHub CLI** logged in with `gh auth login` on this computer. Agent actions use `hc` and a running agent.
 
 Every read and write goes through `gh`, using its login; there's no token setting. If `gh` is missing or logged out, the panel says so, shows what to run, and offers Try again.
 
@@ -42,8 +42,8 @@ Read [RECIPE.md](RECIPE.md) and the source before installing. On an explicit cli
 From this folder:
 
 ```sh
-python3 install.py          # first install
-python3 install.py --update # later
+go -C helper run ./install          # first install
+go -C helper run ./install --update # later
 ```
 
 The installer builds the helper, copies only `mods/branch-pr/` to `~/.config/herdr-app/mods/branch-pr/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
@@ -99,7 +99,6 @@ The installed `mods/branch-pr/mod.json` has a `settings` block, kept across `--u
 
 ```sh
 node --test tests/*.test.cjs
-python3 -m unittest discover -s tests
 (cd helper && go test ./... && go vet ./...)
 herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"
 ```

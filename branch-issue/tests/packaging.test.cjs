@@ -12,7 +12,7 @@ test('package owns its helper and has no custom-mod or layout dependency', () =>
   assert.doesNotMatch(code, /better-tabs|factory-tabs|herdr-workflow|center-body|panel-body|branch-pr/);
   assert.match(fs.readFileSync(path.join(runtime, 'linear/reads.js'), 'utf8'), /appHome\(\)\}\/mods\/branch-issue\/bin\/herdr-linear/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))).title, 'Branch Issue');
-  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/main_test.go', 'install.py', 'README.md', 'RECIPE.md'])
+  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/main_test.go', 'helper/install/main.go', 'README.md', 'RECIPE.md'])
     assert.ok(fs.existsSync(path.join(root, file)), file);
   const icons = fs.readdirSync(path.join(runtime, 'icons')).map((f) => f.replace('.svg', ''));
   for (const icon of icons) assert.ok(code.includes(`"${icon}"`), `unused icon ${icon}`);

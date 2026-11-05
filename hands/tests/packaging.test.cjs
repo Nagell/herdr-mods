@@ -11,7 +11,7 @@ test('package owns its helper and depends on no other mod', () => {
   assert.doesNotMatch(source, /better-tabs|git-pr|peekaboo|mcp/i);
   assert.match(source, /appHome\(\)\}\/mods\/hands\/bin\/hands/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'mod.json'))).title, 'hands');
-  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/bridge.m', 'helper/bridge.h', 'helper/hands_test.go', 'install.py', 'README.md', 'RECIPE.md', 'SKILL.md', '.gitignore'])
+  for (const file of ['helper/go.mod', 'helper/main.go', 'helper/bridge.m', 'helper/bridge.h', 'helper/hands_test.go', 'helper/install/main.go', 'README.md', 'RECIPE.md', 'SKILL.md', '.gitignore'])
     assert.ok(fs.existsSync(path.join(root, file)), file);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'helper/go.mod'), 'utf8'), /require/);
 });

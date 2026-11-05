@@ -40,7 +40,7 @@ A missing or logged-out `gh` replaces everything below the tabs with what's wron
 
 ## Built from
 
-`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `install.py` builds it to `mods/branch-pr/bin/herdr-pr`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-pr/bin/herdr-pr`. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 
@@ -52,7 +52,7 @@ Herdr's shipped layouts are read-only, so the mod only shows in a layout the per
 
 ## Done when
 
-- Node tests, Python installer tests, Go tests and vet, and `herdr-app check` pass.
+- Node tests, Go tests and vet, including the installer's, and `herdr-app check` pass.
 - A missing or logged-out `gh` takes over the panel with what to do, and Try again.
 - Both lists and a PR render without errors with real PRs, all inside the sidebar.
 - The stats match GitHub for a failing, a conflicted and a clean PR.
