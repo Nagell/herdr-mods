@@ -1,13 +1,14 @@
 // hands: the panel for the `hands` CLI. It asks for missing permissions and lists
-// what hands did and recorded; everything else is the CLI (`hands --help`).
+// what hands captured and did; everything else is the CLI (`hands --help`).
 import { View } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { exec, appHome } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { PERMISSIONS, PermissionsBlock } from "./views/permissions.js";
-import { ActionList } from "./views/actions.js";
+import { ActionFilter, ActionList } from "./views/actions.js";
 import {
-  RecordingList,
+  CaptureList,
+  capturesFrom,
   RecordingDetail,
   RecordingHeader,
   RecordingStatus,
@@ -21,7 +22,12 @@ const DEFAULT_SETTINGS = { pane: { refresh: "5s" } };
 export default class Hands extends View {
   init(_props, cx) {
     this.permissions = null; // {accessibility, screen} once read
-    this.tab = "actions"; // or "recordings"
+    this.tab = "captures"; // or "actions"
+    this.filter = "all"; // which actions show: all, failed, or one kind
+    this.filterOpen = false;
+    this.filterIndex = 0;
+    this.filterFocus = cx.focus_handle();
+    this.filterTrigger = cx.focus_handle();
     this.actions = []; // newest first
     this.recording = null; // {running, file} once read
     this.recordings = []; // finished, newest first
@@ -112,6 +118,32 @@ export default class Hands extends View {
     cx.notify();
   }
 
+  actionFilter() {
+    return ActionFilter({
+      actions: this.actions,
+      filter: this.filter,
+      open: this.filterOpen,
+      index: this.filterIndex,
+      focus: this.filterFocus,
+      triggerFocus: this.filterTrigger,
+      onOpenChange: (open, cx) => {
+        this.filterOpen = open;
+        this.filterIndex = 0;
+        cx.notify();
+      },
+      onMove: (index, cx) => {
+        this.filterIndex = index;
+        cx.notify();
+      },
+      onChoose: (choice, cx) => {
+        this.filter = choice.id;
+        this.filterOpen = false;
+        this.filterTrigger.focus();
+        cx.notify();
+      },
+    });
+  }
+
   toggleDay(key, cx) {
     if (!this.collapsed.delete(key)) this.collapsed.add(key);
     cx.notify();
@@ -141,20 +173,20 @@ export default class Hands extends View {
           .role("tab_list")
           .child(
             HeaderTab({
+              id: "hands-tab-captures",
+              label: "Captures",
+              count: capturesFrom(this.actions, this.recordings).length,
+              active: this.tab === "captures",
+              onClick: (cx) => this.showTab("captures", cx),
+            }),
+          )
+          .child(
+            HeaderTab({
               id: "hands-tab-actions",
               label: "Actions",
               count: this.actions.length,
               active: this.tab === "actions",
               onClick: (cx) => this.showTab("actions", cx),
-            }),
-          )
-          .child(
-            HeaderTab({
-              id: "hands-tab-recordings",
-              label: "Recordings",
-              count: this.recordings.length,
-              active: this.tab === "recordings",
-              onClick: (cx) => this.showTab("recordings", cx),
             }),
           ),
       )
@@ -174,13 +206,16 @@ export default class Hands extends View {
     if (this.tab === "actions")
       return ActionList({
         actions: this.actions,
+        filter: this.filter,
         onOpen: this.openFile,
         onReveal: this.revealFile,
         ...days,
       });
-    return RecordingList({
-      recordings: this.recordings,
-      onOpen: (file, cx) => this.select(file, cx),
+    return CaptureList({
+      captures: capturesFrom(this.actions, this.recordings),
+      onSelect: (file, cx) => this.select(file, cx),
+      onOpen: this.openFile,
+      onReveal: this.revealFile,
       ...days,
     });
   }
@@ -208,6 +243,7 @@ export default class Hands extends View {
         ),
       )
       .when(Boolean(this.error), (el) => el.child(Message(this.error, true)))
+      .when(!open && this.tab === "actions", (el) => el.child(this.actionFilter()))
       .child(
         open
           ? RecordingDetail({

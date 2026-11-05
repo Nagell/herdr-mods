@@ -32,13 +32,13 @@ const ACTIONS = [
 ];
 function harness(state = { accessibility: false, screen: false }) {
   const pending = [], calls = [], opened = [];
-  const cx = { notify() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every() {}, after() {} }, stop_propagation() {} };
+  const cx = { focus_handle: () => ({ focus() {} }), notify() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every() {}, after() {} }, stop_propagation() {} };
   function el() {
     const data = { nodes: [], handlers: {} }; let proxy;
-    proxy = new Proxy(data, { get(t, k) { if (k in t) return t[k]; if (k === 'child') return c => { t.nodes.push(c); return proxy; }; if (k === 'children') return c => { t.nodes.push(...c); return proxy; }; if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; }; return (...a) => { if (k === 'id') t.elementId = a[0]; if (k === 'on_click') t.handlers.click = a[0]; return proxy; }; } });
+    proxy = new Proxy(data, { get(t, k) { if (k in t) return t[k]; if (k === 'child') return c => { t.nodes.push(c); return proxy; }; if (k === 'children') return c => { t.nodes.push(...c); return proxy; }; if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; }; return (...a) => { if (k === 'id') t.elementId = a[0]; if (k === 'on_click') t.handlers.click = a[0]; if (k === 'on_open_change') t.handlers.open = a[0]; if (k === 'trigger' || k === 'content') t.nodes.push(a[0]); return proxy; }; } });
     return proxy;
   }
-  const context = { View: class {}, div: el, v_flex: el, h_flex: el, svg: el, appHome: () => '/app', theme: () => ({}), settings: () => ({ font_size: 14 }), readTextFile: async () => null,
+  const context = { Popover: { new: (id) => el().id(id) }, View: class {}, div: el, v_flex: el, h_flex: el, svg: el, appHome: () => '/app', theme: () => ({}), settings: () => ({ font_size: 14 }), readTextFile: async () => null,
     exec: async (bin, args) => {
       if (bin === 'open') { opened.push(args.join(' ')); return { code: 0, stdout: '' }; }
       calls.push(args);
@@ -82,13 +82,12 @@ test('a permission the prompt did not grant opens its place in System Settings',
   assert.ok(find(h.mod.render(h.cx), 'hands-ask-accessibility'), 'still asks until it is granted');
 });
 
-test('past recordings list, open to a summary, and link to their movie', async () => {
+test('captures list screenshots and recordings together; a recording opens to a summary, and link to their movie', async () => {
   const h = harness({ accessibility: true, screen: true }); await h.flush();
   let tree = h.mod.render(h.cx);
   assert.equal(find(tree, 'hands-permissions'), undefined);
   assert.match(strings(find(tree, 'hands-recording')), /Recording \/tmp\/demo.mov/);
-  find(tree, 'hands-tab-recordings').handlers.click({}, h.cx);
-  tree = h.mod.render(h.cx);
+  assert.match(strings(find(tree, 'hands-tab-captures')), /Captures 4/, 'two screenshots and two recordings');
   assert.match(strings(find(tree, 'hands-recording-/tmp/my demo.mov')), /The login flow[\s\S]*Safari, Docs · 2h ago[\s\S]*1m 15s/);
   assert.match(strings(find(tree, 'hands-recording-/tmp/old.mov')), /Whole screen[\s\S]*movie is gone/);
   find(tree, 'hands-recording-/tmp/my demo.mov').handlers.click({}, h.cx);
@@ -106,7 +105,7 @@ test('past recordings list, open to a summary, and link to their movie', async (
   assert.doesNotMatch(during, /Other app/, 'another app stays out of a window recording');
   assert.doesNotMatch(during, /Record /, 'nor the recording itself');
   find(tree, 'hands-back').handlers.click({}, h.cx);
-  assert.ok(find(h.mod.render(h.cx), 'hands-recordings'));
+  assert.ok(find(h.mod.render(h.cx), 'hands-captures'));
   h.mod.selected = '/tmp/old.mov';
   tree = h.mod.render(h.cx);
   assert.equal(find(tree, 'hands-movie'), undefined); assert.match(strings(find(tree, 'hands-detail')), /Gone from \/tmp\/old.mov/);
@@ -114,6 +113,7 @@ test('past recordings list, open to a summary, and link to their movie', async (
 
 test('actions list what hands did, and their files open on Cmd-click or reveal in Finder', async () => {
   const h = harness({ accessibility: true, screen: true }); await h.flush();
+  find(h.mod.render(h.cx), 'hands-tab-actions').handlers.click({}, h.cx);
   const tree = h.mod.render(h.cx);
   const id = (a) => `hands-action-${a.time}-${a.action}-${a.file ?? a.target}`;
   const [saved, gone, click] = ACTIONS;
@@ -135,4 +135,23 @@ test('actions list what hands did, and their files open on Cmd-click or reveal i
   assert.equal(failed.handlers.click, undefined);
   find(tree, 'hands-actions-day-Today').handlers.click({}, h.cx);
   assert.equal(find(h.mod.render(h.cx), id(click)), undefined, 'a folded day hides its rows');
+});
+
+test('actions filter by kind or failure, offering only what happened', async () => {
+  const h = harness({ accessibility: true, screen: true }); await h.flush();
+  assert.equal(find(h.mod.render(h.cx), 'hands-action-filter'), undefined, 'captures have no filter');
+  find(h.mod.render(h.cx), 'hands-tab-actions').handlers.click({}, h.cx);
+  find(h.mod.render(h.cx), 'hands-filter').handlers.open(true, h.cx);
+  let tree = h.mod.render(h.cx);
+  assert.match(strings(find(tree, 'hands-filter-menu')), /All actions \(7\) Failed \(1\)\s+Click \(3\) Press \(1\) Screenshot \(2\) Record \(1\)/);
+  assert.equal(find(tree, 'hands-filter-option-scroll'), undefined, 'nothing scrolled');
+  find(tree, 'hands-filter-option-click').handlers.click({}, h.cx);
+  tree = h.mod.render(h.cx);
+  assert.match(strings(find(tree, 'hands-actions')), /Click Button "Save"/);
+  assert.doesNotMatch(strings(find(tree, 'hands-actions')), /Screenshot|Press/);
+  assert.match(strings(find(tree, 'hands-filter')), /Click/);
+  h.mod.filter = 'failed';
+  assert.match(strings(find(h.mod.render(h.cx), 'hands-actions')), /Press cmd\+s/);
+  h.mod.filter = 'scroll';
+  assert.match(strings(find(h.mod.render(h.cx), 'hands-actions')), /No actions match this filter/);
 });

@@ -1,4 +1,4 @@
-// Past recordings, what one holds, and whether one is running now.
+// Screenshots and past recordings, what a recording holds, and whether one is running now.
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme } from "herdr";
@@ -51,14 +51,26 @@ function recordingRow(r, onOpen, t) {
   );
 }
 
-export function RecordingList({ recordings, onOpen, collapsed, onToggle }) {
+// Screenshots and recordings together, newest first.
+export function capturesFrom(actions, recordings) {
+  const shots = actions
+    .filter((a) => a.action === "shot" && !a.error && a.file)
+    .map((action) => ({ when: action.time, action }));
+  const movies = recordings.map((recording) => ({ when: recording.started, recording }));
+  return [...shots, ...movies].sort((a, b) => Date.parse(b.when) - Date.parse(a.when));
+}
+
+export function CaptureList({ captures, onSelect, onOpen, onReveal, collapsed, onToggle }) {
   const t = theme();
   return DayList({
-    id: "hands-recordings",
-    items: recordings,
-    when: (r) => r.started,
-    row: (r) => recordingRow(r, onOpen, t),
-    empty: "No recordings yet. They appear here after `hands record stop`.",
+    id: "hands-captures",
+    items: captures,
+    when: (c) => c.when,
+    row: (c) =>
+      c.recording
+        ? recordingRow(c.recording, onSelect, t)
+        : actionRow(c.action, { onOpen, onReveal }),
+    empty: "No screenshots or recordings yet. They appear here as agents use `hands`.",
     collapsed,
     onToggle,
   });
@@ -73,7 +85,7 @@ export function RecordingHeader({ recording: r, onBack, onReveal }) {
       IconButton({
         id: "hands-back",
         icon: "chevron-left",
-        label: "Back to recordings",
+        label: "Back to captures",
         onClick: onBack,
       }),
     )

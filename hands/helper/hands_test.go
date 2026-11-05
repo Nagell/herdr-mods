@@ -389,6 +389,18 @@ func TestActionLogKeepsOnlyTheRecentOnes(t *testing.T) {
 	}
 }
 
+func TestScreenshotsOutliveARunOfOtherActions(t *testing.T) {
+	t.Setenv("HANDS_STATE_DIR", t.TempDir())
+	logAction(Action{Action: "shot", File: "/tmp/old.png"})
+	for i := 0; i < actionsKept+1; i++ {
+		logAction(Action{Action: "click", Target: strings.Repeat("x", actionsTrimAt/actionsKept)})
+	}
+	past := pastActions()
+	if len(past) != actionsKept+1 || past[len(past)-1].Action != "shot" {
+		t.Fatalf("kept %d, oldest %q", len(past), past[len(past)-1].Action)
+	}
+}
+
 func TestFailuresAreLoggedWithoutTheirText(t *testing.T) {
 	t.Setenv("HANDS_STATE_DIR", t.TempDir())
 	logFailure([]string{"type", "hunter2"}, map[string]string{"app": "Safari"}, errors.New("no such app"))

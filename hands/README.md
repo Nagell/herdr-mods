@@ -65,7 +65,7 @@ hands permissions [--ask[=accessibility|screen]]
 
 Prefer `hands set N "text"` over typing into a text field: it writes the value through Accessibility in one step and falls back to select-all-and-type only when the field refuses. `hands type` sends keystrokes to whatever is focused in the target app, using the keys of the active keyboard layout. `hands key` understands `cmd`, `shift`, `ctrl`, `alt`/`option`, `fn`, letters, digits, punctuation, `enter`, `tab`, `space`, `esc`, `backspace`, arrows, `home`, `end`, `pageup`, `pagedown` and `f1`–`f15`.
 
-`hands actions` prints the last 200 clicks, sets, focuses, typing, keys, scrolls, screenshots and finished recordings, including ones that failed, kept in `actions.jsonl` in the state folder. It records what was touched, never the text typed or set; reading commands such as `see` aren't listed. Finished recordings are kept in `recordings.json` in the state folder, the last 50, and `hands record list` prints them. Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
+`hands actions` prints the last 200 clicks, sets, focuses, typing, keys, scrolls and finished recordings, and the last 200 screenshots, including ones that failed, kept in `actions.jsonl` in the state folder. It records what was touched, never the text typed or set; reading commands such as `see` aren't listed. Finished recordings are kept in `recordings.json` in the state folder, the last 50, and `hands record list` prints them. Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
 
 ## Settings
 
@@ -94,6 +94,6 @@ herdr-app check "$HOME/.config/herdr-app/mods/hands"
 
 `helper/bridge.m` holds the Accessibility, CGEvent and ScreenCaptureKit calls and returns JSON; `helper/main.go` is the command line, `tree.go` the numbered listing and snapshot, `keys.go` the chord table, `record.go` the recorder. Tests cover the Go logic and the pane; the Objective-C is exercised by hand from a Herdr terminal.
 
-`mods/hands/main.js` is the panel: it reads the CLI and holds its state. `views/` draws the permissions block, the actions and the recordings, with the shared look in `views/ui.js`, and `icons/` holds its icons.
+`mods/hands/main.js` is the panel: it reads the CLI and holds its state. `views/` draws the permissions block, the captures and the actions, with the shared look in `views/ui.js`, and `icons/` holds its icons.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -128,15 +129,36 @@ func terminalName() string {
 	return terminal.Labels.Where
 }
 
+// keptLines picks the lines worth keeping, newest first: the recent actions and,
+// counted apart, the recent screenshots, so a run of clicks can't push them out of
+// the panel's Captures tab.
+func keptLines(lines [][]byte) [][]byte {
+	kept := [][]byte{}
+	actions, shots := 0, 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		var a Action
+		if json.Unmarshal(lines[i], &a) != nil {
+			continue // a torn line must not hide the rest
+		}
+		count := &actions
+		if a.Action == "shot" {
+			count = &shots
+		}
+		if *count < actionsKept {
+			*count++
+			kept = append(kept, lines[i])
+		}
+	}
+	return kept
+}
+
 func trimActions(path string) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
-	lines := bytes.Split(bytes.TrimSpace(b), []byte("\n"))
-	if len(lines) > actionsKept {
-		lines = lines[len(lines)-actionsKept:]
-	}
+	lines := keptLines(bytes.Split(bytes.TrimSpace(b), []byte("\n")))
+	slices.Reverse(lines)
 	temp, err := os.CreateTemp(stateDir(), actionsFile+".*")
 	if err != nil {
 		return
@@ -156,12 +178,9 @@ func pastActions() []Action {
 	if err != nil {
 		return past
 	}
-	lines := bytes.Split(bytes.TrimSpace(b), []byte("\n"))
-	for i := len(lines) - 1; i >= 0 && len(past) < actionsKept; i-- {
+	for _, line := range keptLines(bytes.Split(bytes.TrimSpace(b), []byte("\n"))) {
 		var a Action
-		if json.Unmarshal(lines[i], &a) != nil {
-			continue // a torn line must not hide the rest
-		}
+		_ = json.Unmarshal(line, &a)
 		if a.File != "" {
 			_, err := os.Stat(a.File)
 			a.Missing = err != nil
