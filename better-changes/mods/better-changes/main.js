@@ -8,8 +8,9 @@
 // git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
-import { props, shared, setShared, nextCommand } from "herdr";
+import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";
 import { loadSettings, duration } from "./settings.js";
+import { panelCommands } from "./panel.js";
 import { gitMethods } from "./git/repository.js";
 import { sidebarMethods } from "./views/sidebar.js";
 import { diffMethods } from "./views/diff.js";
@@ -22,6 +23,7 @@ const DEFAULT_SETTINGS = {
   refresh: { status: "10s" },
   limits: { files: 1000, diff_lines: 1500, line_length: 4000, commits_per_page: 50 },
   default: { view: "tree", diff: "inline" },
+  panel: { toggle: false },
 };
 
 class BetterChanges extends View {
@@ -31,6 +33,11 @@ class BetterChanges extends View {
     if (p.pane) {
       this.mode = "pane-header";
       this.hovered = false;
+      return;
+    }
+    if (p.overlay) {
+      this.mode = "panel-key";
+      this.runPanelKey(p.overlay, cx);
       return;
     }
     this.mode = p.mode ?? "sidebar";
@@ -67,6 +74,21 @@ class BetterChanges extends View {
       for (;;) this.command(await nextCommand(), cx);
     });
     this.refresh(cx);
+  }
+
+  // `mod.open:better-changes` from a key. `<mod>.<command>` can't reach a hidden
+  // panel, so a copy opens as an overlay for a moment and acts on the layout.
+  runPanelKey(overlay, cx) {
+    cx.spawn(async () => {
+      try {
+        const { settings } = await loadSettings("better-changes", DEFAULT_SETTINGS);
+        const commands = panelCommands(layout(), "better-changes", settings.panel.toggle);
+        if (commands) for (const [name, args] of commands) run(name, args);
+        else notify({ title: "Better Changes isn't in this layout" });
+      } finally {
+        closeOverlay(overlay);
+      }
+    });
   }
 
   initCommitBox(cx) {

@@ -1,8 +1,9 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "place": "right",
   "size": 368,
   "title": "Better Changes",
+  "overlay": { "kind": "popup", "width": 1, "height": 1, "frame": "none" },
   "settings": {
     "refresh": {
       "status": "10s"
@@ -16,6 +17,9 @@
     "default": {
       "view": "tree",
       "diff": "inline"
+    },
+    "panel": {
+      "toggle": false
     }
   }
 }
