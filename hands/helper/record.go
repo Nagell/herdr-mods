@@ -49,6 +49,14 @@ func remember(r Recording) {
 	r.Ended = info.ModTime().Format(time.RFC3339)
 	var old []Recording
 	_ = readState("recordings.json", &old)
+	// Stop and the pane may both file the same recording.
+	filed := false
+	for _, o := range old {
+		filed = filed || (o.File == r.File && o.Started == r.Started)
+	}
+	if !filed {
+		logAction(Action{Action: "record", Time: r.Ended, App: r.App, Target: recordedWhat(r), File: r.File})
+	}
 	list := []Recording{r}
 	for _, o := range old {
 		if o.File != r.File && len(list) < historySize {
@@ -56,6 +64,19 @@ func remember(r Recording) {
 		}
 	}
 	_ = writeState("recordings.json", list)
+}
+
+func recordedWhat(r Recording) string {
+	if r.Note != "" {
+		return r.Note
+	}
+	if r.Window != "" {
+		return r.Window
+	}
+	if r.App == "" {
+		return "the whole screen"
+	}
+	return ""
 }
 
 func pastRecordings() []PastRecording {

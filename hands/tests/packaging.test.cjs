@@ -18,31 +18,43 @@ test('package owns its helper and depends on no other mod', () => {
 
 // A minimal stand-in for Herdr's runtime, enough to render the pane and click its button.
 const PAST = [
-  { file: '/tmp/my demo.mov', started: new Date(Date.now() - 7200000).toISOString(), app: 'Safari', window: 'Docs', note: 'The login flow', seconds: 75, bytes: 2097152 },
+  { file: '/tmp/my demo.mov', started: new Date(Date.now() - 7200000).toISOString(), ended: new Date(Date.now() - 7125000).toISOString(), app: 'Safari', window: 'Docs', note: 'The login flow', seconds: 75, bytes: 2097152 },
   { file: '/tmp/old.mov', started: new Date(Date.now() - 172800000).toISOString(), seconds: 9, bytes: 0, missing: true },
+];
+const ACTIONS = [
+  { time: new Date(Date.now() - 180000).toISOString(), action: 'shot', app: 'Safari', target: 'Docs', file: '/tmp/a b.png' },
+  { time: new Date(Date.now() - 240000).toISOString(), action: 'shot', app: 'Safari', file: '/tmp/gone.png', missing: true },
+  { time: new Date(Date.now() - 300000).toISOString(), action: 'click', app: 'Safari', by: 'trailhead / Codex', target: 'Button "Save"' },
+  { time: new Date(Date.now() - 360000).toISOString(), action: 'key', app: 'Safari', target: 'cmd+s', error: 'Safari is not running' },
+  { time: new Date(Date.now() - 7180000).toISOString(), action: 'click', app: 'Safari', target: 'Button "Sign in"' },
+  { time: new Date(Date.now() - 7170000).toISOString(), action: 'click', app: 'Finder', target: 'Row "Other app"' },
+  { time: new Date(Date.now() - 7126000).toISOString(), action: 'record', app: 'Safari', target: 'The login flow', file: '/tmp/my demo.mov' },
 ];
 function harness(state = { accessibility: false, screen: false }) {
   const pending = [], calls = [], opened = [];
-  const cx = { notify() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every() {} } };
+  const cx = { notify() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every() {}, after() {} }, stop_propagation() {} };
   function el() {
     const data = { nodes: [], handlers: {} }; let proxy;
-    proxy = new Proxy(data, { get(t, k) { if (k in t) return t[k]; if (k === 'child') return c => { t.nodes.push(c); return proxy; }; if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; }; return (...a) => { if (k === 'id') t.elementId = a[0]; if (k === 'on_click') t.handlers.click = a[0]; return proxy; }; } });
+    proxy = new Proxy(data, { get(t, k) { if (k in t) return t[k]; if (k === 'child') return c => { t.nodes.push(c); return proxy; }; if (k === 'children') return c => { t.nodes.push(...c); return proxy; }; if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; }; return (...a) => { if (k === 'id') t.elementId = a[0]; if (k === 'on_click') t.handlers.click = a[0]; return proxy; }; } });
     return proxy;
   }
   const context = { View: class {}, div: el, v_flex: el, h_flex: el, svg: el, appHome: () => '/app', theme: () => ({}), settings: () => ({ font_size: 14 }), readTextFile: async () => null,
     exec: async (bin, args) => {
-      if (bin === 'open') { opened.push(args[0]); return { code: 0, stdout: '' }; }
+      if (bin === 'open') { opened.push(args.join(' ')); return { code: 0, stdout: '' }; }
       calls.push(args);
       if (args[0] === 'permissions') {
         const ask = args.find(a => a.startsWith('--ask='))?.slice(6);
         if (ask && state.grants !== false) state[ask] = true;
         return { code: 0, stdout: JSON.stringify(state) };
       }
+      if (args[0] === 'actions') return { code: 0, stdout: JSON.stringify(ACTIONS) };
       return { code: 0, stdout: JSON.stringify(args[1] === 'list' ? PAST : { running: true, file: '/tmp/demo.mov' }) };
     } };
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(path.join(runtime, 'settings.js'), 'utf8').replace(/^import .*;\n/gm, '').replaceAll('export function', 'function').replaceAll('export async function', 'async function'), context);
-  const source = fs.readFileSync(path.join(runtime, 'main.js'), 'utf8').replace(/^import\s+[\s\S]*?;\n/gm, '').replace('export default class Hands', 'globalThis.Mod = class Hands');
+  const read = (file) => fs.readFileSync(path.join(runtime, file), 'utf8').replace(/^import\s+[\s\S]*?;\n/gm, '');
+  const plain = (file) => read(file).replace(/^export /gm, '');
+  const source = ['settings.js', 'views/ui.js', 'views/days.js', 'views/permissions.js', 'views/recordings.js', 'views/actions.js'].map(plain).join('\n')
+    + read('main.js').replace('export default class Hands', 'globalThis.Mod = class Hands');
   vm.runInContext(source, context);
   const mod = new context.Mod(); mod.init({}, cx);
   return { mod, cx, calls, opened, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
@@ -75,18 +87,52 @@ test('past recordings list, open to a summary, and link to their movie', async (
   let tree = h.mod.render(h.cx);
   assert.equal(find(tree, 'hands-permissions'), undefined);
   assert.match(strings(find(tree, 'hands-recording')), /Recording \/tmp\/demo.mov/);
-  assert.match(strings(find(tree, 'hands-recording-/tmp/my demo.mov')), /The login flow[\s\S]*Safari, Docs · 2h ago · 1m 15s/);
+  find(tree, 'hands-tab-recordings').handlers.click({}, h.cx);
+  tree = h.mod.render(h.cx);
+  assert.match(strings(find(tree, 'hands-recording-/tmp/my demo.mov')), /The login flow[\s\S]*Safari, Docs · 2h ago[\s\S]*1m 15s/);
   assert.match(strings(find(tree, 'hands-recording-/tmp/old.mov')), /Whole screen[\s\S]*movie is gone/);
   find(tree, 'hands-recording-/tmp/my demo.mov').handlers.click({}, h.cx);
   tree = h.mod.render(h.cx);
-  assert.match(strings(find(tree, 'hands-detail')), /Summary[\s\S]*The login flow[\s\S]*Safari, Docs[\s\S]*1m 15s[\s\S]*2\.0 MB/);
+  assert.match(strings(find(tree, 'hands-detail')), /The login flow[\s\S]*Safari, Docs[\s\S]*Files[\s\S]*my demo\.mov[\s\S]*2\.0 MB/);
   const movie = find(tree, 'hands-movie');
-  assert.match(strings(movie), /^file:\/\/\/tmp\/my%20demo\.mov$/);
+  movie.handlers.click({ modifiers: {} }, h.cx); await h.flush();
+  assert.equal(h.opened.length, 0, 'a plain click opens nothing');
   movie.handlers.click({ modifiers: { platform: true } }, h.cx); await h.flush();
   assert.equal(h.opened[0], '/tmp/my demo.mov');
+  find(tree, 'hands-movie-reveal').handlers.click({}, h.cx); await h.flush();
+  assert.equal(h.opened[1], '-R /tmp/my demo.mov');
+  const during = strings(find(tree, 'hands-files'));
+  assert.match(during, /Actions 1[\s\S]*Click Button "Sign in"/);
+  assert.doesNotMatch(during, /Other app/, 'another app stays out of a window recording');
+  assert.doesNotMatch(during, /Record /, 'nor the recording itself');
   find(tree, 'hands-back').handlers.click({}, h.cx);
   assert.ok(find(h.mod.render(h.cx), 'hands-recordings'));
   h.mod.selected = '/tmp/old.mov';
   tree = h.mod.render(h.cx);
   assert.equal(find(tree, 'hands-movie'), undefined); assert.match(strings(find(tree, 'hands-detail')), /Gone from \/tmp\/old.mov/);
+});
+
+test('actions list what hands did, and their files open on Cmd-click or reveal in Finder', async () => {
+  const h = harness({ accessibility: true, screen: true }); await h.flush();
+  const tree = h.mod.render(h.cx);
+  const id = (a) => `hands-action-${a.time}-${a.action}-${a.file ?? a.target}`;
+  const [saved, gone, click] = ACTIONS;
+  assert.match(strings(find(tree, 'hands-tab-actions')), /Actions 7/);
+  assert.match(strings(find(tree, 'hands-actions')), /Today \d/);
+  assert.match(strings(find(tree, id(click))), /Click Button "Save"[\s\S]*5m ago · Safari · trailhead \/ Codex/);
+  assert.equal(find(tree, id(click)).handlers.click, undefined, 'nothing to open');
+  assert.match(strings(find(tree, id(saved))), /Screenshot Docs[\s\S]*a b\.png[\s\S]*3m ago · Safari/);
+  find(tree, id(saved)).handlers.click({ modifiers: {} }, h.cx); await h.flush();
+  assert.equal(h.opened.length, 0, 'a plain click opens nothing');
+  find(tree, id(saved)).handlers.click({ modifiers: { platform: true } }, h.cx); await h.flush();
+  find(tree, `${id(saved)}-reveal`).handlers.click({}, h.cx); await h.flush();
+  assert.deepEqual(h.opened, ['/tmp/a b.png', '-R /tmp/a b.png']);
+  assert.equal(find(tree, id(gone)).handlers.click, undefined, 'a gone file has no link');
+  assert.equal(find(tree, `${id(gone)}-reveal`), undefined, 'nor a button');
+  assert.match(strings(find(tree, id(gone))), /gone\.png is gone/);
+  const failed = find(tree, id(ACTIONS[3]));
+  assert.match(strings(failed), /Press cmd\+s[\s\S]*Safari is not running/);
+  assert.equal(failed.handlers.click, undefined);
+  find(tree, 'hands-actions-day-Today').handlers.click({}, h.cx);
+  assert.equal(find(h.mod.render(h.cx), id(click)), undefined, 'a folded day hides its rows');
 });

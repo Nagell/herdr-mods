@@ -1,65 +1,35 @@
-// hands: the sidebar for the `hands` CLI. A block asks for whichever
-// permission is missing and goes away once both are granted; below it, past
-// recordings, each opening to what it holds and where its movie is. Everything
-// else is the CLI (`hands --help`).
-import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { exec, appHome, theme, settings } from "herdr";
+// hands: the panel for the `hands` CLI. It asks for missing permissions and lists
+// what hands did and recorded; everything else is the CLI (`hands --help`).
+import { View } from "gpui-kit";
+import { h_flex } from "gpui-base";
+import { exec, appHome } from "herdr";
 import { loadSettings, duration } from "./settings.js";
+import { PERMISSIONS, PermissionsBlock } from "./views/permissions.js";
+import { ActionList } from "./views/actions.js";
+import {
+  RecordingList,
+  RecordingDetail,
+  RecordingHeader,
+  RecordingStatus,
+} from "./views/recordings.js";
+import { SPIN_MS, IconButton, HeaderTab, Message, Panel, PanelHeader } from "./views/ui.js";
 
 const POLL_MS = 5000;
 // The pane's own preference; the CLI reads the rest of the block itself.
 const DEFAULT_SETTINGS = { pane: { refresh: "5s" } };
 
-const PERMISSIONS = [
-  {
-    key: "accessibility",
-    label: "Accessibility",
-    why: "Read and operate other apps",
-    settings: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-  },
-  {
-    key: "screen",
-    label: "Screen Recording",
-    why: "Screenshots and recordings",
-    settings: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-  },
-];
-
-const em = (factor) => {
-  const s = settings?.() ?? {};
-  return (s.ui_font_size ?? s.font_size ?? 14) * factor;
-};
-
-const subject = (r) => (r.app ? (r.window ? `${r.app}, ${r.window}` : r.app) : "Whole screen");
-
-function length(seconds) {
-  const total = Math.max(0, Math.round(seconds ?? 0));
-  const m = Math.floor(total / 60);
-  return m ? `${m}m ${total % 60}s` : `${total}s`;
-}
-
-function fileSize(bytes) {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.ceil(bytes / 1024)} KB`;
-}
-
-function ago(iso) {
-  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (!(minutes >= 1)) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
-  return `${Math.floor(minutes / 1440)}d ago`;
-}
-
 export default class Hands extends View {
   init(_props, cx) {
     this.permissions = null; // {accessibility, screen} once read
+    this.tab = "actions"; // or "recordings"
+    this.actions = []; // newest first
     this.recording = null; // {running, file} once read
     this.recordings = []; // finished, newest first
     this.selected = null; // the movie path of the open recording
     this.error = null;
     this.asking = null; // the permission being asked for
+    this.collapsed = new Set(); // the days folded away
+    this.spinning = false;
     this.refresh(cx);
     cx.spawn(async (cx) => {
       const { settings } = await loadSettings("hands", DEFAULT_SETTINGS);
@@ -88,6 +58,7 @@ export default class Hands extends View {
     cx.spawn(async (cx) => {
       try {
         this.permissions = await this.hands(["permissions"]);
+        this.actions = await this.hands(["actions"]);
         this.recording = await this.hands(["record", "status"]);
         this.recordings = await this.hands(["record", "list"]);
         this.error = null;
@@ -118,272 +89,135 @@ export default class Hands extends View {
     });
   }
 
-  openMovie(file, cx) {
+  runOpen(args, cx) {
     cx.spawn(async (cx) => {
-      const result = await exec("open", [file], {});
+      const result = await exec("open", args, {});
+      const file = args.at(-1);
       this.error = result.code === 0 ? null : result.stderr?.trim() || `Could not open ${file}`;
       cx.notify();
     });
   }
 
-  iconButton(id, name, label, action, t) {
-    return div()
-      .id(id)
-      .size(26)
-      .flex_none()
-      .flex()
-      .items_center()
-      .justify_center()
-      .rounded(6)
-      .text_color(t.muted)
-      .accessibility_label(label)
-      .tooltip(label)
-      .cursor_pointer()
-      .hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .on_click((_e, cx) => action(cx))
-      .child(svg(`mods/hands/${name}.svg`).size(15));
+  openFile = (file, cx) => this.runOpen([file], cx);
+
+  revealFile = (file, cx) => this.runOpen(["-R", file], cx);
+
+  showTab(tab, cx) {
+    this.tab = tab;
+    cx.notify();
   }
 
-  headerView(t, open) {
-    const header = h_flex()
-      .h(42)
-      .flex_none()
-      .px(14)
-      .gap(8)
-      .items_center()
-      .border_b(1)
-      .border_color(t.border);
-    if (open)
-      header.child(
-        this.iconButton(
-          "hands-back",
-          "back",
-          "Back to recordings",
-          (cx) => {
-            this.selected = null;
-            cx.notify();
-          },
-          t,
-        ),
-      );
-    return header
-      .child(div().font_semibold().child(open ? "Recording" : "Hands"))
-      .child(div().flex_1())
-      .child(this.iconButton("hands-refresh", "refresh", "Refresh", (cx) => this.refresh(cx), t));
+  select(file, cx) {
+    this.selected = file;
+    cx.notify();
   }
 
-  permissionRow(permission, t) {
-    const granted = Boolean(this.permissions[permission.key]);
-    const asking = this.asking === permission.key;
-    return h_flex()
-      .id(`hands-${permission.key}`)
-      .gap(8)
-      .items_center()
+  toggleDay(key, cx) {
+    if (!this.collapsed.delete(key)) this.collapsed.add(key);
+    cx.notify();
+  }
+
+  // The CLI usually answers at once, so the icon always makes a full turn to be seen.
+  refreshNow(cx) {
+    this.refresh(cx);
+    if (this.spinning) return;
+    this.spinning = true;
+    cx.notify();
+    cx.timer.after(SPIN_MS, (cx) => {
+      this.spinning = false;
+      cx.notify();
+    });
+  }
+
+  header() {
+    return PanelHeader()
       .child(
-        div()
-          .size(8)
-          .flex_none()
-          .rounded(4)
-          .bg(granted ? t.done : t.blocked),
-      )
-      .child(
-        v_flex()
+        h_flex()
           .flex_1()
           .min_w(0)
-          .child(div().text_color(t.foreground).child(permission.label))
-          .child(div().text_size(em(0.8)).text_color(t.dim).child(permission.why)),
-      )
-      .child(
-        granted
-          ? div().text_size(em(0.85)).text_color(t.dim).child("Granted")
-          : h_flex()
-              .id(`hands-ask-${permission.key}`)
-              .flex_none()
-              .min_h(30)
-              .px(10)
-              .py(5)
-              .items_center()
-              .rounded(6)
-              .border_1()
-              .border_color(t.border)
-              .bg(t.raised)
-              .text_size(em(0.85))
-              .text_color(this.asking ? t.dim : t.foreground)
-              .accessibility_label(`Grant ${permission.label} access to Herdr`)
-              .when(!this.asking, (el) =>
-                el
-                  .cursor_pointer()
-                  .hover((s) => s.bg(t.hover))
-                  .on_click((_e, cx) => this.ask(permission, cx)),
-              )
-              .child(asking ? "Asking…" : "Grant access"),
-      );
-  }
-
-  permissionsBlock(t) {
-    const block = v_flex()
-      .id("hands-permissions")
-      .flex_none()
-      .m(14)
-      .mb(0)
-      .p(10)
-      .gap(10)
-      .rounded(8)
-      .border_1()
-      .border_color(t.border)
-      .bg(t.raised)
-      .child(div().font_medium().text_color(t.foreground).child("Herdr needs permission"));
-    for (const permission of PERMISSIONS) block.child(this.permissionRow(permission, t));
-    return block;
-  }
-
-  listView(t) {
-    const list = v_flex().id("hands-recordings").flex_1().min_h(0).overflow_y_scrollbar().p(8).gap(2);
-    if (!this.recordings.length)
-      list.child(
-        div()
-          .p(6)
-          .text_size(em(0.95))
-          .text_color(t.dim)
-          .whitespace_normal()
-          .child("No recordings yet. They appear here after `hands record stop`."),
-      );
-    for (const r of this.recordings)
-      list.child(
-        v_flex()
-          .id(`hands-recording-${r.file}`)
-          .flex_none()
-          .p(8)
-          .gap(3)
-          .rounded(5)
-          .cursor_pointer()
-          .hover((s) => s.bg(t.hover))
-          .accessibility_label(`Recording of ${subject(r)}`)
-          .on_click((_e, cx) => {
-            this.selected = r.file;
-            cx.notify();
-          })
+          .ml(-8) // Lines the pills up with the list rows below.
+          .gap(4)
+          .items_center()
+          .role("tab_list")
           .child(
-            div()
-              .truncate()
-              .text_size(em(0.95))
-              .text_color(t.foreground)
-              .child(r.note || subject(r)),
+            HeaderTab({
+              id: "hands-tab-actions",
+              label: "Actions",
+              count: this.actions.length,
+              active: this.tab === "actions",
+              onClick: (cx) => this.showTab("actions", cx),
+            }),
           )
           .child(
-            div()
-              .truncate()
-              .text_size(em(0.8))
-              .text_color(t.dim)
-              .child(
-                [
-                  ...(r.note ? [subject(r)] : []),
-                  ago(r.started),
-                  length(r.seconds),
-                  ...(r.missing ? ["movie is gone"] : []),
-                ].join(" · "),
-              ),
+            HeaderTab({
+              id: "hands-tab-recordings",
+              label: "Recordings",
+              count: this.recordings.length,
+              active: this.tab === "recordings",
+              onClick: (cx) => this.showTab("recordings", cx),
+            }),
           ),
-      );
-    return list;
-  }
-
-  field(label, value, t) {
-    return v_flex()
-      .gap(2)
-      .child(div().text_size(em(0.8)).text_color(t.dim).child(label))
-      .child(div().text_color(t.foreground).whitespace_normal().child(value));
-  }
-
-  detailView(r, t) {
-    const detail = v_flex().id("hands-detail").flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(12);
-    if (r.note) detail.child(this.field("Summary", r.note, t));
-    detail
-      .child(this.field("Recorded", subject(r), t))
-      .child(this.field("Started", new Date(r.started).toLocaleString(), t))
-      .child(this.field("Length", length(r.seconds), t));
-    if (!r.missing) detail.child(this.field("Size", fileSize(r.bytes), t));
-    const location = `file://${encodeURI(r.file)}`;
-    detail.child(
-      v_flex()
-        .gap(2)
-        .child(div().text_size(em(0.8)).text_color(t.dim).child("Movie"))
-        .child(
-          r.missing
-            ? div().text_color(t.dim).whitespace_normal().child(`Gone from ${r.file}`)
-            : div()
-                .id("hands-movie")
-                .text_color(t.accent)
-                .whitespace_normal()
-                .cursor_pointer()
-                .hover((s) => s.underline())
-                .role("link")
-                .tooltip("Open the movie")
-                .on_click((_e, cx) => this.openMovie(r.file, cx))
-                .child(location),
-        ),
-    );
-    return detail;
-  }
-
-  footerView(t) {
-    const running = Boolean(this.recording?.running);
-    return h_flex()
-      .id("hands-recording")
-      .h(34)
-      .flex_none()
-      .px(14)
-      .gap(8)
-      .items_center()
-      .border_t(1)
-      .border_color(t.border)
-      .text_size(em(0.85))
-      .text_color(t.dim)
-      .child(
-        div()
-          .size(8)
-          .flex_none()
-          .rounded(4)
-          .bg(running ? t.blocked : t.dim),
       )
       .child(
-        div()
-          .flex_1()
-          .min_w(0)
-          .truncate()
-          .child(running ? `Recording ${this.recording.file}` : "Not recording"),
+        IconButton({
+          id: "hands-refresh",
+          icon: "refresh",
+          label: "Refresh",
+          spinning: this.spinning,
+          onClick: (cx) => this.refreshNow(cx),
+        }),
       );
   }
 
-  render(cx) {
-    const t = theme();
-    const p = this.permissions;
+  list() {
+    const days = { collapsed: this.collapsed, onToggle: (key, cx) => this.toggleDay(key, cx) };
+    if (this.tab === "actions")
+      return ActionList({
+        actions: this.actions,
+        onOpen: this.openFile,
+        onReveal: this.revealFile,
+        ...days,
+      });
+    return RecordingList({
+      recordings: this.recordings,
+      onOpen: (file, cx) => this.select(file, cx),
+      ...days,
+    });
+  }
+
+  render() {
     const open = this.recordings.find((r) => r.file === this.selected);
-    const root = v_flex()
-      .id("hands")
-      .size_full()
-      .min_w(0)
-      .min_h(0)
-      .rounded(10)
-      .overflow_hidden()
-      .bg(t.background)
-      .text_color(t.foreground)
-      .text_size(em(1))
-      .border_1()
-      .border_color(t.border)
-      .child(this.headerView(t, Boolean(open)));
-    if (p && (!p.accessibility || !p.screen)) root.child(this.permissionsBlock(t));
-    if (this.error)
-      root.child(
-        div()
-          .flex_none()
-          .px(14)
-          .py(5)
-          .text_size(em(0.85))
-          .text_color(t.blocked)
-          .whitespace_normal()
-          .child(this.error),
-      );
-    return root.child(open ? this.detailView(open, t) : this.listView(t)).child(this.footerView(t));
+    const missing = this.permissions && PERMISSIONS.some((p) => !this.permissions[p.key]);
+    return Panel({ id: "hands" })
+      .child(
+        open
+          ? RecordingHeader({
+              recording: open,
+              onBack: (cx) => this.select(null, cx),
+              onReveal: this.revealFile,
+            })
+          : this.header(),
+      )
+      .when(Boolean(missing), (el) =>
+        el.child(
+          PermissionsBlock({
+            permissions: this.permissions,
+            asking: this.asking,
+            onAsk: (permission, cx) => this.ask(permission, cx),
+          }),
+        ),
+      )
+      .when(Boolean(this.error), (el) => el.child(Message(this.error, true)))
+      .child(
+        open
+          ? RecordingDetail({
+              recording: open,
+              actions: this.actions,
+              onOpen: this.openFile,
+              onReveal: this.revealFile,
+            })
+          : this.list(),
+      )
+      .child(RecordingStatus(this.recording));
   }
 }

@@ -34,6 +34,7 @@ const usage = `hands: a coding agent's hands on the Mac
   hands record start out.mov --app A [--window T]       record one window via ScreenCaptureKit
            [--note "what this shows"]                   a summary kept with the recording
   hands record stop | status | list
+  hands actions                        what hands did lately, newest first, with any output file
 
   --app takes a name, bundle id or pid. --json prints machine-readable output.
   --delay MS waits that long after click, set, focus, key, scroll and type
@@ -136,12 +137,17 @@ func main() {
 	}
 }
 
-func run(args []string, out *os.File) error {
+func run(args []string, out *os.File) (err error) {
 	opts, rest := parseArgs(args)
 	if len(rest) == 0 || rest[0] == "help" || opts["help"] != "" {
 		fmt.Fprintln(out, usage)
 		return nil
 	}
+	defer func() {
+		if err != nil {
+			logFailure(rest, opts, err)
+		}
+	}()
 	asJSON := opts["json"] == "true"
 	prefs := loadSettings()
 	settle, err := delayFrom(opts, prefs.afterAction())
@@ -324,7 +330,7 @@ func run(args []string, out *os.File) error {
 			clicks = 2
 		}
 		if x, y, ok := point(); ok {
-			pid, _, err := targetPid()
+			pid, name, err := targetPid()
 			if err != nil {
 				return err
 			}
@@ -332,6 +338,7 @@ func run(args []string, out *os.File) error {
 			if err != nil {
 				return err
 			}
+			logAction(Action{Action: "click", App: name, Target: fmt.Sprintf("(%.0f,%.0f)", x, y)})
 			emit(v, func() string { return fmt.Sprintf("Clicked (%.0f,%.0f) in pid %d.", x, y, pid) })
 			return nil
 		}
@@ -352,6 +359,7 @@ func run(args []string, out *os.File) error {
 		if err != nil {
 			return err
 		}
+		logAction(Action{Action: "click", App: s.App, Target: describe(e)})
 		emit(v, func() string {
 			return fmt.Sprintf("Pressed %d %s %q via %s. Run `hands see` again to read the result.", e.Index, e.Role, e.Title, v.(map[string]any)["via"])
 		})
@@ -371,6 +379,7 @@ func run(args []string, out *os.File) error {
 		if err != nil {
 			return err
 		}
+		logAction(Action{Action: rest[0], App: s.App, Target: describe(e)})
 		emit(v, func() string {
 			return fmt.Sprintf("%s %d %s via %s.", strings.ToUpper(rest[0][:1])+rest[0][1:], e.Index, e.Role, v.(map[string]any)["via"])
 		})
@@ -417,6 +426,7 @@ func run(args []string, out *os.File) error {
 		if err := flush(); err != nil {
 			return err
 		}
+		logAction(Action{Action: "type", App: name, Target: fmt.Sprintf("%d characters", len([]rune(text)))})
 		emit(v, func() string { return fmt.Sprintf("Typed %d characters into %s.", len([]rune(text)), name) })
 	case "key":
 		if len(rest) < 2 {
@@ -434,6 +444,7 @@ func run(args []string, out *os.File) error {
 		if err != nil {
 			return err
 		}
+		logAction(Action{Action: "key", App: name, Target: rest[1]})
 		emit(v, func() string { return fmt.Sprintf("Pressed %s in %s.", rest[1], name) })
 	case "scroll":
 		dx, dy := 0, 0
@@ -452,9 +463,10 @@ func run(args []string, out *os.File) error {
 			return errors.New("scroll needs --dy and/or --dx (lines; negative dy scrolls down)")
 		}
 		var pid int
+		var app string
 		x, y, ok := point()
 		if ok {
-			if pid, _, err = targetPid(); err != nil {
+			if pid, app, err = targetPid(); err != nil {
 				return err
 			}
 		} else {
@@ -465,18 +477,19 @@ func run(args []string, out *os.File) error {
 			if err != nil {
 				return err
 			}
-			pid, x, y = s.Pid, e.X+e.W/2, e.Y+e.H/2
+			pid, app, x, y = s.Pid, s.App, e.X+e.W/2, e.Y+e.H/2
 		}
 		v, err := scroll(pid, x, y, dx, dy)
 		if err != nil {
 			return err
 		}
+		logAction(Action{Action: "scroll", App: app, Target: fmt.Sprintf("dx=%d dy=%d", dx, dy)})
 		emit(v, func() string { return fmt.Sprintf("Scrolled dx=%d dy=%d at (%.0f,%.0f).", dx, dy, x, y) })
 	case "shot":
 		if opts["app"] == "" || len(rest) < 2 {
 			return errors.New("shot needs --app <name> and an output .png path")
 		}
-		pid, _, err := targetPid()
+		pid, name, err := targetPid()
 		if err != nil {
 			return err
 		}
@@ -484,6 +497,7 @@ func run(args []string, out *os.File) error {
 		if err != nil {
 			return err
 		}
+		logAction(Action{Action: "shot", App: name, Target: fmt.Sprint(v.(map[string]any)["title"]), File: rest[1]})
 		emit(v, func() string {
 			m := v.(map[string]any)
 			return fmt.Sprintf("Saved %s (%.0f×%.0f, window %q).", m["path"], m["width"], m["height"], m["title"])
@@ -559,6 +573,9 @@ func run(args []string, out *os.File) error {
 		default:
 			return fmt.Errorf("unknown record action %q", rest[1])
 		}
+	case "actions":
+		past := pastActions()
+		emit(past, func() string { return actionLines(past) })
 	case "record-worker":
 		// Internal: the detached process behind `record start --app`.
 		pid, err := number(opts["pid"], "--pid")

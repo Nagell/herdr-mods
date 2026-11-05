@@ -38,7 +38,7 @@ The manifest has `place: none`. To show the pane, add a block to a layout you ow
 { "mod": "hands" }
 ```
 
-While a permission is missing, a block lists Accessibility and Screen Recording, each with its own **Grant access** button that prompts for that one and, if macOS shows no prompt, opens its place in System Settings. The block goes away once both are granted. Below it are past recordings, newest first; selecting one shows its summary, what it recorded, when, how long, its size, and a `file://` link that opens the movie on click or cmd-click. The footer shows whether a recording is running.
+While a permission is missing, a block lists Accessibility and Screen Recording, each with its own **Grant access** button that prompts for that one and, if macOS shows no prompt, opens its place in System Settings. The block goes away once both are granted. Below it are two tabs. Both read like Better Changes' Commits tab, in collapsible days. **Actions** lists what `hands` did or failed to do, newest first: the action and what it touched, then any output file or the error in red, the app, the Herdr terminal that asked, and when. Cmd-click a row with a file to open it, or press the folder button to show it in Finder. **Recordings** lists past recordings with their length; selecting one shows its summary, what it recorded, when, the movie with its size, which opens on Cmd-click, and the actions taken during it, with the same folder button in the header. The footer shows whether a recording is running.
 
 ### The skill
 
@@ -57,6 +57,7 @@ hands scroll 3 --dy -5 | hands scroll --at X,Y --dy 10 --dx 0
 hands shot --app Safari [--window "Docs"] out.png
 hands record start demo.mov [--seconds 30] [--clicks] [--note "what this shows"] | hands record start demo.mov --app Safari [--window "Docs"]
 hands record stop | hands record status | hands record list
+hands actions
 hands permissions [--ask[=accessibility|screen]]
 ```
 
@@ -64,7 +65,7 @@ hands permissions [--ask[=accessibility|screen]]
 
 Prefer `hands set N "text"` over typing into a text field: it writes the value through Accessibility in one step and falls back to select-all-and-type only when the field refuses. `hands type` sends keystrokes to whatever is focused in the target app, using the keys of the active keyboard layout. `hands key` understands `cmd`, `shift`, `ctrl`, `alt`/`option`, `fn`, letters, digits, punctuation, `enter`, `tab`, `space`, `esc`, `backspace`, arrows, `home`, `end`, `pageup`, `pagedown` and `f1`–`f15`.
 
-Finished recordings are kept in `recordings.json` in the state folder, the last 50, and `hands record list` prints them. Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
+`hands actions` prints the last 200 clicks, sets, focuses, typing, keys, scrolls, screenshots and finished recordings, including ones that failed, kept in `actions.jsonl` in the state folder. It records what was touched, never the text typed or set; reading commands such as `see` aren't listed. Finished recordings are kept in `recordings.json` in the state folder, the last 50, and `hands record list` prints them. Recording without `--app` captures the whole screen through `screencapture`, with `--clicks` highlighting clicks. With `--app` it records one window, chosen like `shot`, as H.264 at up to 30 frames per second through a detached `hands` worker; the window stays recorded when it moves or is covered, and nothing around it is captured. Stop writes a QuickTime movie either way; `--seconds` is a safety limit. One recording at a time.
 
 ## Settings
 
@@ -92,5 +93,7 @@ herdr-app check "$HOME/.config/herdr-app/mods/hands"
 ```
 
 `helper/bridge.m` holds the Accessibility, CGEvent and ScreenCaptureKit calls and returns JSON; `helper/main.go` is the command line, `tree.go` the numbered listing and snapshot, `keys.go` the chord table, `record.go` the recorder. Tests cover the Go logic and the pane; the Objective-C is exercised by hand from a Herdr terminal.
+
+`mods/hands/main.js` is the panel: it reads the CLI and holds its state. `views/` draws the permissions block, the actions and the recordings, with the shared look in `views/ui.js`, and `icons/` holds its icons.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.

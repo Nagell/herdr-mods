@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -346,5 +347,81 @@ func TestFinishedRecordingsAreRememberedNewestFirst(t *testing.T) {
 	past = pastRecordings()
 	if len(past) != 2 || past[0].File != second || past[1].File != first || !past[1].Missing {
 		t.Fatalf("order, duplicates or missing movie: %+v", past)
+	}
+}
+
+func TestActionsListNewestFirstAndSayWhenAFileIsGone(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HANDS_STATE_DIR", dir)
+	if got := actionLines(pastActions()); got != "No actions yet." {
+		t.Fatalf("empty %q", got)
+	}
+	kept, gone := filepath.Join(dir, "kept.png"), filepath.Join(dir, "gone.png")
+	if err := os.WriteFile(kept, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logAction(Action{Action: "click", App: "Finder", Target: describe(Element{Role: "AXButton", Desc: "close"})})
+	logAction(Action{Action: "shot", App: "Finder", File: kept})
+	logAction(Action{Action: "shot", App: "Finder", File: gone})
+	past := pastActions()
+	if len(past) != 3 || past[0].File != gone || !past[0].Missing || past[1].Missing || past[2].Target != `Button "close"` {
+		t.Fatalf("past %+v", past)
+	}
+}
+
+func TestActionLogKeepsOnlyTheRecentOnes(t *testing.T) {
+	t.Setenv("HANDS_STATE_DIR", t.TempDir())
+	logAction(Action{Action: "first"})
+	for i := 0; i < actionsKept+1; i++ {
+		logAction(Action{Action: "click", Target: strings.Repeat("x", actionsTrimAt/actionsKept)})
+	}
+	past := pastActions()
+	if len(past) != actionsKept || past[len(past)-1].Action == "first" {
+		t.Fatalf("kept %d, oldest %q", len(past), past[len(past)-1].Action)
+	}
+}
+
+func TestFailuresAreLoggedWithoutTheirText(t *testing.T) {
+	t.Setenv("HANDS_STATE_DIR", t.TempDir())
+	logFailure([]string{"type", "hunter2"}, map[string]string{"app": "Safari"}, errors.New("no such app"))
+	logFailure([]string{"shot", "/tmp/out.png"}, map[string]string{"app": "Safari"}, errors.New("no window"))
+	logFailure([]string{"record", "list"}, nil, errors.New("not an action"))
+	logFailure([]string{"see"}, nil, errors.New("not an action"))
+	past := pastActions()
+	if len(past) != 2 || past[1].Target != "7 characters" || past[1].Error != "no such app" || past[0].Target != "out.png" || past[0].File != "" {
+		t.Fatalf("past %+v", past)
+	}
+}
+
+func TestAFinishedRecordingIsOneActionHoweverItIsFiled(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HANDS_STATE_DIR", dir)
+	movie := filepath.Join(dir, "m.mov")
+	if err := os.WriteFile(movie, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := Recording{File: movie, Started: "2026-01-01T00:00:00Z", Note: "The login"}
+	remember(r)
+	remember(r)
+	past := pastActions()
+	if len(past) != 1 || past[0].Action != "record" || past[0].Target != "The login" || past[0].File != movie {
+		t.Fatalf("past %+v", past)
+	}
+}
+
+func TestActionsNameTheTerminalThatAsked(t *testing.T) {
+	bin := t.TempDir()
+	script := "#!/bin/sh\necho '{\"labels\":{\"where\":\"trailhead / Codex\"}}'\n"
+	if err := os.WriteFile(filepath.Join(bin, "hc"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("HC_TERMINAL_ID", "t1")
+	if got := terminalName(); got != "trailhead / Codex" {
+		t.Fatalf("name %q", got)
+	}
+	t.Setenv("HC_TERMINAL_ID", "")
+	if got := terminalName(); got != "" {
+		t.Fatalf("outside Herdr %q", got)
 	}
 }
