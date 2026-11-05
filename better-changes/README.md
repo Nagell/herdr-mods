@@ -61,11 +61,22 @@ The installed `mods/better-changes/mod.json` has a `settings` block, and saving 
 "settings": {
   "refresh": { "status": "10s" },
   "limits": { "files": 1000, "diff_lines": 1500, "line_length": 4000, "commits_per_page": 50 },
-  "default": { "view": "tree", "diff": "inline" }
+  "default": { "view": "tree", "diff": "inline" },
+  "panel": { "toggle": false }
 }
 ```
 
-`refresh.status` is how often Git is read. `limits` bound the file list, the lines and line length shown in a diff, and the commits loaded per page; zero falls back to the default. `default.view` (`tree` or `flat`) and `default.diff` (`inline` or `split`) apply until you choose in the **⋮** menu. Unknown keys and wrong types are reported in the log and ignored.
+`refresh.status` is how often Git is read. `limits` bound the file list, the lines and line length shown in a diff, and the commits loaded per page; zero falls back to the default. `default.view` (`tree` or `flat`) and `default.diff` (`inline` or `split`) apply until you choose in the **⋮** menu. `panel.toggle` makes the key below close an open panel. Unknown keys and wrong types are reported in the log and ignored.
+
+## A key for the panel
+
+Bind any key to `mod.open:better-changes` in `keys.json`:
+
+```json
+"global": { "cmd-alt-g": "mod.open:better-changes" }
+```
+
+It opens the panel, and selects it if it shares a stack such as Herdr's Files and Changes. On an open panel it does nothing, unless `panel.toggle` is `true`: then it closes it. A layout without the panel shows a notification.
 
 ## Limits
 
@@ -77,7 +88,7 @@ Colors show additions and removals, not whether a person or an agent wrote the l
 
 In `mods/better-changes/`:
 
-- `main.js`: setup, settings and commands. `settings.js`: shared with the other mods.
+- `main.js`: setup, settings and commands. `settings.js`: shared with the other mods. `panel.js`: what the panel key does, with no Herdr calls.
 - `git/repository.js`: following the repository, the index, history, commit and amend. `git/reads.js`: plain functions that read from Git. `git/model.js`: parsing with no Herdr calls.
 - `views/sidebar.js`, `views/diff.js`, `views/pane-header.js`: the three things it can draw. `views/ui.js`: the design kit, Herdr's sizes and small components. Every look lives here.
 - `icons/`: Lucide icons, the set Herdr uses, and Herdr's own pane header icons.
