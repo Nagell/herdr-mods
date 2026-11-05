@@ -541,11 +541,11 @@ export function Select({
     }
   };
   const highlighted = enabled[index]?.id;
-  const options = choices.map((choice) =>
+  const options = choices.flatMap((choice) => [
+    ...(choice.divided ? [div().h(1).my(4).flex_none().bg(t.border)] : []),
     v_flex()
       .id(`${id}-option-${choice.id}`)
       .flex_none()
-      .when(Boolean(choice.divided), (el) => el.mt(4).border_t(1).border_color(t.border))
       .min_h(31)
       .px(8)
       .py(5)
@@ -567,7 +567,7 @@ export function Select({
       .when(Boolean(choice.detail), (el) =>
         el.child(div().truncate().text_size(TEXT.caption).text_color(t.dim).child(choice.detail)),
       ),
-  );
+  ]);
   return Popover.new(id)
     .accessibility_label(accessibilityLabel ?? label)
     .open(open)

@@ -3,7 +3,14 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { theme } from "herdr";
-import { checkGroups, checkStatus, checkSummary, elapsed, jobIdOf } from "../github/model.js";
+import {
+  checkGroups,
+  checkStatus,
+  checkSummary,
+  cleanLog,
+  elapsed,
+  jobIdOf,
+} from "../github/model.js";
 import { TEXT, Chevron, CodeBlock, GroupHeader, Icon, Message, Row, TextButton } from "./ui.js";
 
 export const checksMethods = {
@@ -146,7 +153,7 @@ export const checksMethods = {
     if (log?.text !== undefined)
       content.child(
         CodeBlock(
-          `${log.truncated ? "Last part of the output:\n" : ""}${log.text || "No failed-step output available."}`,
+          `${log.truncated ? "Last part of the output:\n" : ""}${cleanLog(log.text) || "No failed-step output available."}`,
         ),
       );
   },

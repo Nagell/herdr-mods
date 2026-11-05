@@ -151,6 +151,7 @@ export const savedMethods = {
   selectSection(section, cx) {
     if (this.section === "conversation" && section !== "conversation") this.markRead();
     this.section = section;
+    this.notice = null;
     if (section === "conversation") this.conversationsVisited = true;
     this.rememberDetail();
     cx.notify();
@@ -172,6 +173,7 @@ export const savedMethods = {
     this.detailToken++;
     this.detailLoading = false;
     this.opening = null;
+    this.notice = null;
     this.stateChange = null;
     this.composer = null;
     this.draftKey = null;

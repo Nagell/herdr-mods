@@ -37,7 +37,7 @@ function harness({ storage = new Map(), exec, hc } = {}) {
     });
     return proxy;
   }
-  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {} });
+  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {}, set_selected_range(r) { this.selected = r; } });
   const live = { spaces: [], panes: [], agents: [] };
   const context = {
     View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
@@ -378,6 +378,27 @@ test('refreshing waits while the panel is hidden, and resumes when it shows', ()
   assert.equal(m.panelShown(noActive, 'branch-pr'), false, 'a stack with none chosen shows its first');
   noActive.children[0].children[0].children.reverse();
   assert.equal(m.panelShown(noActive, 'branch-pr'), true);
+});
+
+test('a reply starts after its @name, and a message clears when you move on', () => {
+  const h = harness();
+  h.mod.pr = PR();
+  h.mod.compose('comment', null, null, h.cx, { entry: 'e', prefix: '@ann ' });
+  same(h.mod.editor.selected, { start: 5, end: 5 });
+  h.mod.notice = 'Saved to GitHub.';
+  h.mod.selectSection('checks', h.cx);
+  assert.equal(h.mod.notice, null);
+  h.mod.notice = 'Saved to GitHub.';
+  h.mod.api = async () => ({ items: [], cursors: {} });
+  h.mod.backToList(h.cx);
+  assert.equal(h.mod.notice, null);
+});
+
+test('failed logs lose their prefixes and colour codes', () => {
+  const { context: m } = harness();
+  const raw = 'test\tRun tests\t\uFEFF2026-11-05T03:27:19.82Z ##[group]Run sh test.sh\ntest\tRun tests\t2026-11-05T03:27:19.82Z ^[[36;1msh test.sh^[[0m\ntest\tRun tests\t2026-11-05T03:27:19.84Z greet.sh should say hello\n';
+  assert.equal(m.cleanLog(raw), '##[group]Run sh test.sh\nsh test.sh\ngreet.sh should say hello\n');
+  assert.equal(m.cleanLog(undefined), '');
 });
 
 test('the next batch is offered at the end of the list, saying how many', async () => {

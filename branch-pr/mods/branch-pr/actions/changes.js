@@ -90,7 +90,10 @@ export const changeMethods = {
       kind === "agent"
         ? "Analyze this comment and suggest a response or fix."
         : (options.prefix ?? "");
-    this.editor.set_value(draft ?? initial);
+    const text = draft ?? initial;
+    this.editor.set_value(text);
+    // After a prefilled `@name`, so what's typed follows it.
+    this.editor.set_selected_range({ start: text.length, end: text.length });
     this.editor.focus();
     cx.notify();
   },

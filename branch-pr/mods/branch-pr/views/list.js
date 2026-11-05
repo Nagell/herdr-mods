@@ -102,6 +102,7 @@ export const listMethods = {
     if (this.pr || this.opening) this.backToList(cx);
     if (this.pr) return; // a write is under way, and leaving waits for it
     this.view = view;
+    this.notice = null;
     localStorage.setItem("view", view);
     this.openSoleBranchPR(cx);
     cx.notify();

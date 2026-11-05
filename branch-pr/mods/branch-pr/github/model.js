@@ -59,6 +59,15 @@ export function panelShown(node, mod) {
   return panelShown(active, mod);
 }
 
+// What a person wants from a failed step: `gh` starts each line with the job, the
+// step and a timestamp, and keeps the terminal colour codes.
+export function cleanLog(text) {
+  return (text ?? "")
+    .replace(/^\uFEFF/, "")
+    .replace(/^[^\t\n]*\t[^\t\n]*\t\uFEFF?\S+ /gm, "")
+    .replace(/(\x1b|\^\[)\[[0-9;]*m/g, "");
+}
+
 export function timeAgo(iso, now = Date.now()) {
   const minutes = Math.floor((now - new Date(iso).getTime()) / 60000);
   if (!(minutes >= 1)) return "just now";
