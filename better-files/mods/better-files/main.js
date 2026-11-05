@@ -72,6 +72,7 @@ class BetterFiles extends View {
   }
 
   initSidebar(cx) {
+    this.startedAt = Date.now();
     this.saved = new Map();
     this.entries = new Map();
     this.folders = new Set();

@@ -162,6 +162,16 @@ test('a file already open goes to its tab, and rapid clicks never open two', asy
   assert.equal(h.ran.filter(([n]) => n === 'tab.rename').length, 0);
 });
 
+test('after a restart, a file open in a tab that came back goes to that tab', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const h = await ready({ sharedInit: { 'better-files.viewers': { v: { space: 's', tab: 'tab7', file, preview: false } } } });
+  h.tick();
+  h.live.panes.push({ pane: 'p7', tab: 'tab7', mod: 'better-files' });
+  click(h, 'files-row-a.md');
+  assert.equal(tabs(h).length, 0);
+  assert.deepEqual(h.ran.at(-1), ['tab.select', { id: 'tab7' }]);
+});
+
 test('a viewer records its own tab, and closed tabs leave the registry', async () => {
   const file = { path: '/repo/a.md', root: '/repo', on: null };
   const h = world({ mode: 'viewer', viewer: 'v1', file, texts: { '/repo/a.md': 'hello' }, sharedInit: { 'better-files.viewers': { v1: { space: 's', file, preview: true, tab: null, at: Date.now() } } } });
@@ -171,6 +181,9 @@ test('a viewer records its own tab, and closed tabs leave the registry', async (
   await h.flush();
   assert.equal(viewers(h)[0].tab, 'tab2');
   const side = await ready({ sharedInit: { 'better-files.viewers': { gone: { space: 's', tab: 'closed', file } } } });
+  side.tick();
+  assert.equal(viewers(side).length, 1, 'just started: tabs may still be coming back');
+  side.mod.startedAt = 0;
   side.tick();
   assert.equal(viewers(side).length, 0);
   const other = world({ mode: 'viewer', viewer: 'v2', file, sharedInit: { 'better-files.viewers': { v1: { space: 's', tab: 'tab2', file }, v2: { space: 's', tab: null, file, at: Date.now() } } } });

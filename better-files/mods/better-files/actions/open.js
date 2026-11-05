@@ -6,6 +6,7 @@ import { baseName } from "../files/model.js";
 
 const VIEWERS = "better-files.viewers";
 const OPENING_MS = 1500;
+const PRUNE_AFTER_MS = 15000;
 
 export const viewerEntries = () => shared(VIEWERS) ?? {};
 
@@ -29,8 +30,11 @@ export const openMethods = {
     );
   },
 
-  // Tabs that have closed take their entries with them.
+  // Tabs that have closed take their entries with them. Not at first: after a restart the
+  // tabs come back a moment after this runs, and would lose their place in the registry,
+  // so a click would open a file again that's already open.
   pruneViewers() {
+    if (Date.now() - this.startedAt < PRUNE_AFTER_MS) return;
     const entries = viewerEntries();
     const live = Object.entries(entries).filter(([, entry]) => this.viewerIsLive(entry));
     if (live.length !== Object.keys(entries).length) setShared(VIEWERS, Object.fromEntries(live));
