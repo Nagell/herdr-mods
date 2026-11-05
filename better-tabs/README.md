@@ -2,6 +2,8 @@
 
 A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap onto more lines when they don't fit, and a toolbar for your panels with a menu to tuck away the ones you rarely use.
 
+![Better Tabs](preview.png)
+
 - **Drag tabs** to reorder them. A separate line in the gap between tabs shows where the tab will land.
 - **Tabs wrap** onto more lines, and the bar grows to hold them.
 - The **+** sits right after the last tab.
