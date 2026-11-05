@@ -58,7 +58,7 @@ class Factory extends View {
     this.confirm = null; // { message, label, action }
     this.followUp = null; // the stage whose box is open
     this.startFor = null; // the workflow whose box is open
-    this.starting = null; // { label, was }: a run asked for, whose record hasn't appeared
+    this.starting = null; // { label, where, was }: a run asked for, whose record hasn't appeared
     this.busy = false;
     this.error = null;
     this.menuFocus = cx.focus_handle();
@@ -197,7 +197,7 @@ class Factory extends View {
       );
     if (this.error) root.child(Message(this.error, true));
     if (this.starting)
-      root.child(Notice(`Starting ${this.starting.label} in a new tab.`).mx(6).mt(6));
+      root.child(Notice(`Starting ${this.starting.label} in ${this.starting.where}.`).mx(6).mt(6));
     if (this.tab === "events") this.eventsView(root, run);
     else if (this.tab === "workflows") this.workflowsView(root, run);
     else if (!run?.stages?.length) this.emptyView(root);

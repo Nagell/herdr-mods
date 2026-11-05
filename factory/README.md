@@ -16,7 +16,7 @@ The sidebar never shows a task or follow-up afterwards. With no task, `/factory 
 
 | Control | Where | What it does |
 | --- | --- | --- |
-| **Run** | Workflows | Asks for the task, then starts a Claude session in a new tab that runs the workflow. Disabled while a run is going. Ends the last run's sessions, apart from `reuse` stages. |
+| **Run** | Workflows | Asks for the task and which session runs it: a new Claude session in its own tab, or one already running in this folder, which keeps its context and gets `/factory` as a message. That session runs the workflow. Disabled while a run is going. Ends the last run's sessions, apart from `reuse` stages. |
 | **Pause** / **Resume** | run | Pause interrupts working stages, keeps their sessions and starts nothing new. Resume tells them to carry on, then the run continues. Resume needs a live orchestrator. |
 | **Stop all** (■) | Factory row | After you confirm, interrupts working stages and stops the run. The sessions stay open, and `/factory continue` picks it up. |
 | **Close** (×) | Factory row | After you confirm, ends every stage session and stops the run. Factory's own session stays. |
@@ -102,7 +102,7 @@ Everything lives in `~/.config/herdr-mods/factory/`, created on first use and ne
 | `loop` | `{"with": "<earlier stage>", "max": <rounds>}`: see Loops. |
 | `session` | `new` (default) starts a fresh session each run. `reuse` keeps the last run's live session for the same stage id if its `agent`, `role`, `model`, `effort` and `args` are unchanged, and tells it a new run has started. |
 
-A workflow in your home file can also set `extra_args`, for the Claude session the **Run** button starts. Stage sessions use each stage's own `args`. A session you start yourself with `/factory` keeps the mode it already has.
+A workflow in your home file can also set `extra_args`, for a new Claude session the **Run** button starts. A session already running keeps the flags it has. Stage sessions use each stage's own `args`. A session you start yourself with `/factory` keeps the mode it already has.
 
 ```json
 "implement": { "extra_args": ["--permission-mode", "auto"], "stages": [ ... ] }

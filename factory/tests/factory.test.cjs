@@ -45,7 +45,7 @@ function harness({ run = null, terminals = [], agents = [], results = {}, helper
     View: class {}, div: el, svg: el, image: el, v_flex: el, h_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextView: { html: (id, html) => el().id(id).child(html) }, TextareaState: { new: state },
     spaces: () => [{ id: 's', active: true, folder: '/repo', ...space }],
-    terminals: () => live.terminals, agents: () => live.agents,
+    terminals: () => live.terminals, agents: () => live.agents, panes: () => live.panes ?? [],
     layout: () => (live.shown ? { content: { mod: 'factory' } } : { content: { mod: 'other' } }),
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }), settings: () => ({ font_family: 'Code' }),
     appHome: () => '/app', home: () => '/home/sam', nextCommand: () => new Promise(() => {}),
@@ -166,6 +166,58 @@ test('workflows group by where they come from, and one starts in its own Claude 
   await h.flush();
   assert.equal(h.mod.render() && h.mod.starting, null);
   assert.ok(find(h.mod.render(), 'factory-run-implement').handlers.click, 'runnable again once its record appears');
+});
+
+test('Parent is a new session by default, or a Claude session already in this folder', async () => {
+  const CLAUDE = { key: 'claude' };
+  const agents = [
+    { address: 't1', pane: 'p1', space: 's', tab_name: 'Main', status: 'idle', program: CLAUDE },
+    { address: 't2', pane: 'p2', space: 's', tab_name: 'Busy', status: 'working', program: CLAUDE },
+    { address: 't3', pane: 'p3', space: 's', tab_name: 'Pi one', status: 'idle', program: { key: 'pi' } },
+    { address: 't4', pane: 'p4', space: 's', tab_name: 'Elsewhere', status: 'idle', program: CLAUDE },
+    { address: 't5', pane: 'p5', space: 'other', tab_name: 'Other space', status: 'idle', program: CLAUDE },
+    { address: 't9', pane: 'p9', space: 's', tab_name: 'Old stage', status: 'idle', program: CLAUDE },
+  ];
+  const h = await ready({ agents, run: RUN([stage({ state: 'done' })], { state: 'done' }), terminals: [session('t1')] });
+  h.live.panes = ['p1', 'p2', 'p3', 'p5', 'p9'].map((pane) => ({ pane, cwd: '/repo' })).concat({ pane: 'p4', cwd: '/repo/sub' });
+  click(h, 'factory-tab-workflows');
+  await h.flush();
+  click(h, 'factory-run-implement');
+  assert.match(strings(find(h.mod.render(), 'factory-parent-trigger')), /New Claude session/);
+  find(h.mod.render(), 'factory-parent-pick').handlers.open(true, h.cx);
+  const menu = strings(find(h.mod.render(), 'factory-parent-pick-menu'));
+  assert.match(menu, /New Claude session[\s\S]*Main[\s\S]*Busy/);
+  assert.doesNotMatch(menu, /Pi one|Elsewhere|Other space|Old stage/);
+  click(h, 'factory-parent-pick-option-t2');
+  assert.match(strings(find(h.mod.render(), 'factory-parent-trigger')), /Busy/);
+  assert.match(strings(find(h.mod.render(), 'factory-start-implement')), /starts when it's free/);
+  h.mod.taskBox.set_value('add a flag');
+  click(h, 'factory-start-send');
+  await h.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.sent[0])), ['send', 't2', '/factory implement add a flag']);
+  assert.equal(h.ran.filter(([n]) => n === 'tab.new').length, 0, 'no new tab');
+  assert.match(strings(h.mod.render()), /Starting Implement in Busy/);
+});
+
+test('a parent that has gone falls back to a new one, and a failed send keeps the task', async () => {
+  const agents = [{ address: 't1', pane: 'p1', space: 's', tab_name: 'Main', status: 'idle', program: { key: 'claude' } }];
+  const h = await ready({ agents });
+  h.live.panes = [{ pane: 'p1', cwd: '/repo' }];
+  click(h, 'factory-tab-workflows');
+  await h.flush();
+  click(h, 'factory-run-implement');
+  h.mod.startParent = 't1';
+  h.context.hc = async () => ({ code: 1, stderr: 'gone' });
+  h.mod.taskBox.set_value('keep me');
+  click(h, 'factory-start-send');
+  await h.flush();
+  assert.match(strings(h.mod.render()), /gone/);
+  assert.equal(h.mod.taskBox.value(), 'keep me');
+  assert.equal(h.mod.starting, null);
+  h.live.agents = [];
+  assert.match(strings(find(h.mod.render(), 'factory-parent-trigger')), /New Claude session/);
+  click(h, 'factory-start-send');
+  assert.equal(h.ran.at(-1)[0], 'tab.new');
 });
 
 test('a run working or paused disables Run and says why', async () => {

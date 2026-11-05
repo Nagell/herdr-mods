@@ -3,11 +3,13 @@ import { div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { home, theme } from "herdr";
 import { going, stageDetails, titleCase } from "../run/model.js";
+import { NEW_PARENT, parentName } from "../actions/commands.js";
 import {
   TEXT,
   Button,
   ControlButton,
   GroupHeader,
+  MenuButton,
   Icon,
   IconButton,
   Message,
@@ -57,6 +59,40 @@ export const workflowMethods = {
     return chain;
   },
 
+  // Which Claude session runs it: a new one, or one already here with context worth keeping.
+  parentPicker() {
+    const running = this.parentChoices();
+    const parent = this.startParentAgent();
+    return div()
+      .flex_1()
+      .min_w(0)
+      .child(
+        this.chooser({
+          id: "factory-parent-pick",
+          accessibilityLabel: "Claude session that runs this",
+          anchor: "top_left",
+          width: 260,
+          trigger: MenuButton({
+            id: "factory-parent-trigger",
+            label: parent ? parentName(parent) : "New Claude session",
+          }),
+          choices: [
+            { id: NEW_PARENT, label: "New Claude session" },
+            ...running.map((a, i) => ({
+              id: a.address,
+              label: parentName(a),
+              detail: a.status,
+              divided: i === 0,
+            })),
+          ],
+          value: parent?.address ?? NEW_PARENT,
+          onChoose: (id) => {
+            this.startParent = id;
+          },
+        }),
+      );
+  },
+
   startBox(workflow, run) {
     const t = theme();
     const closes = (run?.stages ?? []).some((s) => this.alive(s.terminal));
@@ -76,10 +112,21 @@ export const workflowMethods = {
             .child("The last run's sessions end when this starts, apart from any set to reuse."),
         ),
       )
+      .when(this.startParentAgent()?.status === "working", (el) =>
+        el.child(
+          div()
+            .whitespace_normal()
+            .text_size(TEXT.caption)
+            .text_color(t.dim)
+            .child("It's busy, so the run starts when it's free."),
+        ),
+      )
       .child(
         h_flex()
           .gap(8)
-          .justify_end()
+          .min_w(0)
+          .items_center()
+          .child(this.parentPicker())
           .child(
             Button({
               id: "factory-start-cancel",
@@ -90,9 +137,12 @@ export const workflowMethods = {
           .child(
             Button({
               id: "factory-start-send",
-              label: "Start run",
+              label: this.sendingStart ? "Starting…" : "Start run",
               primary: true,
-              disabled: Boolean(this.startBlocked(run)) || !this.taskBox.value().trim(),
+              disabled:
+                Boolean(this.sendingStart) ||
+                Boolean(this.startBlocked(run)) ||
+                !this.taskBox.value().trim(),
               onClick: (cx) => this.startRun(workflow, cx),
             }),
           ),

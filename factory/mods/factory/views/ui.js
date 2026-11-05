@@ -219,7 +219,7 @@ export function MenuButton({ id, label }) {
   return h_flex()
     .id(id)
     .h(26)
-    .flex_none()
+    .min_w(0)
     .px(8)
     .gap(5)
     .items_center()
@@ -230,7 +230,7 @@ export function MenuButton({ id, label }) {
     .cursor_pointer()
     .accessibility_label(label)
     .hover((s) => s.bg(t.hover))
-    .child(label)
+    .child(div().min_w(0).truncate().child(label))
     .child(Icon("chevron-down", 11).text_color(t.dim));
 }
 
