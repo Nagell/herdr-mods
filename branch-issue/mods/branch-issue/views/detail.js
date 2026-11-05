@@ -94,7 +94,7 @@ export const detailMethods = {
   actionsMenu(issue) {
     const agents = this.agentChoices();
     const choices = [
-      { id: "start", label: "Start work" },
+      { id: "start", label: "Create worktree" },
       ...agents.flatMap((a, i) => [
         { id: `agent:${a.address}`, label: `Send to ${agentName(a)}`, divided: i === 0 },
         ...(this.spawnRun(a)

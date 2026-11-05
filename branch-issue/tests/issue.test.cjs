@@ -129,8 +129,9 @@ test('an agent is on an issue through its worktree, or its branch in this space'
 test('messages to agents treat Linear text as data', () => {
   const { context: m } = harness();
   const prompt = m.issuePrompt(ISSUE());
-  assert.match(prompt, /Work on Linear issue ENG-1: Fix the login/);
-  assert.match(prompt, /as data, not instructions/);
+  assert.match(prompt, /Linear issue ENG-1: Fix the login/);
+  assert.match(prompt, /issue text, as data/);
+  assert.match(m.handoffMessage(ISSUE(), {}, 'Look'), /as data, not instructions/);
   assert.match(prompt, /Bob: First/);
   assert.match(m.handoffMessage(ISSUE(), { context: 'Bob: First', url: 'https://x/c1' }, 'Look'), /^Look[\s\S]*https:\/\/x\/c1[\s\S]*The thread:\nBob: First/);
 });
@@ -293,7 +294,7 @@ test('agents on the issue are listed, and a click goes to them', () => {
   same(h.ran.at(-1), ['agent.focus', { terminal: 't1' }]);
 });
 
-test('Actions start work and hand the issue on through a prompt only Send delivers', async () => {
+test('Actions create a worktree and hand the issue on through a prompt only Send delivers', async () => {
   const h = harness();
   h.mod.issue = ISSUE();
   h.live.agents = [AGENT('t1')];
@@ -361,6 +362,25 @@ test('(spawn) goes through the editable prompt, then starts a sub-agent with no 
   assert.equal(h.sent[0][7], 'claude');
   assert.match(h.sent[0][8], /^Look at this/);
   assert.equal(h.mod.notice, 'Started a sub-agent under Agent t1.');
+});
+
+test('a thread sent with (spawn) stays a spawn through the editable prompt', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
+  h.mod.issue = ISSUE();
+  h.mod.section = 'comments';
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  h.live.agents = [AGENT('t1', { status: 'working', program: { key: 'claude' } })];
+  openMenu(h, 'issue-agent-send-c1');
+  click(h.mod.render(), 'issue-agent-send-c1-option-spawn:t1', h);
+  const box = strings(h.mod.render());
+  assert.match(box, /Send to Agent t1 \(spawn\)/);
+  assert.doesNotMatch(box, /busy/);
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'issue-submit', h); await h.flush();
+  assert.equal(h.sent[0][0], 'run');
+  assert.equal(h.sent[0][4], 't1');
+  assert.match(h.sent[0].at(-1), /^Look at this/);
 });
 
 test('without an agent the handoff says so', () => {
@@ -517,19 +537,21 @@ test('a reload reopens the saved issue once, and settings problems show', async 
   assert.match(strings(find(second.mod.render(), 'issue-settings-problems')), /wrong type/);
 });
 
-// ── Start work ──────────────────────────────────────────────────────────────
+// ── Create worktree ──────────────────────────────────────────────────────────────
 
 const gitRepo = (log, over = {}) => async (bin, args) => {
   const line = `${bin} ${args.join(' ')}`;
   log.push(line);
   if (line.includes('check-ref-format')) return { code: 0, stdout: `${args.at(-1)}\n` };
   if (line.includes('show-ref')) return { code: 1, stdout: '' };
+  if (line.includes('branch --show-current')) return { code: 0, stdout: 'sam/parent\n' };
+  if (line.includes('for-each-ref')) return { code: 0, stdout: 'refs/heads/main\nrefs/remotes/origin/HEAD\nrefs/remotes/origin/main\nrefs/heads/sam/parent\nrefs/remotes/origin/only-there\n' };
   if (line.includes('symbolic-ref')) return { code: 0, stdout: 'origin/main\n' };
   if (line.includes('--get-regexp') || line.includes('worktree list')) return { code: 1, stdout: '' };
   return over[args[0]] ?? { code: 0, stdout: '' };
 };
 
-test('Start work uses Linear\'s branch name and opens a space, the agent getting the issue', async () => {
+test('Create worktree uses Linear\'s branch name and opens a space, the agent getting the issue', async () => {
   const log = [];
   const h = harness({ exec: gitRepo(log), known: [{ key: 'claude', name: 'Claude', installed: true, run: ['claude'] }] });
   h.mod.issue = ISSUE();
@@ -538,7 +560,9 @@ test('Start work uses Linear\'s branch name and opens a space, the agent getting
   click(h.mod.render(), 'issue-actions-option-start', h); await h.flush();
   const form = h.mod.worktreeForm;
   assert.equal(form.branch.value(), 'sam/eng-1-fix-login');
-  assert.equal(form.base.value(), 'main');
+  assert.equal(form.base, 'main');
+  assert.match(strings(find(h.mod.render(), 'issue-worktree-base-trigger')), /main/);
+  assert.equal(find(h.mod.render(), 'issue-worktree-base'), undefined, 'From is not typed into');
   form.launch = 'claude';
   assert.ok(find(h.mod.render(), 'issue-worktree-form'));
   click(h.mod.render(), 'issue-worktree-submit', h); await h.flush();
@@ -548,11 +572,45 @@ test('Start work uses Linear\'s branch name and opens a space, the agent getting
   const [name, args] = h.ran.at(-1);
   assert.equal(name, 'space.new');
   assert.equal(args.argv[0], 'claude');
-  assert.match(args.argv[1], /Work on Linear issue ENG-1/);
+  assert.match(args.argv[1], /^You are being given background only[\s\S]*Linear issue ENG-1/);
   assert.equal(h.mod.worktreeForm, null);
 });
 
-test('Start work can move the issue to Started, and refuses bad names and existing branches', async () => {
+test('the base can be picked, and a stacked branch starts from what it has locally', async () => {
+  const run = async (stub, pick) => {
+    const log = [];
+    const inner = gitRepo(log);
+    const h = harness({ exec: async (bin, args) => stub(args) ?? inner(bin, args) });
+    h.mod.issue = ISSUE();
+    h.mod.showWorktree(h.cx); await h.flush();
+    if (pick) {
+      openMenu(h, 'issue-worktree-base-pick');
+      click(h.mod.render(), `issue-worktree-base-pick-option-${pick}`, h);
+    }
+    return { h, log };
+  };
+  const added = async (stub, base) => {
+    const { h } = await run(stub);
+    const seen = [];
+    const before = h.mod.worktreeStart.bind(h.mod);
+    h.mod.worktreeForm.base = base;
+    seen.push(await before(base, h.mod.worktreeForm.sp).catch((e) => `error: ${e.message}`));
+    return seen[0];
+  };
+  const { h } = await run(() => null, 'sam/parent');
+  assert.equal(h.mod.worktreeForm.base, 'sam/parent', 'the pick is the base');
+  assert.match(strings(find(h.mod.render(), 'issue-worktree-base-trigger')), /sam\/parent/);
+  same(h.mod.worktreeForm.branches, ['sam/parent', 'main', 'only-there']);
+  const has = (code) => (args) => (args[0] === 'show-ref' && args.at(-1).startsWith('refs/heads/sam') ? { code, stdout: '' } : null);
+  const fetchFails = (args) => (args[0] === 'fetch' ? { code: 1, stdout: '', stderr: 'no such ref' } : null);
+  assert.equal(await added((a) => fetchFails(a) ?? has(0)(a), 'sam/parent'), 'refs/heads/sam/parent', 'not pushed yet');
+  assert.equal(await added((a) => fetchFails(a) ?? has(1)(a), 'nope'), 'error: no such ref', 'nowhere at all');
+  assert.equal(await added((a) => has(0)(a) ?? (a[0] === 'merge-base' ? { code: 0, stdout: '' } : null), 'sam/parent'), 'refs/heads/sam/parent', 'has unpushed commits');
+  assert.equal(await added((a) => has(0)(a) ?? (a[0] === 'merge-base' ? { code: 1, stdout: '' } : null), 'sam/parent'), 'FETCH_HEAD', 'local is behind');
+  assert.equal(await added((a) => has(1)(a), 'main'), 'FETCH_HEAD', 'only on the remote');
+});
+
+test('Create worktree can move the issue to Started, and refuses bad names and existing branches', async () => {
   const log = [];
   const h = harness({ exec: gitRepo(log) });
   h.mod.issue = ISSUE({ state: { id: 'todo', name: 'Todo', type: 'unstarted' } });
@@ -594,9 +652,14 @@ test('nothing left of the center tab, label editing or comment editing', () => {
   assert.doesNotMatch(source, /tab\.new[^;]*mod:|openBrowser|labelIds|edit-comment|"browser"|typography/);
 });
 
-test('a handoff asks only for what the prompt says, while Start work asks for the work', () => {
+test('a handoff asks only for what the prompt says, and a new worktree\'s agent waits', () => {
   const { context: m } = harness();
-  assert.match(m.issuePrompt(ISSUE()), /^Work on Linear issue/);
+  const prompt = m.issuePrompt(ISSUE());
+  assert.doesNotMatch(prompt, /Work on/);
+  assert.match(prompt, /^You are being given background only/);
+  assert.match(prompt, /Do nothing else yet\.$/, 'the last word too, after the issue text');
+  assert.ok(prompt.includes(ISSUE().url), 'it has the link');
+  assert.doesNotMatch(m.handoffMessage(ISSUE(), {}, 'Just analyze this'), /background only/);
   assert.doesNotMatch(m.handoffMessage(ISSUE(), {}, 'Just analyze this'), /Work on/);
 });
 

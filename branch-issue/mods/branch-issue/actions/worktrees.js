@@ -3,6 +3,8 @@ import { InputState } from "gpui-base";
 import { spaces, exec, home, run, knownAgents } from "herdr";
 import { folderName, identifiersIn, issuePrompt, slug } from "../linear/model.js";
 
+const BRANCH_LIMIT = 100;
+
 export const worktreeMethods = {
   // Worktrees already checked out for this issue: branches whose
   // `branch.<name>.herdr-issue` binding names it, joined to `git worktree list`.
@@ -60,7 +62,7 @@ export const worktreeMethods = {
       sp: { ...this.sp },
       branch: InputState.new({ value: branch }),
       name: InputState.new({ value: slug(branch) }),
-      base: InputState.new({ value: "main" }),
+      base: "main", // the remote's HEAD once it's known, unless one has been picked
       launch: this.settings.worktrees.open_with, // terminal or an installed agent's program key
       agents: [],
       start: this.settings.worktrees.move_to_started, // move the issue to started after creation
@@ -75,10 +77,7 @@ export const worktreeMethods = {
       form.nameEdited = form.name.value() !== slug(form.branch.value().trim());
       cx.notify();
     });
-    form.base.on("change", () => {
-      form.baseEdited = true;
-    });
-    for (const input of [form.branch, form.name, form.base])
+    for (const input of [form.branch, form.name])
       input.on("submit", (_e, cx) => this.createWorktree(cx));
     form.branch.focus();
     // The base defaults to the remote's HEAD; the launch choices to what is installed.
@@ -90,13 +89,39 @@ export const worktreeMethods = {
           { cwd: form.sp.folder, on: form.sp.machine },
         );
         const name = head.code === 0 ? head.stdout.trim().replace(/^origin\//, "") : "";
-        if (name && this.worktreeForm === form && !form.baseEdited) form.base.set_value(name);
+        if (name && this.worktreeForm === form && !form.basePicked) form.base = name;
+        form.branches = await this.branchChoices(form.sp);
+        cx.notify();
+        // The list is what there is to pick from, so bring in branches pushed since.
+        const fetched = await exec("git", ["fetch", "--no-tags", "origin"], {
+          cwd: form.sp.folder,
+          on: form.sp.machine,
+        });
+        if (fetched.code === 0) form.branches = await this.branchChoices(form.sp);
         const agents = await knownAgents({ on: form.sp.machine ?? null });
         if (this.worktreeForm === form) form.agents = agents.filter((a) => a.installed);
       } catch {}
       cx.notify();
     });
     cx.notify();
+  },
+
+  // Branches to start from, for stacking on another one: this checkout's first, then the
+  // most recently changed, whether local or only on origin.
+  async branchChoices(sp) {
+    const options = { cwd: sp.folder, on: sp.machine };
+    const current = await exec("git", ["branch", "--show-current"], options);
+    const refs = await exec(
+      "git",
+      ["for-each-ref", "--sort=-committerdate", "--format=%(refname)", "refs/heads", "refs/remotes/origin"],
+      options,
+    );
+    const names = (refs.stdout ?? "")
+      .split("\n")
+      .filter((ref) => ref && ref !== "refs/remotes/origin/HEAD")
+      .map((ref) => ref.replace(/^refs\/(heads|remotes\/origin)\//, ""));
+    const here = current.code === 0 ? current.stdout.trim() : "";
+    return [...new Set([...(here ? [here] : []), ...names])].slice(0, BRANCH_LIMIT);
   },
 
   launchChoices(form) {
@@ -108,15 +133,10 @@ export const worktreeMethods = {
     if (!form || form.busy || form.path) return;
     const branch = form.branch.value().trim();
     const name = form.name.value().trim();
-    const base = form.base.value().trim();
+    const base = form.base;
     form.error = null;
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
       form.error = "Use letters, numbers, dots, dashes or underscores for the worktree name.";
-      cx.notify();
-      return;
-    }
-    if (!base) {
-      form.error = "Enter the base branch to start from.";
       cx.notify();
       return;
     }
@@ -144,9 +164,8 @@ export const worktreeMethods = {
           throw new Error(existing.stderr?.trim() || "Could not check existing branches.");
         const root = this.settings.worktrees.root.replace(/^~(?=\/|$)/, await this.homeOf(sp));
         const path = `${root}/${folderName(sp.folder)}/${name}`;
-        // Start from the remote's base so the branch is not behind before work begins.
-        await git(["fetch", "--no-tags", "origin", base]);
-        await git(["worktree", "add", "-b", branch, "--", path, "FETCH_HEAD"]);
+        const start = await this.worktreeStart(base, sp);
+        await git(["worktree", "add", "-b", branch, "--", path, start]);
         // Retain the checkout if opening its space fails, so retry cannot create it twice.
         form.path = path;
         form.createdName = name;
@@ -164,6 +183,24 @@ export const worktreeMethods = {
         cx.notify();
       }
     });
+  },
+
+  // Where a new branch starts: the remote's base, so it isn't behind, unless the local
+  // branch has everything the remote does. Stacking needs that: a parent branch may have
+  // commits not pushed yet, or not be on the remote at all.
+  async worktreeStart(base, sp) {
+    const options = { cwd: sp.folder, on: sp.machine };
+    const local = `refs/heads/${base}`;
+    const fetched = await exec("git", ["fetch", "--no-tags", "origin", base], options);
+    const hasLocal =
+      (await exec("git", ["show-ref", "--verify", "--quiet", local], options)).code === 0;
+    if (fetched.code !== 0) {
+      if (hasLocal) return local;
+      throw new Error(fetched.stderr?.trim() || `No branch ${base} here or on origin.`);
+    }
+    if (!hasLocal) return "FETCH_HEAD";
+    const ahead = await exec("git", ["merge-base", "--is-ancestor", "FETCH_HEAD", local], options);
+    return ahead.code === 0 ? local : "FETCH_HEAD";
   },
 
   // The home folder on the space's machine, where ~/.herdr/worktrees lives.

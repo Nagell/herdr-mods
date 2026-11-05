@@ -1,8 +1,8 @@
-// The Overview's worktrees: a row per checkout, and Start work's form.
+// The Overview's worktrees: a row per checkout, and the form for a new one.
 import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, theme } from "herdr";
-import { TEXT, Button, Row, TextButton, TextField } from "./ui.js";
+import { TEXT, Button, MenuButton, Row, TextButton, TextField } from "./ui.js";
 
 export const worktreeViewMethods = {
   worktreeRows(body) {
@@ -14,7 +14,7 @@ export const worktreeViewMethods = {
       : TextButton({
           id: "issue-start-work",
           icon: "checkout",
-          label: "Start work",
+          label: "Create worktree",
           onClick: (cx) => this.startWork(cx),
         });
     const info = { key: "worktrees", label: "Worktrees", count: list.length, action };
@@ -85,7 +85,30 @@ export const worktreeViewMethods = {
       box
         .child(field("branch", "Branch", form.branch))
         .child(field("name", "Worktree", form.name))
-        .child(field("base", "From", form.base));
+        .child(
+          h_flex()
+            .gap(8)
+            .items_center()
+            .child(div().w(62).flex_none().text_size(TEXT.small).text_color(t.dim).child("From"))
+            .child(
+              this.chooser({
+                id: "issue-worktree-base-pick",
+                accessibilityLabel: "Branch to start from",
+                anchor: "top_left",
+                width: 280,
+                trigger: MenuButton({ id: "issue-worktree-base-trigger", label: form.base }).max_w(240),
+                choices: [...new Set([form.base, ...(form.branches ?? [])])].map((name) => ({
+                  id: name,
+                  label: name,
+                })),
+                value: form.base,
+                onChoose: (name) => {
+                  form.base = name;
+                  form.basePicked = true;
+                },
+              }),
+            ),
+        );
     if (form.error || form.path)
       box.child(
         div()
