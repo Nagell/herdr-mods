@@ -6,7 +6,9 @@ A file browser for [Herdr Desktop](https://herdr.dev/) that opens files in the c
 - **Click** a file to show it in one shared centre tab, so browsing doesn't pile up tabs.
 - **Double-click**, or **Keep tab**, to keep that tab. The next click starts a new shared tab.
 - **The file view** is read-only, at your terminal's font size, and follows the file as it changes on disk. Only a real change touches it. Binary and unreadable files say so, and very long files are cut at 400,000 characters.
-- **Git gutter:** coloured marks beside the lines that differ from the last commit: green added, yellow changed, a thin red line where lines were removed. New files are all green. They update as the file changes, and clear when it's committed. Code folding is off while the gutter is on.
+- **Changed lines:** lines that differ from the last commit are tinted, with a solid bar at their edge: green added, yellow changed, and a thin red line across the file where lines were removed. A new file is all green. They update as the file changes, and clear when it's committed. The file is drawn as rows so the colours can't drift, so text can't be selected and there's no folding, and highlighting is simpler. Use **Open in** for those, or turn `gutter` off.
+- **Images:** PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures, fitted to the pane, and update when the file changes. Herdr only loads images from its own folder, so each is shown through a copy in `mods/better-files/cache/`, removed when its tab closes.
+- **Open the whole folder** in your editor or Finder, from the folder icon beside refresh.
 - **One title:** the tab's title row reads like a diff's, with the file, its folder, and Preview while it's the shared tab.
 - **Open in** your code editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more.
 
@@ -56,11 +58,11 @@ The installed `mods/better-files/mod.json` has a `settings` block, and saving it
 }
 ```
 
-`refresh.tree` is how often the tree rereads, on top of watching the folder, and never closer than 1 second. `refresh.file` is how often an open file is checked, never closer than 500ms. `editors` adds to the built-in list, by macOS app ID, and is only offered if installed. `gutter: false` turns the Git gutter off and folding back on.
+`refresh.tree` is how often the tree rereads, on top of watching the folder, and never closer than 1 second. `refresh.file` is how often an open file is checked, never closer than 500ms. `editors` adds to the built-in list, by macOS app ID, and is only offered if installed. `gutter: false` uses Herdr's own editor instead: fuller highlighting, selection and folding, but no line colours.
 
 ## Limits
 
-The gutter works out the editor's line height from your font size and zoom, assuming a 2x display, because Herdr's editor can't mark lines itself. If its marks drift from their lines, set `gutter` to `false`. A folder lists its first 500 entries, and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
+A folder lists its first 500 entries, and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, because Herdr's editor component offers neither, so you send whole files and an editor opens at the top. Listing a folder needs `sh`, so a Windows machine shows an error.
 
 ## Development
 

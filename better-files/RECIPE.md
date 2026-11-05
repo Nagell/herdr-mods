@@ -4,13 +4,13 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 ## What you see
 
-One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and refresh on the right.
+One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
 
 Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was.
 
 A click opens the file in one shared centre tab per space, named after the file, or goes to its tab if it's already open. A double-click keeps that tab, and never opens a second. The next click starts a new shared tab.
 
-The centre tab has one title row, the same as a Better Changes diff: file, folder and Preview while it's the shared one. It publishes that to `shared("pane-heads")`, which Better Changes' pane header shows, and draws its own 30px row only under another header. Keep tab and Open in float over the file's top right corner, or sit in that row. Below is Herdr's editor component, read-only, in the code font at the terminals' size.
+Image files show fitted to the pane instead of the editor, through a copy in `mods/better-files/cache/`, because `image()` only loads from under Herdr's folder; a space on another machine says it can't show them. The centre tab has one title row, the same as a Better Changes diff: file, folder and Preview while it's the shared one. It publishes that to `shared("pane-heads")`, which Better Changes' pane header shows, and draws its own 30px row only under another header. Keep tab and Open in float over the file's top right corner, or sit in that row. Below is the file, read-only, in the code font at the terminals' size.
 
 Right-click opens a popup at the pointer with groups separated by rules: Open and Open in new tab (files); Open in each editor, Open in default app (files) and Show in Finder (this computer only); Show diff (a changed file, with Better Changes installed); Copy relative path and Copy full path; Send to each agent in the space, each also as `<name> (spawn)`, and to a new one of each installed kind.
 
@@ -30,7 +30,7 @@ Editors are found by macOS app ID with `mdfind`, because a Nix or per-user insta
 
 Show diff hands over in the form Better Changes' own list uses: `better-changes.selection` and `better-changes.diff-tabs`, keyed to the Git root, with `tab.new` when no diff tab is open.
 
-The gutter comes from `git diff -U0 HEAD`, with external diff and text conversion off, or all green for an untracked file. Herdr's editor can't mark a line or report its scroll, so it's made as tall as the whole file, with folding off, inside an outer box that scrolls it and the marks together. The line height is computed: GPUI's 1.618 ratio, rounded to whole device pixels at the zoom. `settings.gutter: false` restores the plain editor.
+Changed lines come from `git diff -U0 HEAD`, with external diff and text conversion off, or all green for an untracked file. Herdr's editor can't mark a line or report its scroll, and marks laid over it slid as it scrolled, so the file is drawn as rows in a `v_virtual_list`, like a Better Changes diff: a 3px bar, the line number, then the code in simple one-line colouring, tinted by its mark, with a 2px red line where lines were removed. `settings.gutter: false` uses Herdr's editor instead.
 
 ## Built from
 

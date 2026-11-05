@@ -12,7 +12,7 @@
 // files/model.js says what the data means; views/ui.js holds every look.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
-import { nextCommand, props, setShared, shared, spaces } from "herdr";
+import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { readMethods } from "./files/reads.js";
 import { openMethods } from "./actions/open.js";
@@ -93,6 +93,11 @@ class BetterFiles extends View {
     cx.spawn(async (cx) => {
       for (;;) if ((await nextCommand()) === "refresh") this.refresh(cx);
     });
+  }
+
+  // A closing tab takes its copy of an image with it.
+  async close() {
+    if (this.imageCopy) await exec("rm", ["-f", "--", `${appHome()}/${this.imageCopy}`], {}).catch(() => {});
   }
 
   // Keeps up with the focused pane, tabs closing, and questions left by the menu.

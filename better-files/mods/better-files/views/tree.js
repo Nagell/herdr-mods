@@ -4,6 +4,7 @@ import { h_flex, v_flex } from "gpui-base";
 import { openOverlay, shared, theme } from "herdr";
 import { baseName, holdsChange, TOTAL_ROWS } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
+import { foundEditors } from "../actions/outside.js";
 import { agentName } from "../actions/agents.js";
 import { TEXT, Badge, Button, Chevron, Icon, markColor, IconButton, Message, Panel, PanelHeader, StatusLetter, TextBox } from "./ui.js";
 
@@ -108,6 +109,39 @@ export const treeMethods = {
     }
   },
 
+  // The whole folder on show, in an editor or Finder. This computer's apps only.
+  folderMenu(t) {
+    const FINDER = "finder";
+    const editors = foundEditors();
+    return this.chooser({
+      id: "files-folder",
+      accessibilityLabel: "Open this folder",
+      width: 200,
+      trigger: div()
+        .id("files-folder-trigger")
+        .size(26)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(6)
+        .text_color(t.dim)
+        .cursor_pointer()
+        .accessibility_label("Open this folder")
+        .tooltip("Open this folder")
+        .hover((el) => el.bg(t.hover).text_color(t.foreground))
+        .child(Icon("folder", 15)),
+      choices: [
+        ...editors.map((e) => ({ id: e.bundle, label: `Open in ${e.name}` })),
+        { id: FINDER, label: "Open in Finder" },
+      ],
+      onChoose: (id) => {
+        if (id === FINDER) this.openWithDefault(this.root);
+        else this.openInEditor(editors.find((e) => e.bundle === id), this.root);
+      },
+    });
+  },
+
   composerView() {
     const t = theme();
     const { target, address } = this.composer;
@@ -166,6 +200,7 @@ export const treeMethods = {
             .child(div().flex_none().font_medium().child("Files"))
             .when(Boolean(folderLabel(this.root)), (el) => el.child(Badge(folderLabel(this.root)))),
         )
+        .when(Boolean(this.root && !this.on), (el) => el.child(this.folderMenu(t)))
         .child(
           IconButton({
             id: "files-refresh",

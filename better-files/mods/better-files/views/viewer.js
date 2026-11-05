@@ -1,24 +1,20 @@
 // A file in the centre pane, read-only, following the file as it changes on disk. Editing
 // belongs in the code editor it can open.
-import { div } from "gpui-kit";
-import { h_flex, v_flex, Editor, EditorState } from "gpui-base";
-import { exec, focused, layout, panes, readTextFile, setShared, settings, shared, theme } from "herdr";
-import { baseName, languageOf, parseHunks, viewable } from "../files/model.js";
+import { div, image } from "gpui-kit";
+import { h_flex, v_flex, Editor, EditorState, Scrollbar, v_virtual_list } from "gpui-base";
+import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme } from "herdr";
+import { baseName, isImage, languageOf, lineMarks, parseHunks, tokenize, viewable } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { TEXT, Icon, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
-const GUTTER_WIDTH = 4;
-const END_ROOM = 40; // So the last line isn't cut off by the editor's own padding.
-const DEVICE_SCALE = 2;
-// GPUI's default line height, rounded to whole device pixels at this zoom.
-const LINE_RATIO = 1.618034;
+const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
+const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
+const rowHeight = () => Math.round(codeSize() * 1.6);
 
-export function lineHeight() {
-  const zoom = settings().zoom ?? 1;
-  const scale = zoom * DEVICE_SCALE;
-  return Math.round(codeSize() * scale * LINE_RATIO) / scale;
-}
+// $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
+// the script itself, and only the cache's own copies are ever removed.
+const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" || cp -- "$1" "$2"; }`;
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -65,7 +61,7 @@ export const viewerMethods = {
   // touching the file.
   readHunks(cx) {
     const file = this.file;
-    if (!file || !this.gutterOn || this.diffing) return;
+    if (!file || !this.gutterOn || this.diffing || isImage(file.path)) return;
     this.diffing = true;
     cx.spawn(async (cx) => {
       const git = (args) =>
@@ -90,6 +86,7 @@ export const viewerMethods = {
   // Only a real change touches the view, so the place you're reading stays put.
   readFile(cx) {
     const file = this.file;
+    if (file && isImage(file.path)) return this.readImage(cx);
     if (!file || this.reading) return;
     this.reading = true;
     cx.spawn(async (cx) => {
@@ -109,8 +106,10 @@ export const viewerMethods = {
       } else if (shown.text !== this.text) {
         this.problem = null;
         this.text = shown.text;
-        if (this.code) this.code.set_value(shown.text);
-        else this.code = this.newCode(file, shown.text);
+        if (!this.gutterOn) {
+          if (this.code) this.code.set_value(shown.text);
+          else this.code = this.newCode(file, shown.text);
+        }
       }
       cx.notify();
     });
@@ -121,8 +120,6 @@ export const viewerMethods = {
     return EditorState.new({
       language: languageOf(file.path),
       readonly: true,
-      // A folded section would pull the gutter out of line with the file.
-      folding: !this.gutterOn,
       value,
       font_family: codeFont(),
       font_size: codeSize(),
@@ -170,41 +167,158 @@ export const viewerMethods = {
     return find(layout()) === "better-changes";
   },
 
-  // Herdr's editor can't mark a line or say how far it has scrolled. So it's made as tall as
-  // the whole file, which leaves it nothing to scroll, and this outer box scrolls it and the
-  // gutter together.
-  // shortcut: the line height is worked out, not read, and assumes a 2x display; if marks
-  // drift, turn `gutter` off in mod.json until Herdr's editor can draw them itself.
-  codeWithGutter() {
-    const t = theme();
-    const lines = (this.text ?? "").split("\n").length;
-    const height = lineHeight();
-    const COLORS = { added: t.ansi2, changed: t.ansi3, removed: t.ansi1 };
-    const marks = (this.hunks ?? []).map((hunk, i) =>
-      div()
-        .id(`viewer-mark-${i}`)
-        .absolute()
-        .left(0)
-        .w(GUTTER_WIDTH)
-        .top(hunk.line * height)
-        .h(hunk.kind === "removed" ? 2 : Math.min(hunk.count, lines - hunk.line) * height)
-        .bg(COLORS[hunk.kind]),
-    );
-    return v_flex()
-      .id("viewer-scroll")
+  // The file as rows, the way Better Changes draws a diff. Herdr's editor can't mark a line,
+  // and marks laid over it slid as it scrolled, but here a line's colour is part of its row.
+  linesView() {
+    const lines = this.fileLines();
+    const language = languageOf(this.file.path);
+    const marks = lineMarks(this.hunks ?? [], lines.length);
+    const height = rowHeight();
+    const listId = `viewer-lines-${this.viewerId}-${this.file.path}`;
+    const list = v_virtual_list(
+      listId,
+      lines.length,
+      height,
+      (i) => String(i),
+      (range) => {
+        const rows = [];
+        for (let i = range.start; i < range.end; i++)
+          rows.push(this.lineRow(i, lines[i], language, marks, height, lines.length));
+        return rows;
+      },
+    ).size_full();
+    const widest = lines.reduce((most, line) => Math.max(most, line.length), 0);
+    return div()
+      .id("viewer-lines")
       .flex_1()
       .min_h(0)
       .min_w(0)
-      .overflow_y_scrollbar()
+      .relative()
+      .font_family(codeFont())
+      .text_size(codeSize())
+      .child(
+        div()
+          .id("viewer-x")
+          .size_full()
+          .overflow_x_scrollbar()
+          .child(
+            div()
+              .w_full()
+              .min_w(Math.max(300, (widest * CHAR_WIDTH + LINE_COLUMNS) * codeSize()))
+              .h_full()
+              .child(list),
+          ),
+      )
+      .child(Scrollbar.vertical(listId).viewport_from_layout().absolute().inset_0());
+  },
+
+  // Split once per version of the file: rows are drawn on every scroll.
+  fileLines() {
+    if (this.linesOf !== this.text) {
+      this.linesOf = this.text;
+      this.lines = (this.text ?? "").split("\n").map((line) => line.replace(/\r$/, "").replace(/\t/g, "    "));
+    }
+    return this.lines;
+  },
+
+  lineRow(i, line, language, marks, height, count) {
+    const t = theme();
+    const COLORS = { added: t.ansi2, changed: t.ansi3 };
+    const SYNTAX = { keyword: t.ansi5, string: t.ansi2, comment: t.dim, number: t.ansi1 };
+    const kind = marks.kinds.get(i);
+    const removed = (at) => div().id(`viewer-removed-${at}`).absolute().left(0).right(0).h(2).bg(t.ansi1);
+    const row = h_flex()
+      .id(`viewer-line-${i}`)
+      .relative()
+      .h(height)
+      .w_full()
+      .items_center()
+      .when(Boolean(kind), (el) => el.bg(`${COLORS[kind]?.slice(0, 7)}26`))
+      .child(
+        div()
+          .id(kind ? `viewer-mark-${i}` : `viewer-bar-${i}`)
+          .w(3)
+          .h_full()
+          .flex_none()
+          .when(Boolean(kind), (el) => el.bg(COLORS[kind])),
+      )
+      .child(
+        div()
+          .w(codeSize() * 3.5)
+          .pr(codeSize())
+          .flex_none()
+          .text_right()
+          .text_color(t.dim)
+          .child(String(i + 1)),
+      )
       .child(
         h_flex()
-          .flex_none()
-          .w_full()
-          .h(lines * height + END_ROOM)
-          .items_start()
-          .child(div().relative().w(GUTTER_WIDTH + 2).flex_none().h(lines * height).children(marks))
-          .child(Editor.new(this.code).flex_1().min_w(0).h(lines * height + END_ROOM)),
+          .flex_1()
+          .min_w(0)
+          .whitespace_nowrap()
+          .children(
+            tokenize(line, language).map((run) =>
+              div()
+                .flex_none()
+                .whitespace_nowrap()
+                .text_color(SYNTAX[run.kind] ?? t.foreground)
+                .child(run.text || " "),
+            ),
+          ),
       );
+    if (marks.removedAbove.has(i)) row.child(removed(i).top(0));
+    if (i === count - 1 && marks.removedAbove.has(count)) row.child(removed(count).bottom(0));
+    return row;
+  },
+
+  // Herdr only loads images from under its own folder, so the file is shown through a copy
+  // in this mod's cache. Saving over the copy updates what's on screen, which is how a
+  // changed image refreshes. Each file a tab shows gets its own name, for the same reason.
+  readImage(cx) {
+    const file = this.file;
+    if (file.on || this.reading) return;
+    if (this.imageFor !== file.path) {
+      this.imageFor = file.path;
+      this.imageSerial = (this.imageSerial ?? 0) + 1;
+      this.imageOld = this.imageCopy;
+      const ext = file.path.split(".").pop().toLowerCase();
+      this.imageCopy = `mods/better-files/cache/${this.viewerId}-${this.imageSerial}.${ext}`;
+      this.imageShown = null;
+    }
+    const copy = this.imageCopy;
+    const old = this.imageOld ? `${appHome()}/${this.imageOld}` : "";
+    this.imageOld = null;
+    this.reading = true;
+    cx.spawn(async (cx) => {
+      const result = await exec(
+        "sh",
+        ["-c", COPY_IMAGE, "copy-image", file.path, `${appHome()}/${copy}`, old],
+        {},
+      ).catch(() => null);
+      this.reading = false;
+      if (this.file?.path !== file.path) return;
+      const problem = result?.code === 0 ? null : "This file is no longer available.";
+      const shown = problem ? null : copy;
+      if (problem !== this.problem || shown !== this.imageShown) {
+        this.problem = problem;
+        this.imageShown = shown;
+        cx.notify();
+      }
+    });
+  },
+
+  // Another machine's file isn't on this one to load.
+  imageView() {
+    if (this.file.on) return Message("Images on another machine can't be shown here.");
+    if (this.problem) return Message(this.problem);
+    if (!this.imageShown) return Message("Loading…");
+    return h_flex()
+      .id("viewer-image")
+      .flex_1()
+      .min_h(0)
+      .min_w(0)
+      .p(16)
+      .child(image(this.imageShown).flex_1().min_w(0).h_full());
   },
 
   viewerActions() {
@@ -274,9 +388,10 @@ export const viewerMethods = {
           .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))
           .child(this.viewerActions()),
       );
-    if (this.problem) root.child(Message(this.problem));
-    else if (!this.code) root.child(Message(head ? "Loading…" : "This tab has no file."));
-    else if (this.gutterOn) root.child(this.codeWithGutter());
+    if (this.file && isImage(this.file.path)) root.child(this.imageView());
+    else if (this.problem) root.child(Message(this.problem));
+    else if (this.text === undefined) root.child(Message(head ? "Loading…" : "This tab has no file."));
+    else if (this.gutterOn) root.child(this.linesView());
     else root.child(v_flex().flex_1().min_h(0).child(Editor.new(this.code).flex_1().min_h(0)));
     // There's no row of its own to sit in, so the actions float over the file's corner.
     if (inHeader) root.child(div().absolute().top(6).right(18).child(this.viewerActions()));

@@ -12,11 +12,11 @@ const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, lineHeight, viewable, languageOf, sortEntries, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, lineMarks, tokenize, viewable, languageOf, sortEntries, MAX_CHARS });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
   const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
@@ -50,9 +50,9 @@ function world({ diff = '', layout = {}, mode = 'sidebar', viewer, file, target,
   }
   const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; }, on() {}, focus() {}, release() { this.released = true; } });
   const context = {
-    View: class {}, div: el, svg: el, h_flex: el, v_flex: el,
+    View: class {}, div: el, svg: el, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
-    Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
+    Scrollbar: { vertical: () => el() }, v_virtual_list: (_id, count, _h, _k, render) => { const e = el(); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
@@ -70,6 +70,7 @@ function world({ diff = '', layout = {}, mode = 'sidebar', viewer, file, target,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
+      if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
@@ -205,23 +206,43 @@ test('a new viewer never claims a tab that was already open, such as the one it 
   assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
 });
 
-test('the viewer is read-only, follows the file, and only touches the view on a real change', async () => {
+test('the viewer follows the file, and keeps the same rows until it really changes', async () => {
   const file = { path: '/repo/src/main.go', root: '/repo', on: null };
-  const h = await ready({ mode: 'viewer', viewer: 'v1', file, texts: { '/repo/src/main.go': 'one' } });
-  const code = h.context.lastCode;
-  assert.equal(code.opts.readonly, true);
-  assert.equal(code.opts.font_size, 14, 'the terminals\' size');
-  assert.equal(code.opts.language, 'go');
-  assert.match(strings(h.mod.render()), /main\.go[\s\S]*src[\s\S]*one/);
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/src/main.go': 'one' } });
+  assert.match(strings(h.mod.render()), /main\.go[\s\S]*src[\s\S]*1[\s\S]*one/);
+  const first = h.mod.fileLines();
   h.mod.readFile(h.cx); await h.flush();
-  assert.equal(code.sets, 0, 'same text: the place you are reading stays put');
-  h.live.texts['/repo/src/main.go'] = 'two';
+  assert.equal(h.mod.fileLines(), first, 'same text: nothing is rebuilt');
+  h.live.texts['/repo/src/main.go'] = 'two\nthree';
   h.mod.readFile(h.cx); await h.flush();
-  assert.equal(code.text, 'two');
-  assert.equal(h.context.lastCode, code, 'the same view');
+  assert.match(strings(find(h.mod.render(), 'viewer-lines')), /two[\s\S]*2[\s\S]*three/);
   h.live.texts['/repo/src/main.go'] = null;
   h.mod.readFile(h.cx); await h.flush();
   assert.match(strings(h.mod.render()), /no longer available/);
+});
+
+test('each line carries its own colour, and removed lines draw a line where they were', async () => {
+  const { context: m } = await ready();
+  const marks = m.lineMarks([{ line: 0, count: 2, kind: 'added' }, { line: 3, count: 1, kind: 'changed' }, { line: 2, count: 0, kind: 'removed' }, { line: 9, count: 0, kind: 'removed' }, { line: 4, count: null, kind: 'added' }], 6);
+  assert.deepEqual(JSON.parse(JSON.stringify([...marks.kinds.entries()])), [[0, 'added'], [1, 'added'], [3, 'changed'], [4, 'added'], [5, 'added']]);
+  assert.deepEqual(JSON.parse(JSON.stringify([...marks.removedAbove])), [2, 6], 'past the end is the end');
+  const h = await ready({ mode: 'viewer', viewer: 'v', file: { path: '/repo/b.md', root: '/repo', on: null }, texts: { '/repo/b.md': 'a\nb\nc' }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n@@ -2,1 +1,0 @@\n@@ -9,0 +3 @@\n' });
+  const tree = h.mod.render();
+  assert.ok(find(find(tree, 'viewer-line-0'), 'viewer-mark-0'), 'the mark is inside its own row');
+  assert.ok(find(find(tree, 'viewer-line-1'), 'viewer-removed-1'));
+  assert.equal(find(find(tree, 'viewer-line-1'), 'viewer-mark-1'), undefined);
+  assert.ok(find(find(tree, 'viewer-line-2'), 'viewer-mark-2'));
+});
+
+test('a line is coloured by what its words are', async () => {
+  const { context: m } = await ready();
+  const runs = (line, lang) => JSON.parse(JSON.stringify(m.tokenize(line, lang)));
+  assert.deepEqual(runs('const a = "b"; // "c"', 'js'), [{ text: 'const', kind: 'keyword' }, { text: ' a = ', kind: null }, { text: '"b"', kind: 'string' }, { text: '; ', kind: null }, { text: '// "c"', kind: 'comment' }]);
+  assert.deepEqual(runs('x = 12 # note', 'py'), [{ text: 'x = ', kind: null }, { text: '12', kind: 'number' }, { text: ' ', kind: null }, { text: '# note', kind: 'comment' }]);
+  assert.deepEqual(runs('"http://x" y', 'js'), [{ text: '"http://x"', kind: 'string' }, { text: ' y', kind: null }], 'no comment inside a string');
+  assert.deepEqual(runs("don't return", 'md'), [{ text: "don't return", kind: null }], 'prose is left alone');
+  assert.equal(m.tokenize('  indented', 'go').map((r) => r.text).join(''), '  indented', 'no text is lost');
+  assert.equal(m.tokenize('', 'go').length, 1);
 });
 
 test('binary, large and unreadable files say what is going on', async () => {
@@ -231,7 +252,7 @@ test('binary, large and unreadable files say what is going on', async () => {
   const failing = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x': new Error('too big') } });
   assert.match(strings(failing.mod.render()), /can't be shown/);
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x': 'y'.repeat(400001) } });
-  assert.match(h.context.lastCode.text, /file truncated/);
+  assert.match(strings(h.mod.render()), /file truncated/);
 });
 
 test('the viewer can keep its tab and open in an editor found here, and offers none elsewhere', async () => {
@@ -280,21 +301,18 @@ test('git diff becomes gutter marks by the file\'s lines as they are now', async
     { line: 10, count: 2, kind: 'changed' },
     { line: 18, count: 0, kind: 'removed' },
   ]);
-  assert.equal(m.lineHeight(), Math.round(14 * 2 * 1.618034) / 2, 'whole device pixels');
 });
 
 const gutterFile = { path: '/repo/b.md', root: '/repo', on: null };
 const markBars = (h) => { const out = []; const walk = (n) => { if (n?.elementId?.startsWith?.('viewer-mark-')) out.push(n.elementId); (n?.nodes ?? []).forEach(walk); }; walk(h.mod.render()); return out; };
 
 test('a changed file shows marks, an untracked one is all new, and a clean one has none', async () => {
-  const opts = { mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.md': 'one\ntwo\nthree' } };
+  const opts = { mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.md': 'one\ntwo\nthree\nfour' } };
   const changed = await ready({ ...opts, status: ' M b.md\n', diff: '@@ -1 +1 @@\n-x\n+one\n@@ -3,0 +4,1 @@\n+z\n' });
   assert.equal(markBars(changed).length, 2);
-  assert.ok(find(changed.mod.render(), 'viewer-scroll'), 'one box scrolls the file and marks together');
-  assert.equal(changed.context.lastCode.opts.folding, false, 'a fold would pull the marks out of line');
   const fresh = await ready({ ...opts, status: '?? b.md\n' });
   assert.equal(JSON.stringify(fresh.mod.hunks), JSON.stringify([{ line: 0, count: null, kind: 'added' }]));
-  assert.equal(markBars(fresh).length, 1);
+  assert.equal(markBars(fresh).length, 4, 'every line is new');
   const clean = await ready({ ...opts, status: '' });
   assert.equal(markBars(clean).length, 0);
   assert.ok(!clean.execs.some((e) => e.includes('diff')), 'nothing changed: no diff to read');
@@ -305,16 +323,55 @@ test('a changed file shows marks, an untracked one is all new, and a clean one h
   for (const flag of ['--no-ext-diff', '--no-textconv', '-U0']) assert.ok(args.includes(flag), flag);
 });
 
-test('the gutter can be turned off, which brings folding back', async () => {
+test('the setting can use Herdr\'s own editor instead', async () => {
   const h = await ready({ mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.md': 'x', '/app/mods/better-files/mod.json': null }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n' });
   assert.equal(h.mod.gutterOn, true);
   h.mod.gutterOn = false;
   h.mod.code = null; h.mod.text = undefined; h.mod.hunks = [];
   h.mod.readFile(h.cx);
   await h.flush();
-  assert.equal(h.context.lastCode.opts.folding, true);
-  assert.equal(find(h.mod.render(), 'viewer-scroll'), undefined);
+  assert.equal(h.context.lastCode.opts.readonly, true);
+  assert.equal(h.context.lastCode.opts.language, 'md');
+  assert.equal(find(h.mod.render(), 'viewer-lines'), undefined);
   assert.equal(markBars(h).length, 0);
+});
+
+test('an image shows as a picture, with no text read and no gutter', async () => {
+  const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, status: ' M shot.PNG\n', diff: '@@ -1 +1 @@\n' });
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /image:mods\/better-files\/cache\/v-1\.png/);
+  assert.equal(h.context.lastCode, undefined);
+  const copy = h.execs.find((e) => e[1] === '-c' && e[3] === 'copy-image');
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/cache/v-1.png', ''], 'names go as arguments');
+  h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
+  h.tick();
+  await h.flush();
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /cache\/v-2\.jpg/, 'a new file, a new name');
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[6], '/app/mods/better-files/cache/v-1.png', 'the old copy goes');
+  await h.mod.close();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/cache/v-2.jpg']);
+  const gone = await ready({ mode: 'viewer', viewer: 'v', file, copyImage: { code: 1 } });
+  assert.match(strings(gone.mod.render()), /no longer available/);
+  assert.equal(markBars(h).length, 0);
+  assert.ok(!h.execs.some((e) => e.includes('diff')));
+  const far = await ready({ mode: 'viewer', viewer: 'v', file: { ...file, on: 'box' } });
+  assert.match(strings(far.mod.render()), /another machine/);
+  const text = await ready({ mode: 'viewer', viewer: 'v', file: { path: '/repo/png', root: '/repo', on: null }, texts: { '/repo/png': 'x' } });
+  assert.equal(find(text.mod.render(), 'viewer-image'), undefined);
+});
+
+test('the folder icon opens the whole folder in an editor or Finder, here only', async () => {
+  const zed = [{ name: 'Zed', bundle: 'dev.zed.Zed' }];
+  const h = await ready({ sharedInit: { 'better-files.editors': zed } });
+  find(h.mod.render(), 'files-folder').handlers.open(true, h.cx);
+  assert.match(strings(find(h.mod.render(), 'files-folder-menu')), /Open in Zed[\s\S]*Open in Finder/);
+  click(h, 'files-folder-option-dev.zed.Zed');
+  find(h.mod.render(), 'files-folder').handlers.open(true, h.cx);
+  click(h, 'files-folder-option-finder');
+  await h.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.filter(([b]) => b === 'open'))), [['open', '-b', 'dev.zed.Zed', '/repo'], ['open', '/repo']]);
+  const far = await ready({ machine: 'box', sharedInit: { 'better-files.editors': zed } });
+  assert.equal(find(far.mod.render(), 'files-folder'), undefined);
 });
 
 test('only editors that are installed are found', async () => {
@@ -467,7 +524,8 @@ test('every icon is used, every used icon exists, and nothing here can write a f
   const icons = fs.readdirSync(path.join(root, 'icons')).map((f) => f.replace('.svg', ''));
   for (const icon of icons) assert.ok(code.includes(`"${icon}"`), `unused icon ${icon}`);
   for (const [, name] of code.matchAll(/(?:icon: |Icon\()"([a-z-]+)"/g)) assert.ok(icons.includes(name), `missing icon ${name}`);
-  assert.doesNotMatch(code, /writeTextFile|writeFile|\brm\b|readonly: false/);
+  assert.doesNotMatch(code, /writeTextFile|writeFile|readonly: false/);
+  assert.equal((code.match(/\brm\b/g) ?? []).length, 2, 'rm only ever touches the cache');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mod.json'))).title, 'Better Files');
   assert.doesNotMatch(code, /panel-body|better-tabs|estro/i);
 });

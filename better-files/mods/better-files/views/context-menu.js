@@ -75,8 +75,7 @@ export const contextMenuMethods = {
       .w_full()
       .max_h(520)
       .overflow_y_scrollbar()
-      .p(5)
-      .gap(1)
+      .p(4)
       .rounded(7)
       .border_1()
       .border_color(t.border)
@@ -84,17 +83,17 @@ export const contextMenuMethods = {
       .text_color(t.foreground)
       .text_size(TEXT.tab);
     this.menuItems(target).forEach((group, i) => {
-      if (i) view.child(div().h(1).my(4).flex_none().bg(t.border));
+      if (i) view.child(div().h(1).my(3).flex_none().bg(t.border));
       for (const item of group)
         view.child(
           div()
             .id(`files-menu-${item.id}`)
             .flex_none()
-            .h(31)
+            .h(24)
             .px(8)
             .flex()
             .items_center()
-            .rounded(7)
+            .rounded(5)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover))
             .on_click((_e, cx) => {
