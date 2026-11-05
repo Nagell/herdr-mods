@@ -1,192 +1,576 @@
+// The panel against stand-ins for Herdr and the helper. Nothing here reaches Linear.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const vm = require('node:vm');
 
-function harness(existingStorage) {
-  const pending = [], storage = existingStorage ?? new Map(), timers = [];
-  const cx = { focus_handle:()=>({focus(){}}), stop_propagation() {}, notify() {}, open_url(u) { cx.opened=u; }, spawn(fn) { const p = fn(cx); pending.push(p); }, timer: { every() {}, after(_ms,fn) { timers.push(fn); } } };
+const dir = path.join(__dirname, '../mods/branch-issue');
+const FILES = ['settings.js', 'linear/model.js', 'views/ui.js', 'state/saved.js', 'linear/discovery.js', 'linear/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/comments.js', 'views/worktrees.js', 'main.js'];
+const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+  .join('\n')
+  .replace(/^import\s+[\s\S]*?;$/gm, '')
+  .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
+  .replace(/^export /gm, '')
+  + '\nObject.assign(globalThis, { person, who, agentName, slug, folderName });';
+
+function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
+  const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
+  const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
-    const data = { nodes: [], handlers: {} }; let proxy;
-    proxy = new Proxy(data,{get(t,k){if(k in t)return t[k];if(k==='child')return c=>{t.nodes.push(c);return proxy};if(k==='children')return cs=>{t.nodes.push(...cs);return proxy};if(k==='when')return(b,f)=>{if(b)f(proxy);return proxy};return(...a)=>{if(k==='id')t.elementId=a[0];if(k==='trigger'||k==='content')t.nodes.push(a[0]);if(k.startsWith('on_'))t.handlers[k.slice(3)]=a[0];if(k==='on_click')t.handlers.click=a[0];return proxy}}}); return proxy;
+    const data = { nodes: [], handlers: {} };
+    const proxy = new Proxy(data, {
+      get(t, k) {
+        if (k in t) return t[k];
+        if (k === 'child' || k === 'trigger' || k === 'content') return (c) => { t.nodes.push(c); return proxy; };
+        if (k === 'children') return (c) => { t.nodes.push(...c); return proxy; };
+        if (k === 'when') return (b, f) => { if (b) f(proxy); return proxy; };
+        return (...a) => {
+          if (k === 'id') t.elementId = a[0];
+          if (k === 'on_click') t.handlers.click = a[0];
+          if (k === 'on_key_down') t.handlers.key = a[0];
+          if (k === 'on_open_change') t.handlers.open = a[0];
+          if (k === 'tooltip') t.tooltip = a[0];
+          return proxy;
+        };
+      },
+    });
+    return proxy;
   }
-  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers:{}, on(event,fn) { this.handlers[event]=fn; }, focus() { this.focused=true; }, type(v,cx) { this.text=v; this.handlers.change?.({},cx); } });
+  const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {}, set_selected_range(r) { this.selected = r; } });
   const live = { spaces: [], panes: [], agents: [] };
-  const context = { View: class {}, div: el, svg: el, Popover:{new:(id)=>el().id(id)}, v_flex: el, h_flex: el, InputState: {new:state}, TextareaState:{new:state}, Input:{new:el}, Textarea:{new:el}, TextView:{markdown:(_id,text)=>el().child(text)},
-    spaces:()=>live.spaces, panes:()=>live.panes, agents:()=>live.agents,
-    shared:()=>null,setShared:(k,v)=>{context.sharedWrites.push([k,v])},sharedWrites:[],settings:()=>({font_size:14}),run:(command,args)=>{context.runs.push({command,args})},runs:[],props:()=>({}),nextCommand:()=>new Promise(()=>{}),theme:()=>({}),home:()=>'/home/user',appHome:()=>'/app',exec:async()=>({code:0,stdout:'{}'}),hc:async()=>({code:0}),knownAgents:async()=>[{key:'claude',name:'Claude Code',run:['claude'],installed:true},{key:'codex',name:'Codex',run:['codex'],installed:false}],
-    localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}, console };
+  const context = {
+    View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
+    Popover: { new: (id) => el().id(id) }, Input: { new: () => el() }, Textarea: { new: () => el() },
+    TextView: { markdown: (_id, text) => el().child(text) },
+    InputState: { new: state }, TextareaState: { new: state },
+    spaces: () => live.spaces, panes: () => live.panes, agents: () => live.agents,
+    exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
+    hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
+    run: (name, args) => ran.push([name, args]),
+    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
+    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
+    nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
+    localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
+    console,
+  };
   vm.createContext(context);
-  const typography=fs.readFileSync('mods/branch-issue/typography.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function');
-  vm.runInContext(typography,context);
-  const settingsSource=fs.readFileSync('mods/branch-issue/settings.js','utf8').replace(/^import .*;\n/gm,'').replaceAll('export function','function').replaceAll('export async function','async function');
-  vm.runInContext(settingsSource,context);
-  const source=fs.readFileSync('mods/branch-issue/main.js','utf8').replace(/^import\s+[\s\S]*?;\n/gm,'').replace('export default class LinearIssues','globalThis.Mod = class LinearIssues').replaceAll('export function','function');
-  vm.runInContext(source,context);
-  const mod=new context.Mod(); mod.init({},cx); pending.length=0; mod.sp={id:'space',folder:'/repo'};mod.spaceKey='space';mod.me={id:'me',name:'Me'};mod.teams=[{key:'ENG',name:'Engineering'}];
-  return {mod,cx,live,storage,context,tick:()=>{for(const fn of timers.splice(0))fn(cx)},flush:async()=>{while(pending.length)await Promise.all(pending.splice(0))}};
+  vm.runInContext(source, context);
+  const mod = new context.Mod();
+  mod.init({}, cx);
+  pending.length = 0;
+  mod.sp = { id: 'space', folder: '/repo' }; mod.spaceKey = 'space'; mod.branchLoaded = true; mod.listLoaded = true; mod.me = { id: 'me' };
+  return { mod, cx, live, storage, ran, sent, opened, context, tick: () => { for (const fn of timers) fn(cx); }, fireAfter: () => { for (const fn of after.splice(0)) fn(cx); }, flush: async () => { while (pending.length) await Promise.all(pending.splice(0)); } };
 }
-const issue = (extra={}) => ({id:'uuid-1',identifier:'ENG-7',title:'Fix login',url:'https://linear.app/t/issue/ENG-7',description:'Login breaks',priority:2,priorityLabel:'High',branchName:'me/eng-7-fix-login',state:{id:'s1',name:'Todo',type:'unstarted',color:'#aaa'},assignee:null,labels:[],attachments:[{id:'a1',title:'PR #4',url:'https://github.com/o/r/pull/4'}],children:[],team:{id:'t',key:'ENG',name:'Engineering',states:[{id:'s1',name:'Todo',type:'unstarted',position:1},{id:'s2',name:'In Progress',type:'started',position:2}],members:[{id:'me',name:'Me'},{id:'u2',name:'Bea',active:true}],labels:[{id:'l1',name:'Bug',color:'#f00'},{id:'l2',name:'Feature',color:'#0f0'},{id:'lg',name:'Area',isGroup:true}]},comments:[{id:'c1',body:'Root comment',url:'https://linear.app/c1',createdAt:'2026-01-01',user:{id:'u2',name:'Bea'}},{id:'c2',body:'A reply',createdAt:'2026-01-02',user:{id:'me',name:'Me'},parent:{id:'c1'}}],...extra});
-function strings(node) { if(typeof node==='string')return node;return (node?.nodes??[]).map(strings).join('\n'); }
-function findElement(node,id){ if(!node||typeof node==='string')return undefined; if(node.elementId===id)return node; for(const c of node.nodes??[]){const f=findElement(c,id); if(f)return f;} }
+const settle = () => new Promise(setImmediate);
+const same = (actual, expected) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
+const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
+const strings = (node) => (typeof node === 'string' ? node : (node?.nodes ?? []).map(strings).join(' '));
+const click = (tree, id, h, event = {}) => { const node = find(tree, id); assert.ok(node, `no ${id}`); assert.ok(node.handlers.click, `${id} isn't clickable`); node.handlers.click(event, h.cx); };
+const openMenu = (h, id) => find(h.mod.render(), id).handlers.open(true, h.cx);
 
-test('identifiers are parsed from branch names and bindings, uppercase and unique',()=>{
- const h=harness();const ids=vm.runInContext('identifiersIn',h.context);
- assert.deepEqual([...ids('tawsif/eng-123-fix-login-eng-123')],['ENG-123']);
- assert.deepEqual([...ids('ENG-1,ops-22')],['ENG-1','OPS-22']);
- assert.deepEqual([...ids('main')],[]);assert.deepEqual([...ids('release-2024')],['RELEASE-2024']);
+const STARTED = { id: 'st1', name: 'In Progress', type: 'started', color: '#f2c94c' };
+const ISSUE = (over = {}) => ({
+  id: 'i1', identifier: 'ENG-1', title: 'Fix the login', url: 'https://linear.app/x/ENG-1', priority: 2, priorityLabel: 'High', updatedAt: new Date().toISOString(), branchName: 'sam/eng-1-fix-login',
+  description: 'Why it matters', state: STARTED, assignee: { id: 'u1', name: 'Ann' }, team: { key: 'ENG', name: 'Engineering', states: [STARTED, { id: 'st2', name: 'Done', type: 'completed', color: '#0f0' }], members: [{ id: 'me', name: 'Sam', active: true }, { id: 'u1', name: 'Ann', active: true }] },
+  labels: [{ id: 'l1', name: 'bug' }], project: { name: 'Auth' }, cycle: { number: 3 }, estimate: 2, children: [], attachments: [],
+  comments: [{ id: 'c1', body: 'First', url: 'https://x/c1', createdAt: '2026-01-01T00:00:00Z', user: { name: 'Bob' } }, { id: 'c2', body: 'A reply', url: 'https://x/c2', createdAt: '2026-01-02T00:00:00Z', user: { name: 'Cam' }, parent: { id: 'c1' } }],
+  ...over,
 });
-test('branch mode prefers the git binding, confirms candidates with Linear and remembers the chosen one',async()=>{
- const h=harness();h.mod.mode='branch';const requests=[];
- h.context.exec=async(cmd,args)=>{ if(cmd!=='git')return{code:0,stdout:'{}'}; if(args[0]==='symbolic-ref')return{code:0,stdout:'me/eng-7-fix-login\n'}; if(args[0]==='config')return{code:0,stdout:'OPS-3\n'}; return{code:0,stdout:''}; };
- h.mod.api=async r=>{requests.push(r);return{items:[issue({identifier:'OPS-3',id:'u3'}),issue()]}};
- h.mod.loadBranchIssues(h.cx);await h.flush();
- assert.equal(requests[0].identifiers.join(','),'OPS-3,ENG-7');assert.equal(h.mod.issue.identifier,'OPS-3');assert.equal(h.mod.branchIssues.length,2);
- h.mod.selectBranchIssue('ENG-7',h.cx);assert.equal(h.storage.get(h.mod.branchPreferenceKey()),'ENG-7');
- h.mod.loadBranchIssues(h.cx);await h.flush();assert.equal(h.mod.issue.identifier,'ENG-7');
- const tree=h.mod.render();assert.ok(findElement(tree,'issue-branch-trigger'));assert.ok(findElement(tree,'issue-browser-toggle'));assert.match(strings(tree),/Fix login/);
-});
-test('an empty branch offers a link field that writes the binding after Linear confirms the issue',async()=>{
- const h=harness();h.mod.mode='branch';h.mod.branch='feature/x';const writes=[];
- h.context.exec=async(cmd,args)=>{ if(args[0]==='config'&&args[1]!=='--get'){writes.push(args);return{code:0,stdout:''}} if(args[0]==='config')return{code:1,stdout:''}; if(args[0]==='symbolic-ref')return{code:0,stdout:'feature/x\n'}; return{code:0,stdout:''}; };
- const tree=h.mod.render();assert.ok(findElement(tree,'issue-link-input'));assert.match(strings(tree),/No Linear issue linked to feature\/x/);
- h.mod.api=async r=>r.action==='detail'?issue():{items:[issue()]};
- h.mod.linkInput.set_value('eng-7');h.mod.linkIssue(h.cx);await h.flush();
- assert.equal(Array.from(writes[0]).join(' '),'config branch.feature/x.herdr-issue ENG-7');
- // Once bound, the sidebar shows the issue with an Unlink control that drops the binding.
- h.context.exec=async(cmd,args)=>{ if(args[0]==='config'&&args[1]==='--get')return{code:0,stdout:'ENG-7\n'}; if(args[0]==='config'){writes.push(args);return{code:0,stdout:''}} if(args[0]==='symbolic-ref')return{code:0,stdout:'feature/x\n'}; return{code:0,stdout:''}; };
- h.mod.loadBranchIssues(h.cx);await h.flush();assert.equal(h.mod.issue.identifier,'ENG-7');
- const unlink=findElement(h.mod.render(),'issue-unlink');assert.ok(unlink);unlink.handlers.click({},h.cx);await h.flush();
- assert.equal(Array.from(writes.at(-1)).join(' '),'config --unset branch.feature/x.herdr-issue');
-});
-test('an identifier that is in the branch name cannot be unlinked',async()=>{
- const h=harness();h.mod.mode='branch';
- h.context.exec=async(cmd,args)=>{ if(args[0]==='symbolic-ref')return{code:0,stdout:'me/eng-7-fix\n'}; if(args[0]==='config')return{code:0,stdout:'ENG-7\n'}; return{code:0,stdout:''}; };
- h.mod.api=async()=>({items:[issue()]});h.mod.loadBranchIssues(h.cx);await h.flush();
- assert.equal(findElement(h.mod.render(),'issue-unlink'),undefined);
-});
-test('a missing key is a plain error with Retry and nothing else loads',()=>{
- const h=harness();h.mod.mode='branch';h.mod.error='LINEAR_API_KEY is not set. Export a key, then refresh.';
- const tree=h.mod.render();assert.ok(findElement(tree,'issue-retry'));assert.equal(findElement(tree,'issue-key-input'),undefined);assert.match(strings(tree),/LINEAR_API_KEY is not set/);
-});
-test('browser list sends scope, state, team and search, groups by state and opens details',async()=>{
- const h=harness();const requests=[];h.mod.api=async r=>{requests.push(r);return r.action==='list'?{items:[issue(),issue({id:'u2',identifier:'ENG-8',title:'Other',state:{id:'s2',name:'In Progress',color:'#0f0'}})],cursor:'next'}:issue()};
- h.mod.teams=[{key:'ENG',name:'Engineering'},{key:'OPS',name:'Ops'}];h.mod.scope='cycle';h.mod.state='started';h.mod.team='ENG';h.mod.loadList(h.cx);await h.flush();
- assert.equal(requests[0].scope,'cycle');assert.equal(requests[0].state,'started');assert.equal(requests[0].team,'ENG');
- let tree=h.mod.render();const text=strings(tree);assert.match(text,/Todo[\s\S]*In Progress/);assert.ok(findElement(tree,'issue-more'));assert.ok(findElement(tree,'issue-team-trigger'));
- findElement(tree,'issue-uuid-1').handlers.click({},h.cx);await h.flush();assert.equal(h.mod.issue.identifier,'ENG-7');
- h.mod.search.set_value('ab');h.mod.searchChanged(h.cx);h.tick();await h.flush();assert.equal(requests.filter(r=>r.action==='list').length,1);
- h.mod.issue=null;h.mod.search.set_value('login');h.mod.searchChanged(h.cx);h.tick();await h.flush();assert.equal(requests.at(-1).search,'login');
-});
-test('detail renders quick-edit pickers, threaded comments with Edit on own replies, links and footer-free browser',()=>{
- const h=harness();h.mod.adoptIssue(issue());h.mod.section='comments';
- const tree=h.mod.render();const text=strings(tree);
- assert.ok(findElement(tree,'issue-state-trigger'));assert.ok(findElement(tree,'issue-priority-trigger'));assert.ok(findElement(tree,'issue-assignee-trigger'));assert.ok(findElement(tree,'issue-start-work'));
- assert.match(text,/Root comment[\s\S]*A reply/);assert.ok(findElement(tree,'issue-edit-c2'));assert.equal(findElement(tree,'issue-edit-c1'),undefined);
- assert.equal(findElement(tree,'issue-footer'),undefined);
- h.mod.section='links';assert.match(strings(h.mod.render()),/PR #4/);
- h.mod.section='children';h.mod.issue.children=[{id:'k',identifier:'ENG-9',title:'Child',state:{color:'#000'}}];assert.ok(findElement(h.mod.render(),'issue-tab-children'));
-});
-test('quick edits send the matching update and merge the returned fields',async()=>{
- const h=harness();h.mod.adoptIssue(issue());const requests=[];
- h.mod.api=async r=>{requests.push(r);return{issueUpdate:{success:true,issue:{state:{id:'s2',name:'In Progress',type:'started',color:'#0f0'}}}}};
- const tree=h.mod.render();findElement(tree,'issue-issue-state').handlers.open_change(true,h.cx);
- const menu=findElement(h.mod.render(),'issue-issue-state-menu');findElement(menu,'issue-issue-state-s2').handlers.click({},h.cx);await h.flush();
- assert.equal(requests[0].stateId,'s2');assert.equal(h.mod.issue.state.name,'In Progress');assert.match(h.mod.notice,/State saved/);
- h.mod.update({unassign:true},'Assignee',h.cx);await h.flush();assert.equal(requests[1].unassign,true);
- h.mod.update({priority:0},'Priority',h.cx);await h.flush();assert.equal(requests[2].priority,0);
-});
-test('labels add through the picker and remove from the pill',async()=>{
- const h=harness();h.mod.adoptIssue(issue({labels:[{id:'l1',name:'Bug',color:'#f00'}]}));const requests=[];
- h.mod.api=async r=>{requests.push(r);return{issueUpdate:{success:true,issue:{labels:r.labels.map(id=>({id,name:id}))}}}};
- findElement(h.mod.render(),'issue-labels').handlers.open_change(true,h.cx);
- const menu=findElement(h.mod.render(),'issue-labels-menu');
- assert.ok(!findElement(menu,'issue-labels-l1'),'applied label is not offered again');assert.ok(!findElement(menu,'issue-labels-lg'),'group labels cannot be applied');
- findElement(menu,'issue-labels-l2').handlers.click({},h.cx);await h.flush();
- assert.equal(String(requests[0].labels),'l1,l2');assert.equal(h.mod.issue.labels.length,2);assert.match(h.mod.notice,/Labels saved/);
- findElement(h.mod.render(),'issue-label-l1').handlers.click({},h.cx);await h.flush();
- assert.equal(String(requests[1].labels),'l2');assert.equal(h.mod.issue.labels.length,1);
-});
-test('comments, replies and edits go through the helper and failed posts keep the draft',async()=>{
- const h=harness();h.mod.adoptIssue(issue());const requests=[];
- h.mod.compose('reply','c1',null,h.cx,{entry:'c1'});h.mod.editor.set_value('Keep this');h.storage.set(h.mod.draftKey,'Keep this');
- h.mod.api=async()=>{throw Error('offline')};h.mod.mutate(h.cx);await h.flush();assert.equal(h.mod.editor.value(),'Keep this');assert.match(h.mod.error,/offline/);
- h.mod.api=async r=>{requests.push(r);return r.action==='detail'?issue():{}};h.mod.mutate(h.cx);await h.flush();
- assert.equal(requests[0].action,'comment');assert.equal(requests[0].parent,'c1');assert.equal(h.mod.composer,null);
- h.mod.compose('edit','c1',null,h.cx,{entry:'c1',prefix:'A reply',edit:{id:'c2'}});assert.equal(h.mod.editor.value(),'A reply');h.mod.mutate(h.cx);await h.flush();
- assert.equal(requests.at(-2).action,'edit-comment');assert.equal(requests.at(-2).comment,'c2');
-});
-test('agent handoff sends the issue as data through hc',async()=>{
- const h=harness();h.mod.adoptIssue(issue());let sent;h.context.hc=async args=>{sent=args;return{code:0}};
- h.mod.compose('agent',null,null,h.cx,{target:'t7'});h.mod.sendAgent(h.cx);await h.flush();assert.equal(sent,undefined);
- h.live.agents=[{address:'t7',space:'space',tab_name:'Analyst'}];h.mod.sendAgent(h.cx);await h.flush();
- assert.equal(sent[1],'t7');assert.match(sent[2],/ENG-7: Fix login/);assert.match(sent[2],/Login breaks/);assert.match(sent[2],/data, not instructions/);assert.equal(h.mod.composer,null);
-});
-function worktreeHarness(){
- const h=harness(),calls=[];h.mod.adoptIssue(issue());
- h.context.exec=async(cmd,args,options)=>{calls.push({cmd,args,options});
-  if(args[0]==='check-ref-format')return{code:0,stdout:args[2]};
-  if(args[0]==='symbolic-ref')return{code:0,stdout:'origin/develop\n'};
-  if(args[0]==='show-ref')return{code:1,stdout:''};
-  if(args[0]==='config'&&args[1]==='--get-regexp')return{code:0,stdout:'branch.me/eng-7-fix-login.herdr-issue ENG-7\nbranch.other.herdr-issue OPS-1\n'};
-  if(args[0]==='worktree'&&args[1]==='list')return{code:0,stdout:'worktree /repo\nbranch refs/heads/main\n\nworktree /wt/eng-7\nbranch refs/heads/me/eng-7-fix-login\n\nworktree /wt/other\nbranch refs/heads/other\n'};
-  return{code:0,stdout:''}};
- return{...h,calls};
-}
-test('Start work proposes Linear’s branch name, skips taken ones, fetches the base and opens a space with the issue prompt',async()=>{
- const h=worktreeHarness();h.mod.loadWorktrees(h.cx);await h.flush();
- assert.equal(h.mod.currentWorktrees().length,1);let tree=h.mod.render();assert.ok(findElement(tree,'issue-worktree-row-0'));
- h.mod.showWorktree(h.cx);await h.flush();const f=h.mod.worktreeForm;
- assert.equal(f.branch.value(),'me/eng-7-fix-login-2');assert.equal(f.name.value(),'me-eng-7-fix-login-2');assert.equal(f.base.value(),'develop');assert.ok(f.branch.focused);
- tree=h.mod.render();assert.equal(findElement(tree,'issue-start-work'),undefined);assert.ok(findElement(tree,'issue-worktree-start'));
- findElement(tree,'issue-launch').handlers.open_change(true,h.cx);findElement(findElement(h.mod.render(),'issue-launch-menu'),'issue-launch-claude').handlers.click({},h.cx);
- findElement(h.mod.render(),'issue-worktree-start').handlers.click({},h.cx);
- const requests=[];h.mod.api=async r=>{requests.push(r);return r.action==='detail'?issue():{issueUpdate:{success:true}}};
- h.mod.createWorktree(h.cx);await h.flush();
- const add=h.calls.find(c=>c.args[0]==='worktree'&&c.args[1]==='add');assert.deepEqual(Array.from(add.args),['worktree','add','-b','me/eng-7-fix-login-2','--','/home/user/.herdr/worktrees/repo/me-eng-7-fix-login-2','FETCH_HEAD']);
- assert.ok(h.calls.some(c=>c.args[0]==='fetch'&&c.args[3]==='develop'));
- assert.ok(h.calls.some(c=>c.args[0]==='config'&&c.args[1]==='branch.me/eng-7-fix-login-2.herdr-issue'&&c.args[2]==='ENG-7'));
- assert.equal(requests[0].action,'update');assert.equal(requests[0].stateId,'s2');
- const open=h.context.runs.find(r=>r.command==='space.new');assert.equal(open.args.folder,'/home/user/.herdr/worktrees/repo/me-eng-7-fix-login-2');assert.equal(open.args.argv[0],'claude');assert.match(open.args.argv[1],/ENG-7: Fix login/);
- assert.equal(h.mod.worktreeForm,null);assert.ok(h.context.sharedWrites.some(([k])=>k==='linear.issue-status'));
-});
-test('worktree creation refuses bad names and existing branches, and a space-open failure keeps the checkout',async()=>{
- const h=worktreeHarness();h.mod.showWorktree(h.cx);await h.flush();
- h.mod.worktreeForm.name.set_value('../x');h.mod.createWorktree(h.cx);await h.flush();assert.match(h.mod.worktreeForm.error,/letters/);
- h.mod.worktreeForm.name.set_value('ok');const original=h.context.exec;h.context.exec=async(c,a,o)=>a[0]==='show-ref'?{code:0,stdout:''}:original(c,a,o);
- h.mod.createWorktree(h.cx);await h.flush();assert.match(h.mod.worktreeForm.error,/already exists/);
- h.context.exec=original;h.context.run=()=>{throw Error('unavailable')};h.mod.createWorktree(h.cx);await h.flush();
- assert.ok(h.mod.worktreeForm.path);assert.match(h.mod.worktreeForm.error,/Could not open/);
- h.mod.createWorktree(h.cx);await h.flush();assert.equal(h.calls.filter(c=>c.args[0]==='worktree'&&c.args[1]==='add').length,1);
-});
-test('All issues opens one browser tab per space and reuses it',()=>{
- const h=harness();h.mod.mode='branch';h.live.spaces=[{active:true,id:'space',folder:'/repo',tabs:[{id:'tab',active:true}]}];
- h.mod.openBrowser(h.cx);assert.equal(h.context.runs[0].command,'tab.new');assert.equal(h.context.runs[0].args.name,'All issues');assert.equal(h.context.runs[0].args.props.mode,'browser');
- h.live.panes=[{tab:'tab',mod:'branch-issue'}];h.mod.openBrowser(h.cx);assert.equal(h.context.runs[1].command,'tab.select');
+const AGENT = (address, over = {}) => ({ address, pane: `p-${address}`, space: 'space', tab_name: `Agent ${address}`, status: 'idle', ...over });
+const git = (answers) => async (bin, args) => {
+  const line = `${bin} ${args.join(' ')}`;
+  for (const [pattern, stdout] of answers) if (line.includes(pattern)) return { code: 0, stdout, stderr: '' };
+  return { code: 1, stdout: '', stderr: '' };
+};
+
+// ── What Linear's answers mean ──────────────────────────────────────────────
+
+test('identifiers come from branch names and bindings, uppercased and unique', () => {
+  const { context: m } = harness();
+  same(m.identifiersIn('sam/eng-123-fix eng-123 OPS-9'), ['ENG-123', 'OPS-9']);
+  same(m.identifiersIn('main'), []);
+  same(m.identifiersIn('release-2024'), ['RELEASE-2024']);
+  same(['7', '#7', 'ab', 'abc', ' ENG-1 '].map(m.searchQuery), ['7', '#7', '', 'abc', 'ENG-1']);
 });
 
-test('settings from mod.json set list defaults, worktree defaults and report problems',async()=>{
- const h=harness();h.context.readTextFile=async()=>JSON.stringify({settings:{list:{default:{scope:'all',state:'started'}},worktrees:{root:'~/wt',move_to_started:true,open_with:'claude'},tracker:'jira',nope:1}});
- h.mod.applySettings(h.cx);await h.flush();
- assert.equal(h.mod.scope,'all');assert.equal(h.mod.state,'started');
- assert.equal(JSON.stringify(h.mod.settingsProblems),JSON.stringify(['nope is not a setting','tracker "jira" is not supported yet; using linear']));
- h.mod.mode='browser';h.mod.adoptIssue(issue());h.mod.showWorktree(h.cx);assert.equal(h.mod.worktreeForm.start,true);assert.equal(h.mod.worktreeForm.launch,'claude');
- assert.match(strings(h.mod.render()),/~\/wt\//);assert.match(strings(h.mod.render()),/nope is not a setting/);
+test('an issue sums up its sub-issues and PR only when it has them', () => {
+  const { context: m } = harness();
+  same([...m.issueStats(ISSUE())], []);
+  const children = [{ state: { type: 'completed' } }, { state: { type: 'canceled' } }, { state: { type: 'started' } }];
+  const pr = { id: 'a', url: 'https://github.com/o/r/pull/12', title: 'Fix', metadata: { status: 'merged' } };
+  const stats = [...m.issueStats(ISSUE({ children, attachments: [pr] }))];
+  same(stats.map((s) => `${s.label} ${s.value}`), ['Sub-issues 2/3', 'PR Merged']);
+  assert.equal(stats[0].tone, 'waiting');
+  assert.equal(stats[1].tone, 'good');
 });
 
-test('list defaults reload the list unless a saved view exists',async()=>{
- const settings=async()=>JSON.stringify({settings:{list:{default:{scope:'all'}}}});
- let h=harness();h.context.readTextFile=settings;h.mod.mode='browser';let loads=0;h.mod.loadList=()=>loads++;
- h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.scope,'all');assert.equal(loads,1);
- h=harness();h.context.readTextFile=settings;h.mod.mode='browser';loads=0;h.mod.loadList=()=>loads++;h.mod.viewWasSaved=true;
- h.mod.applySettings(h.cx);await h.flush();assert.equal(h.mod.scope,'mine');assert.equal(loads,0);
+test('only pull request links count as PRs, with or without a status', () => {
+  const { context: m } = harness();
+  const prs = [...m.linkedPRs(ISSUE({ attachments: [{ id: 'a', url: 'https://sentry.io/x' }, { id: 'b', url: 'https://github.com/o/r/pull/12' }] }))];
+  assert.equal(prs.length, 1);
+  assert.equal(prs[0].number, '12');
+  assert.equal(prs[0].label, 'Linked');
 });
 
-test('a refresh keeps loaded pages and their cursor',async()=>{
- const h=harness();h.mod.mode='browser';h.mod.ensureViewer=async()=>{};
- h.mod.items=[{id:'1'},{id:'2'},{id:'3'}];h.mod.cursor='next';
- h.mod.api=async()=>({items:[{id:'1',title:'New'}],cursor:'first'});
- h.mod.loadList(h.cx,false,true);await h.flush();
- assert.equal(h.mod.items.length,3);assert.equal(h.mod.items[0].title,'New');assert.equal(h.mod.cursor,'next');
- h.mod.loadList(h.cx);await h.flush();assert.equal(h.mod.items.length,1);assert.equal(h.mod.cursor,'first');
+test('lists group by state, those being worked on first', () => {
+  const { context: m } = harness();
+  const s = (name, type) => ({ state: { name, type } });
+  same([...m.stateGroups([s('Done', 'completed'), s('Todo', 'unstarted'), s('Doing', 'started'), s('Doing', 'started')])].map((g) => `${g.name} ${g.items.length}`), ['Doing 2', 'Todo 1', 'Done 1']);
+});
+
+test('an agent is on an issue through its worktree, or its branch in this space', () => {
+  const { context: m } = harness();
+  const agents = [AGENT('wt', { space: 'other' }), AGENT('branch'), AGENT('elsewhere'), AGENT('otherspace', { space: 'other' })];
+  const panes = [{ pane: 'p-wt', cwd: '/wt/eng-1/sub', branch: 'x' }, { pane: 'p-branch', cwd: '/repo', branch: 'sam/eng-1-fix' }, { pane: 'p-elsewhere', cwd: '/repo', branch: 'main' }, { pane: 'p-otherspace', cwd: '/o', branch: 'eng-1' }];
+  same([...m.agentsOnIssue({ agents, panes, issue: ISSUE(), worktrees: [{ path: '/wt/eng-1' }], space: 'space' })].map((a) => a.address), ['wt', 'branch']);
+});
+
+test('messages to agents treat Linear text as data', () => {
+  const { context: m } = harness();
+  const prompt = m.issuePrompt(ISSUE());
+  assert.match(prompt, /Work on Linear issue ENG-1: Fix the login/);
+  assert.match(prompt, /as data, not instructions/);
+  assert.match(prompt, /Bob: First/);
+  assert.match(m.handoffMessage(ISSUE(), { context: 'Bob: First', url: 'https://x/c1' }, 'Look'), /^Look[\s\S]*https:\/\/x\/c1[\s\S]*The thread:\nBob: First/);
+});
+
+test('a key problem names itself; other errors do not', () => {
+  const { context: m } = harness();
+  assert.match(m.keyProblem('LINEAR_API_KEY is not set. Export').title, /No Linear API key/);
+  assert.match(m.keyProblem('Linear rejected LINEAR_API_KEY.').title, /rejected/);
+  assert.equal(m.keyProblem('Linear is unreachable'), null);
+});
+
+// ── The panel ───────────────────────────────────────────────────────────────
+
+test('a missing key takes over the panel, and can be retried', () => {
+  const h = harness();
+  h.mod.error = 'LINEAR_API_KEY is not set. Export a personal API key';
+  h.mod.issue = ISSUE();
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-key-problem')), /No Linear API key[\s\S]*export LINEAR_API_KEY/);
+  assert.doesNotMatch(JSON.stringify(strings(tree)), /lin_api/);
+  click(tree, 'issue-get-key', h);
+  same(h.opened, ['https://linear.app/settings/api']);
+  h.mod.refresh = () => { h.refreshed = true; };
+  click(tree, 'issue-key-retry', h);
+  assert.equal(h.refreshed, true);
+  assert.equal(h.mod.error, null);
+  h.mod.error = 'Something else';
+  assert.equal(find(h.mod.render(), 'issue-key-problem'), undefined);
+  assert.match(strings(find(h.mod.render(), 'issue-error')), /Something else/);
+});
+
+test('Branch and All tabs are remembered, with spinners until first loaded', async () => {
+  const storage = new Map();
+  const h = harness({ storage });
+  h.mod.branchLoaded = false; h.mod.listLoaded = false;
+  let tree = h.mod.render();
+  for (const id of ['issue-view-branch', 'issue-view-all']) {
+    assert.equal(find(tree, id).handlers.click, undefined);
+    assert.doesNotMatch(strings(find(tree, id)), /\d/);
+  }
+  h.mod.branchLoaded = true; h.mod.listLoaded = true;
+  h.mod.items = [ISSUE({ id: 'b', identifier: 'ENG-9', title: 'Theirs' })]; h.mod.cursor = 'next';
+  h.mod.branchIssues = [ISSUE(), ISSUE({ id: 'i2', identifier: 'ENG-2' })];
+  tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-view-branch')), /Branch 2/);
+  assert.match(strings(find(tree, 'issue-view-all')), /All 1\+/);
+  assert.ok(find(tree, 'issue-i1')); assert.equal(find(tree, 'issue-b'), undefined);
+  click(tree, 'issue-view-all', h);
+  tree = h.mod.render();
+  assert.ok(find(tree, 'issue-b')); assert.equal(find(tree, 'issue-i1'), undefined);
+  assert.ok(find(tree, 'issue-filter-row'));
+  assert.equal(storage.get('view'), 'all');
+  assert.equal(harness({ storage }).mod.view, 'all');
+  assert.equal(h.ran.length, 0, 'nothing opens a tab');
+});
+
+test('a branch with one issue shows it straight away, with no back button', async () => {
+  const h = harness({ exec: git([['symbolic-ref', 'sam/eng-1-fix\n']]) });
+  h.mod.api = async (r) => (r.action === 'resolve' ? { items: [ISSUE()] } : ISSUE());
+  h.mod.loadBranchIssues(h.cx); await h.flush();
+  assert.equal(h.mod.issue.identifier, 'ENG-1');
+  let tree = h.mod.render();
+  assert.equal(find(tree, 'issue-back'), undefined);
+  assert.ok(find(tree, 'issue-actions'));
+  click(tree, 'issue-view-all', h); await h.flush();
+  assert.equal(h.mod.issue, null);
+  click(h.mod.render(), 'issue-view-branch', h); await h.flush();
+  assert.equal(h.mod.issue.identifier, 'ENG-1', 'coming back opens it again');
+  h.mod.branchIssues = [ISSUE(), ISSUE({ id: 'i2', identifier: 'ENG-2' })];
+  assert.ok(find(h.mod.render(), 'issue-back'), 'a second brings back the list');
+});
+
+test('an issue opens like a commit: tabs stay, a busy view shows, and back cancels', async () => {
+  const h = harness();
+  h.mod.branchIssues = [ISSUE(), ISSUE({ id: 'i2', identifier: 'ENG-2' })];
+  let finish;
+  h.mod.api = () => new Promise((done) => { finish = () => done(ISSUE()); });
+  click(h.mod.render(), 'issue-i1', h);
+  await settle();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-busy')), /Loading ENG-1/);
+  assert.ok(find(tree, 'issue-view-branch'));
+  click(tree, 'issue-back', h);
+  finish(); await h.flush();
+  assert.equal(h.mod.issue, null, 'going back cancelled it');
+  click(h.mod.render(), 'issue-i1', h);
+  await settle();
+  finish(); await h.flush();
+  tree = h.mod.render();
+  assert.equal(find(tree, 'issue-busy'), undefined);
+  assert.equal(tree.nodes[1].elementId, 'issue-about');
+  const about = tree.nodes[1];
+  assert.match(strings(about.nodes[0]), /Fix the login[\s\S]*ENG-1/);
+  assert.ok(find(about.nodes[0], 'issue-open-linear'));
+  assert.ok(find(about.nodes[1], 'issue-actions'));
+  const strip = find(tree, 'issue-stats');
+  assert.ok(find(strip, 'issue-state-pick') && find(strip, 'issue-priority-pick') && find(strip, 'issue-assignee-pick'));
+  assert.doesNotMatch(strings(strip), /Comments/);
+  click(tree, 'issue-open-linear', h);
+  same(h.opened, ['https://linear.app/x/ENG-1']);
+});
+
+test('state, priority and assignee write when chosen and merge the answer', async () => {
+  const h = harness();
+  h.mod.issue = ISSUE();
+  h.mod.branchIssues = [h.mod.issue, ISSUE({ id: 'i2' })];
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return { issueUpdate: { issue: { id: 'i1', state: { id: 'st2', name: 'Done', type: 'completed' } } } }; };
+  openMenu(h, 'issue-state-pick');
+  click(h.mod.render(), 'issue-state-pick-option-st2', h); await h.flush();
+  assert.equal(asked[0].action, 'update'); assert.equal(asked[0].stateId, 'st2');
+  assert.equal(h.mod.issue.state.name, 'Done');
+  assert.equal(h.mod.notice, 'State saved to Linear.');
+  openMenu(h, 'issue-priority-pick');
+  click(h.mod.render(), 'issue-priority-pick-option-1', h); await h.flush();
+  assert.equal(asked[1].priority, 1);
+  openMenu(h, 'issue-assignee-pick');
+  click(h.mod.render(), 'issue-assignee-pick-option-none', h); await h.flush();
+  assert.equal(asked[2].unassign, true);
+  openMenu(h, 'issue-assignee-pick');
+  click(h.mod.render(), 'issue-assignee-pick-option-me', h); await h.flush();
+  assert.equal(asked[3].assignee, 'me');
+});
+
+test('labels show but cannot be edited, and groups collapse and stay that way', () => {
+  const storage = new Map();
+  const h = harness({ storage });
+  h.mod.issue = ISSUE();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-prop-labels')), /bug/);
+  assert.ok(find(tree, 'issue-prop-project'));
+  click(tree, 'issue-group-properties', h);
+  tree = h.mod.render();
+  assert.equal(find(tree, 'issue-prop-project'), undefined);
+  const again = harness({ storage });
+  again.mod.issue = ISSUE();
+  assert.equal(find(again.mod.render(), 'issue-prop-project'), undefined);
+});
+
+test('links show a PR status, sub-issues and the parent open in the panel', async () => {
+  const h = harness();
+  h.mod.issue = ISSUE({ attachments: [{ id: 'a', title: 'Fix', url: 'https://github.com/o/r/pull/12', metadata: { status: 'merged' } }], children: [{ id: 'k', identifier: 'ENG-5', title: 'Part', state: { color: '#000' } }], parent: { identifier: 'ENG-0', title: 'Big' } });
+  h.mod.api = async (r) => ISSUE({ identifier: r.identifier });
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-link-a')), /Fix[\s\S]*Merged/);
+  click(tree, 'issue-link-a', h);
+  same(h.opened, ['https://github.com/o/r/pull/12']);
+  click(tree, 'issue-child-k', h); await h.flush();
+  assert.equal(h.mod.issue.identifier, 'ENG-5');
+});
+
+test('agents on the issue are listed, and a click goes to them', () => {
+  const h = harness();
+  h.mod.issue = ISSUE();
+  h.live.agents = [AGENT('t1', { status: 'working' })];
+  h.live.panes = [{ pane: 'p-t1', cwd: '/repo', branch: 'eng-1-fix' }];
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-agent-t1')), /Agent t1[\s\S]*working/);
+  find(tree, 'issue-agent-t1').handlers.click({}, h.cx);
+  same(h.ran.at(-1), ['agent.focus', { terminal: 't1' }]);
+});
+
+test('Actions start work and hand the issue on through a prompt only Send delivers', async () => {
+  const h = harness();
+  h.mod.issue = ISSUE();
+  h.live.agents = [AGENT('t1')];
+  openMenu(h, 'issue-actions');
+  click(h.mod.render(), 'issue-actions-option-agent:t1', h);
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.mod.composer.kind, 'agent');
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'issue-submit', h); await h.flush();
+  assert.match(h.sent[0][2], /^Look at this/);
+  assert.match(h.sent[0][2], /as data, not instructions/);
+  assert.equal(h.mod.notice, 'Sent to Agent t1.');
+  assert.equal(h.mod.composer, null);
+});
+
+test('a thread goes to an agent with its comments; a failed delivery says why', async () => {
+  const h = harness({ hc: async () => ({ code: 1, stderr: 'gone' }) });
+  h.mod.issue = ISSUE();
+  h.mod.section = 'comments';
+  h.live.agents = [AGENT('t1')];
+  click(h.mod.render(), 'issue-agent-send-c1', h);
+  assert.match(h.mod.composer.context, /Bob: First\n\nCam: A reply/);
+  click(h.mod.render(), 'issue-submit', h); await h.flush();
+  assert.equal(h.mod.error, 'gone');
+  assert.ok(h.mod.composer, 'keeps the prompt');
+});
+
+test('without an agent the handoff says so', () => {
+  const h = harness();
+  h.mod.issue = ISSUE();
+  h.mod.section = 'comments';
+  const send = find(h.mod.render(), 'issue-agent-send-c1');
+  assert.match(strings(send), /no agent/);
+  assert.equal(send.handlers.click, undefined);
+});
+
+test('a failed post keeps the draft; a good one clears it, and replies go in their thread', async () => {
+  const h = harness();
+  h.mod.issue = ISSUE();
+  h.mod.section = 'comments';
+  click(h.mod.render(), 'issue-reply-c1', h);
+  h.mod.editor.set_value('Keep this');
+  h.storage.set(h.mod.draftKey, 'Keep this');
+  const draft = h.mod.draftKey;
+  h.mod.api = async () => { throw Error('offline'); };
+  h.mod.mutate(h.cx); await h.flush();
+  assert.equal(h.mod.editor.value(), 'Keep this');
+  assert.match(h.mod.error, /offline/);
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return r.action === 'detail' ? ISSUE() : {}; };
+  h.mod.mutate(h.cx); await h.flush();
+  assert.equal(asked[0].parent, 'c1');
+  assert.equal(h.mod.composer, null);
+  assert.equal(h.storage.has(draft), false);
+});
+
+test('a new comment is written after the last one, and its draft stays with the issue', async () => {
+  const h = harness();
+  h.mod.adoptIssue(ISSUE());
+  h.mod.section = 'comments';
+  let tree = h.mod.render();
+  assert.ok(find(tree, 'issue-new-comment'));
+  assert.equal(find(tree, 'issue-add-comment').handlers.click, undefined, 'nothing to post yet');
+  h.mod.newComment.set_value('Hello');
+  h.storage.set(h.mod.commentKey, 'Hello');
+  h.mod.backToList(h.cx);
+  h.mod.adoptIssue(ISSUE());
+  assert.equal(h.mod.newComment.value(), 'Hello');
+  h.mod.api = async () => { throw Error('offline'); };
+  click(h.mod.render(), 'issue-add-comment', h); await h.flush();
+  assert.equal(h.mod.newComment.value(), 'Hello', 'a failed post keeps it');
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return r.action === 'detail' ? ISSUE() : {}; };
+  click(h.mod.render(), 'issue-add-comment', h); await h.flush();
+  assert.equal(asked[0].body, 'Hello');
+  assert.equal(asked[0].parent, '');
+  assert.equal(h.mod.newComment.value(), '');
+  assert.equal(h.storage.has(h.mod.commentKey), false);
+});
+
+test('an empty branch offers a link that Linear confirms before Git is written', async () => {
+  const log = [];
+  const h = harness({ exec: async (bin, args) => { log.push(args.join(' ')); if (args[0] === 'symbolic-ref') return { code: 0, stdout: 'main\n' }; if (args.includes('--get')) return { code: 1, stdout: '' }; return { code: 0, stdout: '' }; } });
+  h.mod.branch = 'main';
+  h.mod.api = async (r) => { if (r.action === 'detail') throw Error('ENG-9 was not found in Linear'); return { items: [] }; };
+  assert.match(strings(h.mod.render()), /No issue found for main/);
+  h.mod.linkInput.set_value('eng-9');
+  h.mod.linkIssue(h.cx); await h.flush();
+  assert.match(h.mod.error, /not found/);
+  assert.equal(log.some((l) => /^config branch\.main\.herdr-issue ENG-9$/.test(l)), false);
+  h.mod.api = async (r) => (r.action === 'detail' ? ISSUE() : { items: [ISSUE()] });
+  h.mod.linkIssue(h.cx); await h.flush();
+  assert.ok(log.some((l) => /^config branch\.main\.herdr-issue ENG-9$/.test(l)));
+});
+
+test('only a hand-made link offers Unlink, and it removes just that one', async () => {
+  const log = [];
+  const h = harness({ exec: async (bin, args) => { log.push(args.join(' ')); if (args[0] === 'symbolic-ref') return { code: 0, stdout: 'main\n' }; if (args.includes('--get')) return { code: 0, stdout: 'ENG-1,ENG-2' }; return { code: 0, stdout: '' }; } });
+  h.mod.branch = 'main';
+  h.mod.issue = ISSUE();
+  openMenu(h, 'issue-actions');
+  assert.equal(find(h.mod.render(), 'issue-actions-option-unlink'), undefined);
+  h.mod.linkedIdentifiers = new Set(['ENG-1']);
+  h.mod.api = async () => ({ items: [] });
+  click(h.mod.render(), 'issue-actions-option-unlink', h); await h.flush();
+  assert.ok(log.some((l) => l === 'config branch.main.herdr-issue ENG-2'));
+});
+
+test('the list sends its filters, groups by state and offers more', async () => {
+  const h = harness();
+  h.mod.view = 'all';
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return { items: [ISSUE({ id: `n${asked.length}` })], cursor: asked.length === 1 ? 'c' : '' }; };
+  h.mod.scope = 'cycle'; h.mod.state = 'started'; h.mod.team = 'ENG';
+  h.mod.loadList(h.cx); await h.flush();
+  assert.equal(asked[0].scope, 'cycle'); assert.equal(asked[0].state, 'started'); assert.equal(asked[0].team, 'ENG');
+  const tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-group-In Progress')), /In Progress\s+1/);
+  click(tree, 'issue-more', h); await h.flush();
+  assert.equal(asked[1].cursor, 'c');
+  assert.equal(h.mod.items.length, 2);
+  assert.equal(find(h.mod.render(), 'issue-more'), undefined);
+});
+
+test('search waits for typing to stop, and numbers count', async () => {
+  const h = harness();
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r.search); return { items: [], cursor: '' }; };
+  h.mod.search.set_value('ab'); h.mod.search.handlers.change({}, h.cx); h.fireAfter(); await h.flush();
+  same(asked, []);
+  h.mod.search.set_value('12'); h.mod.search.handlers.change({}, h.cx); h.fireAfter(); await h.flush();
+  same(asked, ['12']);
+});
+
+test('a stale list answer does not replace another space', async () => {
+  const h = harness();
+  let finish;
+  h.mod.api = () => new Promise((r) => { finish = r; });
+  h.mod.loadList(h.cx);
+  await settle();
+  h.mod.changeSpace(null, 'other', h.cx);
+  finish({ items: [ISSUE()], cursor: '' }); await h.flush();
+  assert.equal(h.mod.items.length, 0);
+});
+
+test('refreshing waits while hidden, and a load that never answers cannot lock the tabs', () => {
+  const h = harness();
+  const { context: m } = h;
+  const panel = (active) => ({ type: 'row', children: [{ id: 'body', type: 'stack', active, children: [{ id: 'files', content: { mod: 'files' } }, { id: 'i', content: { mod: 'branch-issue' } }] }] });
+  assert.equal(m.panelShown(panel('i'), 'branch-issue'), true);
+  assert.equal(m.panelShown(panel('files'), 'branch-issue'), false);
+  h.mod.spaceKey = '';
+  h.mod.listLoaded = false; h.mod.branchLoaded = false;
+  h.mod.contextSince = Date.now() - 31000;
+  h.tick();
+  assert.equal(h.mod.listLoaded, true);
+  assert.equal(h.mod.branchLoaded, true);
+});
+
+test('a reload reopens the saved issue once, and settings problems show', async () => {
+  const storage = new Map();
+  const first = harness({ storage });
+  first.mod.adoptIssue(ISSUE());
+  first.mod.scope = 'cycle';
+  first.mod.rememberView();
+  const second = harness({ storage });
+  second.mod.restoreView();
+  assert.equal(second.mod.scope, 'cycle');
+  assert.equal(second.mod.restoreSelection, 'ENG-1');
+  const asked = [];
+  second.mod.api = async (r) => { asked.push(r.action); return r.action === 'detail' ? ISSUE() : { items: [], cursor: '' }; };
+  second.mod.loadList(second.cx); await second.flush();
+  assert.equal(second.mod.issue.identifier, 'ENG-1');
+  second.mod.backToList(second.cx);
+  second.mod.restoreSelection = 'ENG-1';
+  second.mod.loadList(second.cx); await second.flush();
+  assert.equal(second.mod.issue, null, 'only once');
+  second.mod.settingsProblems = ['refresh.every: wrong type'];
+  assert.match(strings(find(second.mod.render(), 'issue-settings-problems')), /wrong type/);
+});
+
+// ── Start work ──────────────────────────────────────────────────────────────
+
+const gitRepo = (log, over = {}) => async (bin, args) => {
+  const line = `${bin} ${args.join(' ')}`;
+  log.push(line);
+  if (line.includes('check-ref-format')) return { code: 0, stdout: `${args.at(-1)}\n` };
+  if (line.includes('show-ref')) return { code: 1, stdout: '' };
+  if (line.includes('symbolic-ref')) return { code: 0, stdout: 'origin/main\n' };
+  if (line.includes('--get-regexp') || line.includes('worktree list')) return { code: 1, stdout: '' };
+  return over[args[0]] ?? { code: 0, stdout: '' };
+};
+
+test('Start work uses Linear\'s branch name and opens a space, the agent getting the issue', async () => {
+  const log = [];
+  const h = harness({ exec: gitRepo(log), known: [{ key: 'claude', name: 'Claude', installed: true, run: ['claude'] }] });
+  h.mod.issue = ISSUE();
+  h.mod.api = async () => ISSUE();
+  openMenu(h, 'issue-actions');
+  click(h.mod.render(), 'issue-actions-option-start', h); await h.flush();
+  const form = h.mod.worktreeForm;
+  assert.equal(form.branch.value(), 'sam/eng-1-fix-login');
+  assert.equal(form.base.value(), 'main');
+  form.launch = 'claude';
+  assert.ok(find(h.mod.render(), 'issue-worktree-form'));
+  click(h.mod.render(), 'issue-worktree-submit', h); await h.flush();
+  assert.ok(log.some((l) => l.includes('fetch --no-tags origin main')));
+  assert.ok(log.some((l) => l.includes('worktree add -b sam/eng-1-fix-login -- /home/sam/.herdr/worktrees/repo/sam-eng-1-fix-login FETCH_HEAD')));
+  assert.ok(log.some((l) => l.includes('config branch.sam/eng-1-fix-login.herdr-issue ENG-1')));
+  const [name, args] = h.ran.at(-1);
+  assert.equal(name, 'space.new');
+  assert.equal(args.argv[0], 'claude');
+  assert.match(args.argv[1], /Work on Linear issue ENG-1/);
+  assert.equal(h.mod.worktreeForm, null);
+});
+
+test('Start work can move the issue to Started, and refuses bad names and existing branches', async () => {
+  const log = [];
+  const h = harness({ exec: gitRepo(log) });
+  h.mod.issue = ISSUE({ state: { id: 'todo', name: 'Todo', type: 'unstarted' } });
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return ISSUE(); };
+  h.mod.showWorktree(h.cx); await h.flush();
+  const form = h.mod.worktreeForm;
+  form.name.set_value('../evil');
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.match(form.error, /letters, numbers/);
+  assert.equal(log.some((l) => l.includes('worktree add')), false);
+  form.name.set_value('ok');
+  form.start = true;
+  h.mod.createWorktree(h.cx); await h.flush();
+  assert.ok(asked.some((r) => r.action === 'update' && r.stateId === 'st1'));
+  const exists = harness({ exec: async (bin, args) => (args.includes('show-ref') ? { code: 0, stdout: '' } : args.includes('check-ref-format') ? { code: 0, stdout: 'b\n' } : { code: 1, stdout: '' }) });
+  exists.mod.issue = ISSUE({ branchName: 'b' });
+  exists.mod.showWorktree(exists.cx); await exists.flush();
+  exists.mod.createWorktree(exists.cx); await exists.flush();
+  assert.match(exists.mod.worktreeForm.error, /already exists/);
+});
+
+test('an issue\'s worktrees are listed, and a click switches to or opens their space', async () => {
+  const h = harness({ exec: git([['--get-regexp', 'branch.fix.herdr-issue ENG-1\n'], ['worktree list', 'worktree /wt/eng\nHEAD a\nbranch refs/heads/fix\n\n']]) });
+  h.mod.issue = ISSUE();
+  h.mod.loadWorktrees(h.cx); await h.flush();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'issue-worktree-row-0')), /eng\s+fix/);
+  find(tree, 'issue-worktree-row-0').handlers.click({}, h.cx);
+  assert.equal(h.ran.at(-1)[0], 'space.new');
+  h.live.spaces = [{ id: 'wt', folder: '/wt/eng' }];
+  h.mod.spaceKey = 'space';
+  tree = h.mod.render();
+  find(tree, 'issue-worktree-row-0').handlers.click({}, h.cx);
+  same(h.ran.at(-1), ['space.select', { id: 'wt' }]);
+});
+
+test('nothing left of the center tab, label editing or comment editing', () => {
+  assert.doesNotMatch(source, /tab\.new|openBrowser|labelIds|edit-comment|"browser"|typography/);
+});
+
+test('a handoff asks only for what the prompt says, while Start work asks for the work', () => {
+  const { context: m } = harness();
+  assert.match(m.issuePrompt(ISSUE()), /^Work on Linear issue/);
+  assert.doesNotMatch(m.handoffMessage(ISSUE(), {}, 'Just analyze this'), /Work on/);
+});
+
+test('a confirmation leaves after a few seconds', () => {
+  const h = harness();
+  h.tick(); // settles on the space first, which clears any notice
+  h.mod.notice = 'Saved to Linear.';
+  h.tick();
+  assert.equal(h.mod.notice, 'Saved to Linear.');
+  h.mod.noticeSince = Date.now() - 6000;
+  h.tick();
+  assert.equal(h.mod.notice, null);
+});
+
+test('the state chooser follows the workflow, not the order Linear returns', () => {
+  const { context: m } = harness();
+  const names = (list) => m.workflowOrder(list).map((s) => s.name);
+  same(names([{ name: 'Canceled', type: 'canceled' }, { name: 'Backlog', type: 'backlog' }, { name: 'In Progress', type: 'started' }, { name: 'Duplicate', type: 'canceled' }, { name: 'Done', type: 'completed' }, { name: 'Todo', type: 'unstarted' }]), ['Backlog', 'Todo', 'In Progress', 'Done', 'Canceled', 'Duplicate']);
 });

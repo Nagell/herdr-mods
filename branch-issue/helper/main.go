@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,23 +22,21 @@ import (
 
 type Obj = map[string]any
 type Request struct {
-	Action      string    `json:"action"`
-	Identifier  string    `json:"identifier"`
-	Identifiers []string  `json:"identifiers"`
-	Issue       string    `json:"issue"`
-	Scope       string    `json:"scope"`
-	State       string    `json:"state"`
-	Team        string    `json:"team"`
-	Search      string    `json:"search"`
-	Cursor      string    `json:"cursor"`
-	Body        string    `json:"body"`
-	Comment     string    `json:"comment"`
-	Parent      string    `json:"parent"`
-	StateID     string    `json:"stateId"`
-	Assignee    string    `json:"assignee"`
-	Unassign    bool      `json:"unassign"`
-	Priority    *int      `json:"priority"`
-	Labels      *[]string `json:"labels"` // full replacement list of label IDs; nil leaves labels alone
+	Action      string   `json:"action"`
+	Identifier  string   `json:"identifier"`
+	Identifiers []string `json:"identifiers"`
+	Issue       string   `json:"issue"`
+	Scope       string   `json:"scope"`
+	State       string   `json:"state"`
+	Team        string   `json:"team"`
+	Search      string   `json:"search"`
+	Cursor      string   `json:"cursor"`
+	Body        string   `json:"body"`
+	Parent      string   `json:"parent"`
+	StateID     string   `json:"stateId"`
+	Assignee    string   `json:"assignee"`
+	Unassign    bool     `json:"unassign"`
+	Priority    *int     `json:"priority"`
 }
 
 const endpoint = "https://api.linear.app/graphql"
@@ -153,7 +152,7 @@ const pageInfo = `pageInfo{hasNextPage endCursor}`
 // Fields for a list row; detailFields adds everything the detail view shows.
 const cardFields = `id identifier title url priority priorityLabel createdAt updatedAt branchName state{id name type color} assignee{id name displayName} team{id key name} labels{nodes{id name color}} project{name url} cycle{number name}`
 const commentFields = `id body url createdAt updatedAt user{id name displayName} parent{id}`
-const detailFields = cardFields + ` description estimate creator{name displayName} parent{identifier title url} children{nodes{id identifier title url state{name type color}}} attachments{nodes{id title subtitle url sourceType}} comments(first:100){` + pageInfo + ` nodes{` + commentFields + `}} team{states{nodes{id name type color position}} members{nodes{id name displayName active}} labels{nodes{id name color isGroup}}}`
+const detailFields = cardFields + ` description estimate creator{name displayName} parent{identifier title url} children{nodes{id identifier title url updatedAt assignee{name displayName} state{name type color}}} attachments{nodes{id title subtitle url sourceType metadata}} comments(first:100){` + pageInfo + ` nodes{` + commentFields + `}} team{states{nodes{id name type color position}} members{nodes{id name displayName active}}}`
 
 const viewerQuery = `{viewer{id name displayName email} teams{nodes{id key name}}}`
 
@@ -205,6 +204,10 @@ func listFilter(r Request) (Obj, error) {
 		or := []any{
 			Obj{"title": Obj{"containsIgnoreCase": q}},
 			Obj{"description": Obj{"containsIgnoreCase": q}},
+		}
+		// A bare number can't be matched as text: it's that number in any team.
+		if number, err := strconv.Atoi(strings.TrimPrefix(q, "#")); err == nil && number > 0 {
+			or = append(or, Obj{"number": Obj{"eq": number}})
 		}
 		if m := identifierPattern.FindStringSubmatch(q); m != nil {
 			var number int
@@ -272,7 +275,6 @@ func fetchIssue(ctx context.Context, key, ref string) (Obj, error) {
 	if team != nil {
 		team["states"] = nodes(team["states"])
 		team["members"] = nodes(team["members"])
-		team["labels"] = nodes(team["labels"])
 	}
 	return issue, nil
 }
@@ -322,11 +324,6 @@ func handle(ctx context.Context, r Request) (any, error) {
 			return nil, errors.New("issue ID and body required")
 		}
 		return gql(ctx, key, `mutation($issue:String!,$body:String!,$parent:String){commentCreate(input:{issueId:$issue,body:$body,parentId:$parent}){success comment{id}}}`, Obj{"issue": r.Issue, "body": r.Body, "parent": nullable(r.Parent)})
-	case "edit-comment":
-		if r.Comment == "" || strings.TrimSpace(r.Body) == "" {
-			return nil, errors.New("comment ID and body required")
-		}
-		return gql(ctx, key, `mutation($id:String!,$body:String!){commentUpdate(id:$id,input:{body:$body}){success}}`, Obj{"id": r.Comment, "body": r.Body})
 	case "update":
 		if r.Issue == "" {
 			return nil, errors.New("issue ID required")
@@ -346,16 +343,10 @@ func handle(ctx context.Context, r Request) (any, error) {
 			}
 			input["priority"] = *r.Priority
 		}
-		if r.Labels != nil {
-			input["labelIds"] = *r.Labels
-		}
 		if len(input) == 0 {
 			return nil, errors.New("nothing to update")
 		}
-		data, err := gql(ctx, key, `mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{id state{id name type color} assignee{id name displayName} priority priorityLabel labels{nodes{id name color}}}}}`, Obj{"id": r.Issue, "input": input})
-		if issue := object(object(data["issueUpdate"])["issue"]); issue != nil {
-			issue["labels"] = nodes(issue["labels"])
-		}
+		data, err := gql(ctx, key, `mutation($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success issue{id state{id name type color} assignee{id name displayName} priority priorityLabel}}}`, Obj{"id": r.Issue, "input": input})
 		return data, err
 	default:
 		return nil, errors.New("unknown action")

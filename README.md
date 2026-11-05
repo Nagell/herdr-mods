@@ -12,7 +12,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 | [Better Sidebar](better-sidebar/README.md) | Spaces and nested worktrees with right-aligned Git branches and color-coded pull-request status from `gh`, agents grouped by main space or name prefix, and a one-line footer. |
 | [Better Tabs](better-tabs/README.md) | Tab bar with draggable tabs that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them. |
 | [Branch PR](branch-pr/README.md) | GitHub PR sidebar that shows what stands between a PR and a merge, hands failures and comments to agents, and merges when ready. |
-| [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, an All issues browser, quick state/priority/assignee edits, comments, and Start work worktrees with agent handoff. |
+| [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, with an All tab, state, priority and assignee edits, comments, and Start work worktrees with agent handoff. |
 | [hands](hands/README.md) | A `hands` CLI that gives agents hands on the Mac: read any app's accessibility tree, click, type, set values, scroll, screenshot a window, record the screen. Plus a tiny permissions pane. |
 
 ### Better Changes

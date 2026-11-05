@@ -69,7 +69,7 @@ def install(app_home, update=False):
     subprocess.run(["herdr-app", "check", str(target)], check=True)
     change = f" (was {previous or 'unversioned'})" if update else ""
     print(f"Installed Branch Issue {version}{change}: {target}")
-    print('Point your sidebar at branch-issue with props {"mode":"branch"}. No layout or keys were changed.')
+    print('Add {"mod":"branch-issue"} to a layout you own. No layout or keys were changed.')
 
 
 def main():

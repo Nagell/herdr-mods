@@ -1,109 +1,94 @@
 # Branch Issue
 
-A standalone native Linear issue sidebar and issue browser for [Herdr Desktop](https://herdr.dev/), built as a sibling of [Branch PR](../branch-pr/README.md).
+A Linear panel for [Herdr Desktop](https://herdr.dev/), built to look like Herdr's own panels and to fit how you work with agents: see where an issue stands, start work on it in its own worktree, hand it to an agent, and keep it up to date. A sibling of [Branch PR](../branch-pr/README.md).
 
 ![Branch Issue](preview.png)
 
-- **Branch sidebar:** the issue linked to the current checkout, found from a `branch.<name>.herdr-issue` binding or the identifier in the branch name (`me/eng-123-fix-login` → `ENG-123`). Several identifiers on one branch give a picker.
-- **All issues:** one reusable browser tab per space with search, **My issues / Active cycle / All** scopes, state and team filters, grouped by workflow state.
-- Issue details: description, threaded comments, links, sub-issues, and quick edits for **state, priority, assignee and labels**.
-- **Start work:** a worktree from the issue using Linear's own branch name, opened as a nested space with a terminal or an installed agent that receives the issue as its first prompt.
-- Explicit comment/reply/edit controls and agent handoff prompts. Nothing is written to Linear without a click.
-- No dependency on Factory, Better Tabs, Workflow, Branch PR, or another custom mod.
+- **Two lists in the sidebar:** **Branch** for the issues on your checkout's branch, which goes straight to the details when there's only one, and **All** with search, My issues / Active cycle / All issues, state and team filters, grouped by workflow state in collapsible groups. Opening an issue stays in the sidebar, like a commit in Better Changes.
+- **At a glance:** state, priority and assignee sit on one line under the title, and change right there. Sub-issues done and pull request status appear below them when an issue has them.
+- **Start work:** a worktree using Linear's own branch name, opened as its own space with a terminal or an agent that gets the issue as its first prompt, and optionally moved to Started.
+- **Agents:** those working on the issue are listed with their state; click one to go to it. **Send to agent** hands over the issue or a comment thread with a prompt you can edit.
+- **Properties:** labels, project, cycle and estimate in the Overview.
+- **Links and sub-issues,** with pull request status.
+- **Comments:** threads, Reply, a link for each comment, and a box for a new one after the last.
+- Local and remote spaces: Git runs on the space's machine, and the Linear helper on this computer.
 
-## Install
+## Upgrading from 1.x
+
+2.0 is a rebuild around working with agents, and it removes some things:
+
+- **The All issues center tab** is gone: the **All** tab in the sidebar replaces it. Close any old tab, and remove any `props: { "mode": "browser" }` tab or command you set up.
+- **The commands** `open-browser`, `toggle`, `open`, `back`, `description`, `comments`, `links` and `worktree` are gone. `refresh` stays.
+- **Editing comments, Markdown preview and editing labels** are gone. Linear still has all of them.
+- **The `tracker` setting** is gone, since Linear is the only one. `install.py --update` keeps your other settings.
+- **Icons moved** to `icons/`, so change a Better Tabs button's `mods/branch-issue/issue.svg` to `mods/branch-issue/icons/issue.svg`.
+
+## Install only this mod
+
+Copy this prompt into your Herdr agent:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-issue
 
-Requirements: Herdr with native mod tabs, Python 3 for the installer, **Go 1.23+** to build the helper, Git on source machines, and a **Linear personal API key**. Agent actions additionally use `hc` and a live agent in the source space.
+Requirements: Python 3 for the installer, **Go 1.23+** to build the helper, Git on the machines your spaces run on, and a **Linear personal API key**. Agent actions use `hc` and a running agent.
 
-**This mod talks to Linear's GraphQL API directly** through its bundled helper, with the key from the **`LINEAR_API_KEY`** environment variable and nothing else: there is no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell environment (for example in your dotfiles). The helper reads its own environment first and then asks your login shell, so a key exported in `.zshrc` or by home-manager is found even when Herdr was launched from the Dock. A missing or rejected key shows a plain message in the panel with a Retry button; nothing else works until it is fixed.
+The helper talks to Linear's GraphQL API with the key from the **`LINEAR_API_KEY`** environment variable and nothing else: there's no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell. The helper reads its own environment, then asks your login shell, so a key exported in `.zshrc` or by home-manager is found even when Herdr was launched from the Dock. If the key is missing or rejected, the panel says so, shows what to run, and offers Try again.
 
-Read [RECIPE.md](RECIPE.md) and the source before installation. The helper sends your key to api.linear.app only and never stores it; the mod runs Git/`hc` on the source machine. Explicit user actions can **post comments and replies, edit your own comments, change an issue's state/priority/assignee, fetch a base branch and create Git worktrees/branches, write issue-association config, open spaces, and send agent prompts**. Never test mutations against a user's workspace without their instruction.
+Read [RECIPE.md](RECIPE.md) and the source before installing. The helper sends your key to api.linear.app only and never stores it. On an explicit click the panel can **post comments and replies, change an issue's state, priority and assignee, fetch a base branch and create Git worktrees and branches, write the branch-to-issue link to Git config, open spaces, and send messages to agents.** Nothing writes on its own. Messages to agents tell them to treat Linear's text as data and not to post unless asked.
 
-From this package directory:
+From this folder:
 
 ```sh
-python3 install.py
-# Later, update an existing installation owned by this package:
-python3 install.py --update
+python3 install.py          # first install
+python3 install.py --update # later
 ```
 
-The installer builds the local helper without third-party Go dependencies, copies **only** `mods/branch-issue/` and the helper to `~/.config/herdr-app/mods/branch-issue/`, then runs `herdr-app check`. It does not edit layouts or keys. `HERDR_APP_HOME` or `--app-home` selects a different config home. It refuses an existing name unless `--update` is explicitly supplied for an existing Branch Issue manifest.
-
-The helper is installed at `mods/branch-issue/bin/herdr-linear`. Go is needed only to build it, not at runtime.
+The installer builds the helper, copies only `mods/branch-issue/` to `~/.config/herdr-app/mods/branch-issue/`, and runs `herdr-app check`. It doesn't edit layouts or keys.
 
 ### Place the sidebar
 
-Herdr's shipped layouts (`main`, `terminals`, `win98`) are read-only and restored on every start, so the mod only shows in a layout you own. If you are on a shipped layout, your agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or create a new layout. Add a block to the panel stack, or replace an existing slot's content preserving its ID and dimensions:
+The manifest has `place: none`, so add it to a layout you own, about 368px wide:
 
 ```json
-{ "mod": "branch-issue", "props": { "mode": "branch" } }
+{ "mod": "branch-issue" }
 ```
 
-The manifest has `place: none`, so copying alone does not dock a sidebar. The **All issues** button opens/selects a browser tab directly; no toolbar integration is required.
-
-### Open a browser tab
-
-```sh
-herdr-app do tab.new '{"name":"All issues","mod":"branch-issue","props":{"mode":"browser"}}'
-```
-
-The sidebar's **All issues** action supplies `{mode:"browser",space,source:{cwd,on}}`, pinning the checkout and machine captured when opened. Repeated opens reuse the current space's existing tab.
-
-### Optional Better Tabs integration
-
-On start the mod publishes its icon under the shared `mod-icons` map so a Better Tabs bar shows it on the All issues tab. A toolbar panel action points at the **layout node ID** holding the sidebar block:
+With Better Tabs, a button can open it (`target` is that block's layout ID):
 
 ```json
 {
   "id": "issues",
   "label": "Issue",
-  "icon": "mods/branch-issue/issue.svg",
-  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "branch-issues" }
+  "icon": "mods/branch-issue/icons/issue.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "linear-issues" }
 }
 ```
 
-## Branch discovery
+## How it finds issues
 
-The sidebar reads the symbolic branch of the active terminal's checkout. It unions the identifiers in `git config branch.<branch>.herdr-issue` (comma separated) with any `TEAM-123` patterns in the branch name, confirms each with Linear, and drops the ones that do not exist. Branches such as `main` or `release-2024` never resolve. When nothing matches, the panel offers a **Link issue** field that confirms the identifier with Linear and writes the binding. With several issues, a picker in the header chooses which one the sidebar shows and remembers the choice per space. An issue you linked by hand shows an **Unlink** icon next to the title that removes it from the binding again; an identifier that is part of the branch name has no such control, since it would simply be found again.
+The sidebar follows the active terminal's folder and branch. It joins the identifiers in `git config branch.<branch>.herdr-issue` (comma separated) with any `TEAM-123` in the branch name, confirms each with Linear, and drops those that don't exist, so `main` or `release-2024` never resolve. With nothing found, **Link issue** confirms an identifier with Linear and writes the link. An issue linked by hand can be unlinked from **Actions**; one named by the branch has no such option, since it would simply be found again.
 
-## Browse, read, and edit
+Search waits 450ms and starts at three characters, or at any length for a number, which matches that number in any team. Linear matches titles and descriptions, and `ENG-123` matches that identifier. `+ more` at the end of the list loads the next batch.
 
-Search debounces for 450ms and starts at three characters; Linear matches titles and descriptions, and a query shaped like `ENG-123` also matches that identifier. **My issues** filters by assignee, **Active cycle** by the team's running cycle, **All issues** by nothing. The state filter maps to workflow state types: Active (triage, backlog, unstarted, started), Backlog, Started, Done, Cancelled, All. A **Team** picker appears when the workspace has more than one team. The list groups rows by workflow state with the state's own colour, and **Load more** continues Linear's cursor.
-
-Details show the identifier and title, an **Open in Linear** icon, and a meta row with three pickers that write immediately on choice: **state** (the team's workflow states), **priority**, and **assignee** (Me, Unassigned, then team members). Applied labels follow as pills; clicking one removes it, and the **Label** picker adds any other label the team can use. Project, cycle and estimate come last. Tabs: **Description** (Markdown, with the parent issue), **Comments** (threads by parent comment, **Edit** on your own comments, **Reply** per thread, **Add comment**), **Links** (Linear attachments, including pull-request links), and **Sub-issues** when there are any.
-
-Comments open an editor with Markdown preview; nothing posts before an explicit Reply/Comment/Save. Drafts survive errors and navigation. On a timeout, refresh before retrying since the write may have succeeded.
-
-## Start work and agents
-
-**Start work** in the browser detail opens a compact form: Branch (prefilled with Linear's `branchName` for the issue, with a numeric suffix when that branch already has a worktree), Worktree (follows the branch until edited), From (the base branch, defaulting to the remote's HEAD), **Open with** (Terminal or any installed agent), and an optional **Move to Started** toggle. Creation fetches the base from `origin`, refuses existing branches and bad names, creates `~/.herdr/worktrees/<repo folder>/<worktree-name>` on the source machine, binds the branch to the issue, and opens the checkout as a **new space**. With an agent chosen, the agent starts with the issue (title, URL, description, latest comments) as its first prompt. Existing worktrees for the issue are listed above the button; clicking one switches to its space or opens one.
-
-**Hand to agent** and **Send to agent** offer agents in the source space and an editable prompt containing the issue and, for a thread, its comments. Only Send delivers through `hc`. The prompt labels the Linear text as data, not instructions.
+A hidden panel doesn't refresh, and catches up when shown.
 
 ## Commands
 
-Commands reach shown mod copies:
-
-- `branch-issue.open-browser` (alias `toggle`): open/select the reusable browser tab.
-- `branch-issue.refresh`, `branch-issue.back`, `branch-issue.open:ENG-123` (browser), `branch-issue.description`, `branch-issue.comments`, `branch-issue.links`, `branch-issue.worktree`.
+`branch-issue.refresh` reloads. Commands reach copies that are showing.
 
 ## Settings
 
-The installed `mods/branch-issue/mod.json` has a `settings` block, kept across `python3 install.py --update`:
+The installed `mods/branch-issue/mod.json` has a `settings` block, kept across `--update`:
 
 ```json
 "settings": {
   "refresh": { "every": "60s", "search_debounce": "450ms" },
   "branch": { "max_identifiers": 4 },
   "list": { "default": { "scope": "mine", "state": "active", "team": "" } },
-  "worktrees": { "root": "~/.herdr/worktrees", "open_with": "terminal", "move_to_started": false },
-  "tracker": "linear"
+  "worktrees": { "root": "~/.herdr/worktrees", "open_with": "terminal", "move_to_started": false }
 }
 ```
 
-`refresh.every` is how often a visible browser re-reads; `search_debounce` the pause after typing. `branch.max_identifiers` caps how many identifiers one branch may carry. `list.default` picks the scope, state and team until a saved view exists. `worktrees.root` is where Start work creates checkouts, `~` meaning the source machine's home; `open_with` is `terminal` or an installed agent's key; `move_to_started` preselects the checkbox. `tracker` is `linear`; other values are reported and ignored until another tracker exists. Unknown keys and wrong types are reported at the top of the panel. Layout block `props` override these for one copy.
+`refresh.every` is how often a visible panel re-reads. `branch.max_identifiers` caps how many identifiers one branch may carry. `list.default` picks the first filters until a saved view exists. `worktrees.root` is where Start work puts checkouts; `open_with` is `terminal` or an installed agent's key; `move_to_started` preselects that option. Unknown keys and wrong types are reported at the top of the panel and ignored.
 
 ## Development
 
@@ -114,6 +99,6 @@ python3 -m unittest discover -s tests
 herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"
 ```
 
-`main.js` owns native UI, branch and browser state, commands, and async invalidation. `typography.js` is shared with Branch PR byte for byte. `helper/main.go` is the JSON bridge to Linear's GraphQL API with validated requests, key storage, and a 26-second timeout. Tests use mocked API calls, not live Linear writes.
+`mods/branch-issue/main.js` lists what's where. `linear/model.js` says what Linear's answers mean, `linear/` reads, `actions/` writes and hands off, `views/` draws with `views/ui.js`, and `icons/` holds the icons. `helper/main.go` is the JSON bridge to Linear's GraphQL API, with validated requests and a 26-second timeout. Tests use stand-ins for Linear, so also look at the running app.
 
 See [LICENSE](../LICENSE) and [NOTICE](../NOTICE) for attribution.
