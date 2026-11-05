@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"syscall"
 	"time"
 )
@@ -29,6 +31,7 @@ type Stage struct {
 	Args    []string       `json:"args,omitempty"`
 	After   []string       `json:"after,omitempty"`
 	Loop    *Loop          `json:"loop,omitempty"`
+	Session string         `json:"session,omitempty"`
 	Round   int            `json:"round,omitempty"`
 	Settled bool           `json:"settled,omitempty"`
 	State   string         `json:"state,omitempty"`
@@ -56,11 +59,17 @@ type Run struct {
 	Ended        string  `json:"ended,omitempty"`
 	Stages       []Stage `json:"stages"`
 	Events       []Event `json:"events"`
+	Archive      string  `json:"archive,omitempty"` // Set by history, never stored: its folder in runs/.
 }
 
 type Workflow struct {
 	Description string  `json:"description"`
 	Stages      []Stage `json:"stages"`
+	// For the session the Run button starts. Stages have their own `args`.
+	ExtraArgs []string `json:"extra_args,omitempty"`
+	// Set here, never read from a file: where it came from.
+	Source string `json:"source,omitempty"`
+	Path   string `json:"path,omitempty"`
 }
 
 const stateDir = ".herdr-factory"
@@ -68,7 +77,10 @@ const stateDir = ".herdr-factory"
 // shortcut: a fixed model for Claude stages that name none, change it here when the default should move.
 const defaultClaudeModel = "claude-opus-5-5"
 
-var runPath = filepath.Join(stateDir, "run.json")
+var (
+	runPath   = filepath.Join(stateDir, "run.json")
+	nonDigits = regexp.MustCompile(`[^0-9]`)
+)
 
 func now() string { return time.Now().Format("2006-01-02T15:04:05") }
 
@@ -114,6 +126,59 @@ func lockState() error {
 		return err
 	}
 	return syscall.Flock(int(stateLock.Fd()), syscall.LOCK_EX)
+}
+
+// Keeps a finished run and its result files under runs/, for the sidebar's history.
+// The folder is named from digits only, since run.json is a file in the repo's folder.
+// shortcut: past runs are never pruned, add a limit if a repo's folder ever grows large.
+func archiveRun(r *Run) error {
+	if len(r.Stages) == 0 {
+		return nil
+	}
+	name := nonDigits.ReplaceAllString(r.Started, "")
+	dir := filepath.Join(stateDir, "runs", name)
+	for n := 2; ; n++ {
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		dir = filepath.Join(stateDir, "runs", fmt.Sprintf("%s-%d", name, n))
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if resultFile.MatchString(entry.Name()) {
+			if err := os.Rename(filepath.Join(stateDir, entry.Name()), filepath.Join(dir, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "run.json"), data, 0o644)
+}
+
+// Past runs, newest first. No task, like everything the sidebar reads.
+func pastRuns() []Run {
+	runs := []Run{}
+	entries, _ := os.ReadDir(filepath.Join(stateDir, "runs"))
+	for _, entry := range entries {
+		var r Run
+		data, err := os.ReadFile(filepath.Join(stateDir, "runs", entry.Name(), "run.json"))
+		if err != nil || json.Unmarshal(data, &r) != nil {
+			continue
+		}
+		r.Archive, r.Task = entry.Name(), ""
+		runs = append(runs, r)
+	}
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].Started > runs[j].Started })
+	return runs
 }
 
 func (r *Run) log(text, stage string) {

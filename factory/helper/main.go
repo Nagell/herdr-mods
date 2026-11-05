@@ -19,6 +19,7 @@ const usage = `factory: record and control a Herdr workflow, from the repo root.
 
   factory list [--json]                 workflows available here
   factory status [--json]               the run
+  factory history                       past runs, newest first, as JSON
   factory run <workflow> "<task>"       begin a run; this terminal is the orchestrator
   factory continue                      pick a stopped or abandoned run back up, as orchestrator
   factory start <stage>                 send a stage its message (attempt +1), reusing a live session
@@ -28,7 +29,10 @@ const usage = `factory: record and control a Herdr workflow, from the repo root.
   factory rerun <stage>                 start it again and queue the stages after it
   factory followup <stage> "<task>"     give it new work in its live session, reopening the run
   factory close <stage>                 end its session
-  factory stop [--orchestrator]         end every stage session and stop the run
+  factory pause                         interrupt working stages and start nothing new
+  factory resume                        carry on a paused run
+  factory stop [--keep] [--orchestrator]
+                                        stop the run and end every stage session; --keep interrupts them instead
   factory done|stopped|failed           the run ended
   factory event "<text>"                a free note in the log
   factory tools [--json]                programs this needs that are not on PATH
@@ -126,10 +130,41 @@ func cmdRun(run *Run, args []string) error {
 	if me == "" {
 		return errors.New("run this from an hc terminal: the session that runs it becomes the orchestrator")
 	}
+	if run.State == "paused" {
+		return errors.New("the run is paused: factory stop first")
+	}
 	for _, s := range run.Stages {
 		if run.State == "working" && (s.State == "working") {
 			return fmt.Errorf("stage %s is still running: factory stop first", s.ID)
 		}
+	}
+	stages := workflow.Stages
+	kept := map[string]bool{}
+	for i := range stages {
+		stages[i].State = "queued"
+		// Recorded by name, so a run always says exactly which model does the work.
+		if stages[i].Model == "" && stages[i].Agent != "codex" {
+			stages[i].Model = defaultClaudeModel
+		}
+		// Only a kept session goes here: a workflow file must not aim a stage at a terminal.
+		stages[i].Term, stages[i].Attempt = "", 0
+		if last, err := run.stage(stages[i].ID); err == nil && stages[i].Session == "reuse" && sameLaunch(last, &stages[i]) && alive(last.Term) {
+			stages[i].Term = last.Term
+			kept[last.Term] = true
+		}
+	}
+	// The last run's other sessions hold the last task's context, and would
+	// otherwise stay running under the names this run's stages need.
+	for _, s := range run.Stages {
+		if kept[s.Term] {
+			continue
+		}
+		if err := closeTerminal(s.Term); err != nil {
+			return err
+		}
+	}
+	if err := archiveRun(run); err != nil {
+		return err
 	}
 	// A stale result file would count as this run's stage being done.
 	if entries, err := os.ReadDir(stateDir); err == nil {
@@ -139,23 +174,13 @@ func cmdRun(run *Run, args []string) error {
 			}
 		}
 	}
-	// The last run's sessions hold the last task's context, and would otherwise
-	// stay running under the names this run's stages need.
-	for _, s := range run.Stages {
-		if err := closeTerminal(s.Term); err != nil {
-			return err
-		}
-	}
-	stages := workflow.Stages
-	for i := range stages {
-		stages[i].State = "queued"
-		// Recorded by name, so a run always says exactly which model does the work.
-		if stages[i].Model == "" && stages[i].Agent != "codex" {
-			stages[i].Model = defaultClaudeModel
-		}
-	}
-	*run = Run{Orchestrator: me, State: "working", Workflow: name, Task: task, Started: now(), Stages: stages, Events: []Event{}}
+	*run = Run{Orchestrator: me, State: "working", Workflow: strings.TrimPrefix(name, basePrefix), Task: task, Started: now(), Stages: stages, Events: []Event{}}
 	run.log("run "+name, "") // no task: the sidebar shows this log, and it never shows a prompt
+	for _, s := range stages {
+		if s.Term != "" {
+			run.log(s.ID+" keeps its session from the last run", s.ID)
+		}
+	}
 	renameTab("Factory")
 	return run.save()
 }
@@ -356,7 +381,7 @@ func cmdFollowup(run *Run, args []string) error {
 		return err
 	}
 	for _, other := range run.Stages {
-		if other.State == "working" {
+		if other.State == "working" || other.State == "paused" {
 			return fmt.Errorf("stage %s is still running: wait for it or stop it first", other.ID)
 		}
 	}
@@ -371,14 +396,85 @@ func cmdFollowup(run *Run, args []string) error {
 	return cmdRerun(run, s, task)
 }
 
-func cmdStop(run *Run, args []string) error {
+// Best effort: a session that won't stop still shouldn't keep the run from pausing.
+func interrupt(run *Run, s *Stage) {
+	if !alive(s.Term) {
+		return
+	}
+	if _, err := hc("interrupt", s.Term, "--json"); err != nil {
+		run.log(s.ID+" could not be interrupted", s.ID)
+	}
+}
+
+// Stages stay open with their context, and nothing new starts until resume.
+func cmdPause(run *Run) error {
+	if run.State != "working" {
+		return fmt.Errorf("the run is %s: nothing to pause", run.State)
+	}
+	for i := range run.Stages {
+		if s := &run.Stages[i]; s.State == "working" {
+			interrupt(run, s)
+			s.State = "paused"
+		}
+	}
+	run.State = "paused"
+	run.log("run paused", "")
+	return run.save()
+}
+
+func cmdResume(run *Run) error {
+	if run.State != "paused" {
+		return fmt.Errorf("the run is %s: nothing to resume", run.State)
+	}
+	if !alive(run.Orchestrator) {
+		return errors.New("Factory's session is gone: continue the run from a Claude session first")
+	}
+	run.State = "working"
+	run.log("run resumed", "")
+	resumed := false
 	for i := range run.Stages {
 		s := &run.Stages[i]
-		if err := closeTerminal(s.Term); err != nil {
+		if s.State != "paused" {
+			continue
+		}
+		resumed = true
+		if !alive(s.Term) {
+			if err := start(run, s, ""); err != nil {
+				return err
+			}
+			continue
+		}
+		// Its last message still says how to report, and this attempt's result is still to come.
+		if _, err := hc("send", s.Term, "You were paused. Carry on from where you stopped, and finish as your last message asked.", "--json"); err != nil {
 			return err
 		}
-		s.Term = ""
-		if s.State == "working" {
+		s.State = "working"
+	}
+	// Paused between stages, or a stage reported anyway.
+	if !resumed {
+		if err := cmdNext(run); err != nil {
+			return err
+		}
+	}
+	run.settle()
+	return run.save()
+}
+
+func cmdStop(run *Run, args []string) error {
+	keep := hasFlag(args, "--keep")
+	for i := range run.Stages {
+		s := &run.Stages[i]
+		if keep {
+			if s.State == "working" {
+				interrupt(run, s)
+			}
+		} else {
+			if err := closeTerminal(s.Term); err != nil {
+				return err
+			}
+			s.Term = ""
+		}
+		if s.State == "working" || s.State == "paused" {
 			s.State, s.Ended = "stopped", now()
 			run.log(s.ID+" stopped", s.ID)
 		}
@@ -415,7 +511,7 @@ func stageCommand(run *Run, name string, args []string) error {
 			return err
 		}
 		s.Term = ""
-		if s.State == "working" {
+		if s.State == "working" || s.State == "paused" {
 			s.State, s.Ended = "stopped", now()
 		}
 		run.log(s.ID+" session closed", s.ID)
@@ -439,6 +535,8 @@ func dispatch(args []string) error {
 		return cmdStatus(args)
 	case "tools":
 		return cmdTools(args)
+	case "history":
+		return printJSON(pastRuns())
 	case "init":
 		return initConfig()
 	}
@@ -459,6 +557,10 @@ func dispatch(args []string) error {
 		return stageCommand(run, command, args)
 	case "followup":
 		return cmdFollowup(run, args)
+	case "pause":
+		return cmdPause(run)
+	case "resume":
+		return cmdResume(run)
 	case "stop":
 		return cmdStop(run, args)
 	case "done", "stopped", "failed":

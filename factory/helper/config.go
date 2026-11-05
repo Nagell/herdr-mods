@@ -85,6 +85,9 @@ func validate(name string, workflow Workflow, trusted bool) error {
 	if len(workflow.Stages) == 0 {
 		return fmt.Errorf("workflow %s has no stages", name)
 	}
+	if !trusted && len(workflow.ExtraArgs) > 0 {
+		return fmt.Errorf("%s: extra_args are only allowed in the config in your home folder", name)
+	}
 	seen := map[string]bool{}
 	for _, s := range workflow.Stages {
 		switch {
@@ -102,6 +105,8 @@ func validate(name string, workflow Workflow, trusted bool) error {
 			return fmt.Errorf("%s: stage %s: loop.with must name an earlier stage", name, s.ID)
 		case s.Loop != nil && s.Loop.Max < 1:
 			return fmt.Errorf("%s: stage %s: loop.max must be at least 1", name, s.ID)
+		case s.Session != "" && s.Session != "new" && s.Session != "reuse":
+			return fmt.Errorf("%s: stage %s: session must be new or reuse", name, s.ID)
 		case !trusted && len(s.Args) > 0:
 			return fmt.Errorf("%s: stage %s: args are only allowed in the config in your home folder", name, s.ID)
 		}
@@ -110,25 +115,44 @@ func validate(name string, workflow Workflow, trusted bool) error {
 	return nil
 }
 
-// The repo's own workflows win over the global ones of the same name.
+const basePrefix = "base:"
+
+// The repo's own workflows win the name over the global ones of the same name.
 func availableWorkflows() (map[string]Workflow, error) {
 	if err := initConfig(); err != nil {
 		return nil, err
 	}
-	found, err := readWorkflows(filepath.Join(configDir(), "workflow.json"), true)
+	basePath := filepath.Join(configDir(), "workflow.json")
+	found, err := readWorkflows(basePath, true)
 	if err != nil {
 		return nil, err
 	}
-	local, err := readWorkflows(repoConfigPath(), false)
+	repoPath := repoConfigPath()
+	local, err := readWorkflows(repoPath, false)
 	if err != nil {
+		return nil, err
+	}
+	if repoPath, err = filepath.Abs(repoPath); err != nil {
 		return nil, err
 	}
 	if found == nil {
 		found = map[string]Workflow{}
 	}
-	for name, workflow := range local {
-		inheritArgs(workflow, found[name])
+	for name, workflow := range found {
+		workflow.Source, workflow.Path = "base", basePath
 		found[name] = workflow
+	}
+	for name, workflow := range local {
+		home, shared := found[name]
+		inheritArgs(workflow, home)
+		workflow.ExtraArgs = home.ExtraArgs
+		workflow.Source, workflow.Path = "repo", repoPath
+		found[name] = workflow
+		// The plain name means the repo's, and the base one stays runnable. The colon
+		// can't be in a name from a file, so this can't collide.
+		if shared {
+			found[basePrefix+name] = home
+		}
 	}
 	return found, nil
 }

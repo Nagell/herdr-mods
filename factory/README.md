@@ -1,27 +1,30 @@
 # Factory
 
-Staged agent runs for [Herdr Desktop](https://herdr.dev/). A Claude Code session becomes the orchestrator of a named workflow, such as developer then reviewer, and a sidebar shows the run with every session nested under it. Start one by asking an agent, with `/factory implement <task>`; the orchestrator never blocks, so you can keep talking to it while stages run.
+Staged agent runs for [Herdr Desktop](https://herdr.dev/). A Claude Code session becomes the orchestrator of a named workflow, such as developer then reviewer, and a sidebar shows the run with every session nested under it. Start one from the Workflows tab, or by asking an agent with `/factory implement <task>`; the orchestrator never blocks, so you can keep talking to it while stages run.
 
 ![Factory](preview.png)
 
-- **Run tab:** the workflow, a strip with stages done, findings open and the loop's round, then a tree. Factory, the orchestrator, is the root, each stage nests under it, and any helper a stage started with `hc run` nests under that stage. Click any of them to open its session.
+- **Runs tab:** a run that is working or paused is pinned at the top with its controls. Finished runs are a list below, newest first; each shows its stats, and opening one shows the same tree. The last run keeps its controls, and older ones are read-only. Each view has the workflow, a strip with stages done, findings open and the loop's round, then a tree. Factory, the orchestrator, is the root, each stage nests under it, and any helper a stage started with `hc run` nests under that stage. Click any of them to open its session.
 - **Each stage** shows its live state (working, needs you, session ended, done, failed, stopped, queued), its result, and its model, effort and role. A chevron opens a done stage's result, with findings in collapsible groups by severity, each with its file and detail, and its replies.
 - **Follow up** from a done stage's result: write what you want next, and it goes to that stage's live session, which keeps its context. The stages after it run again.
-- **Events tab:** the run's log, newest first, grouped by day, and filterable by stage.
+- **Workflows tab:** everything this repo can run, in two groups, **Repo** then **Base**, each with a folder icon that opens where its file lives. Each shows its description and stages, and hovering a stage shows its model, effort and role. **Run** asks for the task, then starts a new Claude session in a new tab to orchestrate it. It is disabled while a run is going.
+- **Events tab:** the run's log, newest first, each with a `workflow:stage` badge, grouped by day, and filterable by stage.
 
-The sidebar doesn't start runs, and never shows a task or follow-up afterwards. With no task, `/factory implement` takes it from the agent's own conversation, and asks if there's no clear one, so you can have that conversation first. To read what a stage was told, open its session. With no run, the sidebar lists your workflows.
+The sidebar never shows a task or follow-up afterwards. With no task, `/factory implement` takes it from the agent's own conversation, and asks if there's no clear one, so you can have that conversation first. To read what a stage was told, open its session. `/factory help` lists your workflows in an agent.
 
 ## What you can do
 
 | Control | Where | What it does |
 | --- | --- | --- |
-| **Stop run** | Actions | After you confirm, ends every stage session and stops the run. |
-| **Open workflows folder** | Actions | Opens the folder with your workflows and templates. |
-| **Close Factory and every session** | Actions | After you confirm, ends all of them and stops the run. |
+| **Run** | Workflows | Asks for the task, then starts a Claude session in a new tab that runs the workflow. Disabled while a run is going. Ends the last run's sessions, apart from `reuse` stages. |
+| **Pause** / **Resume** | run | Pause interrupts working stages, keeps their sessions and starts nothing new. Resume tells them to carry on, then the run continues. Resume needs a live orchestrator. |
+| **Stop all** (■) | Factory row | After you confirm, interrupts working stages and stops the run. The sessions stay open, and `/factory continue` picks it up. |
+| **Close** (×) | Factory row | After you confirm, ends every stage session and stops the run. Factory's own session stays. |
+| **Open folder** (folder icon) | Workflows, Repo and Base headings | Opens the folder holding that group's `workflow.json`. |
 | **Run again** (↻) | stage | Sends the stage its message again, in the same session if it's alive, and queues the stages after it. Needs a live orchestrator, since that's who the stage reports to. |
 | **Close** (×) | stage | Ends that session. Asks first if it's working. |
 
-Ask the agent for the rest: `/factory continue` picks up a run that stopped or lost its orchestrator, keeping stages already done, and `/factory <workflow>` starts another.
+Ask the agent for the rest: `/factory continue` picks up a run that stopped or lost its orchestrator, keeping stages already done, and `/factory help` lists them.
 
 ## Install
 
@@ -97,8 +100,15 @@ Everything lives in `~/.config/herdr-mods/factory/`, created on first use and ne
 | `message` | Optional first message, with `{task}` replaced by the task. Without it a `reviewer` is told to review the uncommitted changes for the task, and any other role gets the task itself. |
 | `after` | Shown in the sidebar while the stage waits. |
 | `loop` | `{"with": "<earlier stage>", "max": <rounds>}`: see Loops. |
+| `session` | `new` (default) starts a fresh session each run. `reuse` keeps the last run's live session for the same stage id if its `agent`, `role`, `model`, `effort` and `args` are unchanged, and tells it a new run has started. |
 
-A repo can add or override workflows in `.herdr-factory/workflow.json`, in the same format. A git worktree with no such file of its own reads the main checkout's. A repo file can't set `args`, so a cloned repo can't choose flags such as one that skips permission prompts. Instead, a repo stage takes the `args` you set for the stage with the same id in your own workflow of the same name.
+A workflow in your home file can also set `extra_args`, for the Claude session the **Run** button starts. Stage sessions use each stage's own `args`. A session you start yourself with `/factory` keeps the mode it already has.
+
+```json
+"implement": { "extra_args": ["--permission-mode", "auto"], "stages": [ ... ] }
+```
+
+A repo can add workflows in `.herdr-factory/workflow.json`, in the same format. If it uses a name your base config also has, the plain name runs the repo's, and `base:<name>` runs yours, so both stay available. A git worktree with no such file of its own reads the main checkout's. A repo file can't set `args` or `extra_args`, so a cloned repo can't choose flags such as one that skips permission prompts. Instead, a repo stage takes the `args` you set for the stage with the same id in your own workflow of the same name, and a repo workflow takes the `extra_args` of your workflow of the same name.
 
 ## Loops
 
@@ -147,7 +157,7 @@ The orchestrator and the sidebar both call it, and it's the only writer of `.her
 
 The session running the stages has its tab named **Factory**, and each stage session takes its stage's name, such as `dev`. If another repo has a live `dev`, this one becomes `dev-2`, because `hc` names must be unique.
 
-One run goes at a time per repo, and a new run ends the last run's sessions. `.herdr-factory/` ignores itself in git, and a new run clears the last run's result files.
+One run goes at a time per repo, and a new run ends the last run's sessions, apart from those `reuse` stages keep. `.herdr-factory/` ignores itself in git, and a new run moves the last run and its result files to `.herdr-factory/runs/`. Past runs aren't pruned, and deleting that folder only loses the history.
 
 ## Settings
 

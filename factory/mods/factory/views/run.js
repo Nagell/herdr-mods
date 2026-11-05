@@ -4,12 +4,14 @@ import { v_flex, h_flex } from "gpui-base";
 import { run as runCommand, terminals, theme } from "herdr";
 import {
   findingGroups,
+  going,
   running,
   runStats,
   stageDetails,
   stageLabel,
   stageResult,
   stageStatus,
+  titleCase,
 } from "../run/model.js";
 import { dayLabel } from "./days.js";
 import {
@@ -17,11 +19,11 @@ import {
   Button,
   Chevron,
   codeFont,
+  ControlButton,
   GroupHeader,
   halfTone,
   Icon,
   IconButton,
-  MenuButton,
   Message,
   SPIN_MS,
   Stat,
@@ -29,8 +31,15 @@ import {
   TextButton,
 } from "./ui.js";
 
+const DOT_SLOT = 14; // ProgramIcon's width
+const TITLE_NUDGE = 4; // Centres the chevron on the name's line in a top-aligned row
+const TREE_INDENT = 20; // The chevron and its gap: Factory's icon sits under the row's dot
+const DOT_GAP = 7; // The orchestrator row's gap
 const STATE_COLORS = { working: "working", done: "done", failed: "blocked" };
 const peek = (address) => runCommand("terminal.peek", { terminal: address });
+// Several runs can be on screen: a past run's elements carry its name, the current one's don't.
+const scoped = (run, id) => (run.archive ? `${id}@${run.archive}` : id);
+const whenOf = (run) => (run.started ? `${dayLabel(run.started)} ${run.started.slice(11, 16)}` : "");
 
 function StatusIcon(status, t) {
   const icon = Icon(status.icon, 15)
@@ -78,47 +87,75 @@ export const runMethods = {
     return this.terminal(address)?.state === "live";
   },
 
-  runActions(run) {
-    const live = this.alive(run.orchestrator);
-    const choices = [
-      ...(running(run) ? [{ id: "stop", label: "Stop run" }] : []),
-      { id: "folder", label: "Open workflows folder", divided: running(run) },
-      ...(live ? [{ id: "close-all", label: "Close Factory and every session" }] : []),
-    ];
-    const handlers = {
-      stop: (cx) =>
-        this.ask(
-          "Stop the run and end its stage sessions?",
-          "Stop run",
-          (cx) => this.act(["stop"], cx),
-          cx,
-        ),
-      folder: (cx) => this.openConfig(cx),
-      "close-all": (cx) =>
-        this.ask(
-          "Close Factory and every stage session, and stop the run?",
-          "Close all",
-          (cx) => this.act(["stop", "--orchestrator"], cx),
-          cx,
-        ),
-    };
-    return this.chooser({
-      id: "factory-actions",
-      accessibilityLabel: "Actions for this run",
-      width: 300,
-      trigger: MenuButton({ id: "factory-actions-trigger", label: "Actions" }),
-      choices,
-      onChoose: (id, cx) => handlers[id](cx),
-    });
+  pauseButton(run) {
+    if (run.state === "working")
+      return ControlButton({
+        id: "factory-pause",
+        icon: "pause",
+        label: "Pause",
+        tooltip: "Interrupt working stages and start nothing new",
+        disabled: this.busy,
+        onClick: (cx) => this.act(["pause"], cx),
+      });
+    if (run.state === "paused")
+      return ControlButton({
+        id: "factory-resume",
+        icon: "play",
+        label: "Resume",
+        tooltip: "Tell paused stages to carry on",
+        active: true,
+        disabled: this.busy,
+        onClick: (cx) => this.act(["resume"], cx),
+      });
+    return null;
   },
 
-  about(run) {
+  // Beside Factory's name. Neither touches Factory's own session.
+  everyStageButtons(run) {
+    const row = h_flex().flex_none().gap(2).items_center();
+    if (run.state === "working" || run.state === "paused")
+      row.child(
+        IconButton({
+          id: "factory-stop-all",
+          icon: "stop",
+          label: "Stop all",
+          small: true,
+          disabled: this.busy,
+          onClick: (cx) =>
+            this.ask(
+              "Stop the run? Working stages are interrupted, and their sessions stay open.",
+              "Stop all",
+              (cx) => this.act(["stop", "--keep"], cx),
+              cx,
+            ),
+        }),
+      );
+    if (run.stages.some((s) => this.alive(s.terminal)))
+      row.child(
+        IconButton({
+          id: "factory-close-all",
+          icon: "close",
+          label: "Close every stage session",
+          small: true,
+          disabled: this.busy,
+          onClick: (cx) =>
+            this.ask(
+              "Close every stage session and stop the run? Factory's own session stays.",
+              "Close all",
+              (cx) => this.act(["stop"], cx),
+              cx,
+            ),
+        }),
+      );
+    return row;
+  },
+
+  statStrip(run) {
     const t = theme();
     const COLORS = { danger: t.ansi1, waiting: t.ansi3, good: t.ansi2, none: t.muted };
-    const when = run.started ? `${dayLabel(run.started)} ${run.started.slice(11, 16)}` : "";
     const stats = runStats(run);
     const strip = h_flex()
-      .id("factory-stats")
+      .id(scoped(run, "factory-stats"))
       .px(10)
       .py(6)
       .gap(8)
@@ -130,7 +167,7 @@ export const runMethods = {
       if (i) strip.child(div().text_color(t.dim).child("·"));
       strip.child(
         Stat({
-          id: `factory-stat-${stat.key}`,
+          id: scoped(run, `factory-stat-${stat.key}`),
           value: stat.value,
           label: stat.label,
           color: COLORS[stat.tone],
@@ -138,6 +175,50 @@ export const runMethods = {
         }),
       );
     });
+    return strip;
+  },
+
+  // Name and state. The dot takes the same column as the tree's icons and centres on the
+  // name's line, so the name lines up with the rows below and the state with the name.
+  runTitle(run, lines = []) {
+    const t = theme();
+    const note = (text) =>
+      div()
+        .pl(DOT_SLOT + DOT_GAP)
+        .truncate()
+        .text_size(TEXT.caption)
+        .text_color(t.dim)
+        .child(text);
+    return v_flex()
+      .flex_1()
+      .min_w(0)
+      .gap(2)
+      .child(
+        h_flex()
+          .gap(DOT_GAP)
+          .min_w(0)
+          .items_center()
+          .child(
+            h_flex()
+              .w(DOT_SLOT)
+              .flex_none()
+              .justify_center()
+              .child(
+                div()
+                  .size(8)
+                  .rounded(4)
+                  .bg(t[STATE_COLORS[run.state]] ?? t.dim),
+              ),
+          )
+          .child(div().flex_1().min_w(0).truncate().font_medium().child(titleCase(run.workflow ?? "Workflow"))),
+      )
+      .child(note([titleCase(run.state), whenOf(run)].filter(Boolean).join(" · ")))
+      .children(lines.map(note));
+  },
+
+  // The run that's going, pinned above everything else.
+  about(run) {
+    const t = theme();
     return v_flex()
       .id("factory-about")
       .flex_none()
@@ -151,42 +232,70 @@ export const runMethods = {
           .gap(8)
           .min_w(0)
           .items_center()
-          .child(
-            div()
-              .size(10)
-              .flex_none()
-              .rounded(5)
-              .bg(t[STATE_COLORS[run.state]] ?? t.dim),
-          )
-          .child(
-            v_flex()
-              .flex_1()
-              .min_w(0)
-              .child(
-                div()
-                  .truncate()
-                  .font_medium()
-                  .child(run.workflow ?? "Workflow"),
-              )
-              .child(
-                div()
-                  .truncate()
-                  .text_size(TEXT.caption)
-                  .text_color(t.dim)
-                  .child([run.state, when].filter(Boolean).join(" · ")),
-              ),
-          )
-          .child(this.runActions(run)),
+          .child(this.runTitle(run))
+          .child(this.pauseButton(run)),
       )
-      .child(strip);
+      .child(this.statStrip(run));
+  },
+
+  // A finished run in the list. Open, it shows what the pinned run shows.
+  runRow(run, divided) {
+    const t = theme();
+    const open = this.runIsOpen(run);
+    const stats = runStats(run)
+      .map((stat) => `${stat.label} ${stat.value}`)
+      .join(" · ");
+    return v_flex()
+      .id(scoped(run, "factory-run"))
+      .flex_none()
+      .min_w(0)
+      .when(divided, (el) => el.border_t(1).border_color(t.border))
+      .child(
+        h_flex()
+          .id(scoped(run, "factory-run-row"))
+          .py(7)
+          .flex_none()
+          .px(4)
+          .gap(6)
+          .min_w(0)
+          .items_start()
+          .rounded(6)
+          .cursor_pointer()
+          .accessibility_label(open ? "Hide this run" : "Show this run")
+          .hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => this.toggleRun(run, cx))
+          .child(div().flex_none().mt(TITLE_NUDGE).child(Chevron(open)))
+          .child(this.runTitle(run, [stats])),
+      )
+      .when(open, (el) =>
+        el.child(v_flex().flex_none().min_w(0).pl(TREE_INDENT).pb(8).child(this.runTree(run))),
+      );
+  },
+
+  runTree(run) {
+    const skip = new Set(run.stages.map((s) => s.terminal).filter(Boolean));
+    return v_flex()
+      .flex_none()
+      .min_w(0)
+      .child(this.orchestratorRow(run))
+      .child(
+        v_flex()
+          .flex_none()
+          .pl(11)
+          .min_w(0)
+          .children(
+            run.stages.map((s, i) => this.stageNode(s, i === run.stages.length - 1, run, skip)),
+          ),
+      );
   },
 
   orchestratorRow(run) {
     const t = theme();
     const session = this.terminal(run.orchestrator);
-    const live = session?.state === "live";
+    // A past run is a record: its sessions, if any are alive, belong to a later run.
+    const live = !run.archive && session?.state === "live";
     return h_flex()
-      .id("factory-orchestrator")
+      .id(scoped(run, "factory-orchestrator"))
       .h(30)
       .px(4)
       .gap(7)
@@ -210,12 +319,17 @@ export const runMethods = {
           .text_size(TEXT.caption)
           .text_color(t.dim)
           .child(
-            live ? "" : run.state === "done" ? "Session ended" : "Session gone: /factory continue",
+            live || run.archive
+              ? ""
+              : run.state === "done"
+                ? "Session ended"
+                : "Session gone: /factory continue",
           ),
       )
-      .when(session?.status === "working", (el) =>
+      .when(live && session?.status === "working", (el) =>
         el.child(StatusIcon({ icon: "spinner", color: "working", label: "Working" }, t)),
-      );
+      )
+      .when(!run.archive, (el) => el.child(this.everyStageButtons(run)));
   },
 
   // Helpers a stage started with `hc run`, with their own helpers below them.
@@ -266,11 +380,11 @@ export const runMethods = {
     );
   },
 
-  findingRow(stage, finding, key) {
+  findingRow(run, stage, finding, key) {
     const t = theme();
     const where = finding.line ? `${finding.file}:${finding.line}` : finding.file;
     return v_flex()
-      .id(`factory-finding-${stage.id}-${key}`)
+      .id(scoped(run, `factory-finding-${stage.id}-${key}`))
       .flex_none()
       .min_w(0)
       .px(8)
@@ -328,7 +442,7 @@ export const runMethods = {
           .child(
             Button({
               id: "factory-followup-send",
-              label: this.busy ? "Sending…" : `Send to ${stage.id}`,
+              label: this.busy ? "Sending…" : `Send to ${titleCase(stage.id)}`,
               primary: true,
               disabled: this.busy || empty,
               onClick: (cx) => this.sendFollowUp(stage, cx),
@@ -337,11 +451,22 @@ export const runMethods = {
       );
   },
 
+  // What a reply is about, in words: the id means nothing to anyone reading.
+  findingTitle(id, run) {
+    for (const stage of run.stages)
+      for (let attempt = stage.attempt; attempt > 0; attempt--) {
+        const key = this.resultKey(this.folder(), run, { id: stage.id, attempt });
+        const finding = this.results[key]?.findings?.find((f) => f.id === id);
+        if (finding?.title) return finding.title;
+      }
+    return id;
+  },
+
   stageDetail(stage, run) {
     const t = theme();
-    const key = this.resultKey(this.folder(), stage);
+    const key = this.resultKey(this.folder(), run, stage);
     const result = this.results[key];
-    const view = v_flex().min_w(0).pl(26).pb(6).gap(2);
+    const view = v_flex().min_w(0).pl(18).pb(6).gap(2); // pl + a row's px lines up with the stage's name
     if (result === undefined) return view.child(Message("Loading…"));
     if (result === null) view.child(Message("No result recorded for this attempt."));
     if (result?.summary && stage.counts)
@@ -359,7 +484,7 @@ export const runMethods = {
       const shut = this.closedGroups.has(groupKey);
       view.child(
         GroupHeader({
-          id: `factory-findings-${stage.id}-${group.severity}`,
+          id: scoped(run, `factory-findings-${stage.id}-${group.severity}`),
           label: group.severity[0].toUpperCase() + group.severity.slice(1),
           count: group.findings.length,
           collapsed: shut,
@@ -368,25 +493,34 @@ export const runMethods = {
       );
       if (!shut)
         view.children(
-          group.findings.map((f, i) => this.findingRow(stage, f, `${group.severity}-${i}`)),
+          group.findings.map((f, i) => this.findingRow(run, stage, f, `${group.severity}-${i}`)),
         );
     }
     const replies = Object.entries(result?.replies ?? {});
     if (replies.length) {
       view.child(
-        GroupHeader({ id: `factory-replies-${stage.id}`, label: "Replies", count: replies.length }),
+        GroupHeader({
+          id: scoped(run, `factory-replies-${stage.id}`),
+          label: "Replies",
+          count: replies.length,
+        }),
       );
       for (const [id, reply] of replies)
         view.child(
-          div()
+          v_flex()
+            .id(scoped(run, `factory-reply-${stage.id}-${id}`))
+            .flex_none()
+            .min_w(0)
             .px(8)
-            .py(3)
-            .whitespace_normal()
-            .text_size(TEXT.caption)
-            .text_color(t.muted)
-            .child(`${id}: ${reply}`),
+            .py(4)
+            .gap(1)
+            .child(div().whitespace_normal().text_size(TEXT.small).child(this.findingTitle(id, run)))
+            .child(
+              div().whitespace_normal().text_size(TEXT.caption).text_color(t.muted).child(reply),
+            ),
         );
     }
+    if (run.archive) return view;
     if (this.followUp === stage.id) return view.child(this.followUpBox(stage));
     if (!this.alive(run.orchestrator) || running(run)) return view;
     return view.child(
@@ -403,31 +537,38 @@ export const runMethods = {
 
   stageButtons(stage, run, status) {
     const live = this.alive(stage.terminal);
-    const active = stage.state === "working" && status.label !== "Session ended";
+    const active =
+      (stage.state === "working" && status.label !== "Session ended") || stage.state === "paused";
     const row = h_flex().flex_none().gap(2).items_center();
-    if (stage.attempt > 0 && stage.state !== "queued" && !active && this.alive(run.orchestrator))
+    if (
+      !run.archive &&
+      stage.attempt > 0 &&
+      stage.state !== "queued" &&
+      !active &&
+      this.alive(run.orchestrator)
+    )
       row.child(
         IconButton({
           id: `factory-rerun-${stage.id}`,
           icon: "refresh",
-          label: `Run ${stage.id} again`,
+          label: `Run ${titleCase(stage.id)} again`,
           small: true,
           disabled: this.busy,
           onClick: (cx) => this.act(["rerun", stage.id], cx),
         }),
       );
-    if (live)
+    if (live && !run.archive)
       row.child(
         IconButton({
           id: `factory-close-${stage.id}`,
           icon: "close",
-          label: `Close ${stage.id}'s session`,
+          label: `Close ${titleCase(stage.id)}'s session`,
           small: true,
           disabled: this.busy,
           onClick: (cx) =>
             active
               ? this.ask(
-                  `Close ${stage.id}'s session? Its work in progress stops.`,
+                  `Close ${titleCase(stage.id)}'s session? Its work in progress stops.`,
                   "Close session",
                   (cx) => this.act(["close", stage.id], cx),
                   cx,
@@ -435,37 +576,38 @@ export const runMethods = {
               : this.act(["close", stage.id], cx),
         }),
       );
+    const open = this.openStages.has(this.stageOpenKey(run, stage));
     if (stage.state === "done")
       row.child(
         div()
-          .id(`factory-open-${stage.id}`)
+          .id(scoped(run, `factory-open-${stage.id}`))
           .size(22)
           .flex()
           .items_center()
           .justify_center()
           .rounded(6)
           .cursor_pointer()
-          .accessibility_label(this.openStages.has(stage.id) ? "Hide result" : "Show result")
+          .accessibility_label(open ? "Hide result" : "Show result")
           .hover((s) => s.bg(theme().hover))
           .on_click((_e, cx) => {
             cx.stop_propagation();
-            this.toggleStage(stage, cx);
+            this.toggleStage(stage, run, cx);
           })
-          .child(Chevron(this.openStages.has(stage.id))),
+          .child(Chevron(open)),
       );
     return row;
   },
 
   stageNode(stage, last, run, skip) {
     const t = theme();
-    const live = this.alive(stage.terminal);
-    const status = stageStatus(stage, this.terminal(stage.terminal));
+    const live = !run.archive && this.alive(stage.terminal);
+    const status = stageStatus(stage, run.archive ? null : this.terminal(stage.terminal));
     const label = stageLabel(stage, status);
     const result = stageResult(stage);
     const round = stage.round > 0 ? `round ${stage.round} of ${stage.loop?.max}` : "";
     const attempt = !round && stage.attempt > 1 ? `attempt ${stage.attempt}` : "";
     const row = h_flex()
-      .id(`factory-stage-${stage.id}`)
+      .id(scoped(run, `factory-stage-${stage.id}`))
       .px(4)
       .py(4)
       .gap(7)
@@ -475,7 +617,7 @@ export const runMethods = {
       .when(live, (el) =>
         el
           .cursor_pointer()
-          .accessibility_label(`Open ${stage.id}'s session`)
+          .accessibility_label(`Open ${titleCase(stage.id)}'s session`)
           .hover((s) => s.bg(t.hover))
           .on_click(() => peek(stage.terminal)),
       )
@@ -490,7 +632,7 @@ export const runMethods = {
               .gap(6)
               .min_w(0)
               .items_center()
-              .child(div().flex_none().font_medium().child(stage.id))
+              .child(div().flex_none().font_medium().child(titleCase(stage.id)))
               .when(Boolean(label), (el) =>
                 el.child(
                   div()
@@ -531,10 +673,10 @@ export const runMethods = {
         .min_w(0)
         .pb(4)
         .child(row)
-        .when(this.openStages.has(stage.id) && stage.state === "done", (el) =>
+        .when(this.openStages.has(this.stageOpenKey(run, stage)) && stage.state === "done", (el) =>
           el.child(this.stageDetail(stage, run)),
         )
-        .children(stage.terminal ? this.helperNodes(stage.terminal, skip) : []),
+        .children(stage.terminal && !run.archive ? this.helperNodes(stage.terminal, skip) : []),
       t,
     );
   },
@@ -573,28 +715,25 @@ export const runMethods = {
   },
 
   runView(root, run) {
-    const skip = new Set(run.stages.map((s) => s.terminal).filter(Boolean));
-    root.child(this.about(run));
+    const pinned = going(run);
+    const past = this.history();
+    if (pinned) root.child(this.about(run));
     if (this.confirm) root.child(this.confirmBlock());
-    return root.child(
-      v_flex()
-        .id("factory-tree")
-        .flex_1()
-        .min_h(0)
-        .min_w(0)
-        .overflow_y_scrollbar()
-        .px(10)
-        .py(8)
-        .child(this.orchestratorRow(run))
-        .child(
-          v_flex()
-            .flex_none()
-            .pl(11)
-            .min_w(0)
-            .children(
-              run.stages.map((s, i) => this.stageNode(s, i === run.stages.length - 1, run, skip)),
-            ),
-        ),
-    );
+    const body = v_flex()
+      .id("factory-tree")
+      .flex_1()
+      .min_h(0)
+      .min_w(0)
+      .overflow_y_scrollbar()
+      .px(10)
+      .py(8);
+    if (pinned) body.child(this.runTree(run));
+    else body.child(this.runRow(run, false));
+    if (pinned && past.length)
+      body.child(
+        GroupHeader({ id: "factory-past-runs", label: "Past runs", count: past.length, divided: true }),
+      );
+    past.forEach((r, i) => body.child(this.runRow(r, !pinned || i > 0)));
+    return root.child(body);
   },
 };

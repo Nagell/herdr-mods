@@ -178,6 +178,140 @@ func TestAReviewerWithNoFindingsApproves(t *testing.T) {
 	}
 }
 
+func TestPauseInterruptsAndResumeCarriesOn(t *testing.T) {
+	log := setup(t, "t1 t9")
+	must(t, "run", "implement", "x")
+	must(t, "next")
+	must(t, "pause")
+	run := loadRun()
+	dev, _ := run.stage("dev")
+	if run.State != "paused" || dev.State != "paused" || !strings.Contains(hcLog(t, log), "interrupt t9") || strings.Contains(hcLog(t, log), "kill") {
+		t.Fatalf("%+v %s", run, hcLog(t, log))
+	}
+	// Nothing starts or restarts while paused.
+	must(t, "next")
+	for _, args := range [][]string{{"rerun", "dev"}, {"followup", "dev", "more"}, {"run", "implement", "y"}, {"pause"}} {
+		if dispatch(args) == nil {
+			t.Fatalf("%v went through while paused", args)
+		}
+	}
+	must(t, "resume")
+	run = loadRun()
+	dev, _ = run.stage("dev")
+	if run.State != "working" || dev.State != "working" || dev.Attempt != 1 {
+		t.Fatalf("%+v", run)
+	}
+	if !strings.Contains(hcLog(t, log), "send t9 You were paused") {
+		t.Fatal(hcLog(t, log))
+	}
+	if dispatch([]string{"resume"}) == nil {
+		t.Fatal("a working run must not resume")
+	}
+}
+
+func TestResumeStartsWhatIsNextOrWhatHasGone(t *testing.T) {
+	log := setup(t, "t1 t9")
+	must(t, "run", "implement", "x")
+	must(t, "next")
+	writeResult(t, "dev-1.json", `{"summary":"one"}`)
+	must(t, "stage", "dev", "done")
+	must(t, "pause") // between stages: review hasn't started
+	must(t, "next")
+	if strings.Count(hcLog(t, log), "run --bg") != 1 {
+		t.Fatal(hcLog(t, log))
+	}
+	must(t, "resume")
+	if strings.Count(hcLog(t, log), "run --bg") != 2 {
+		t.Fatal(hcLog(t, log))
+	}
+	must(t, "pause")
+	t.Setenv("HC_LIVE", "t1") // review's session died while paused
+	must(t, "resume")
+	if strings.Count(hcLog(t, log), "run --bg") != 3 {
+		t.Fatal(hcLog(t, log))
+	}
+	must(t, "pause")
+	t.Setenv("HC_LIVE", "t9")
+	if err := dispatch([]string{"resume"}); err == nil || !strings.Contains(err.Error(), "session is gone") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestStopKeepInterruptsAndLeavesSessionsOpen(t *testing.T) {
+	log := setup(t, "t1 t9")
+	must(t, "run", "implement", "x")
+	must(t, "next")
+	must(t, "stop", "--keep")
+	run := loadRun()
+	dev, _ := run.stage("dev")
+	if run.State != "stopped" || dev.State != "stopped" || dev.Term != "t9" {
+		t.Fatalf("%+v", run)
+	}
+	if called := hcLog(t, log); !strings.Contains(called, "interrupt t9") || strings.Contains(called, "kill") {
+		t.Fatal(called)
+	}
+}
+
+func TestStageMessagesAskForPlainSummaries(t *testing.T) {
+	log := setup(t, "t1")
+	must(t, "run", "implement", "x")
+	must(t, "next")
+	if !strings.Contains(hcLog(t, log), "names no finding by its id") {
+		t.Fatal(hcLog(t, log))
+	}
+}
+
+func TestANewRunKeepsTheLastOneInHistory(t *testing.T) {
+	setup(t, "t1")
+	must(t, "run", "implement", "secret task")
+	must(t, "next")
+	writeResult(t, "dev-1.json", `{"summary":"one"}`)
+	must(t, "stage", "dev", "done")
+	must(t, "stopped")
+	first := loadRun().Started
+	must(t, "run", "review", "second")
+	must(t, "stopped")
+	must(t, "run", "review", "third") // the same second as the last: its folder can't collide
+	runs := pastRuns()
+	if len(runs) != 2 {
+		t.Fatalf("%+v", runs)
+	}
+	var kept *Run
+	for i := range runs {
+		if runs[i].Workflow == "implement" {
+			kept = &runs[i]
+		}
+		if runs[i].Task != "" {
+			t.Fatal("history must not hold a task")
+		}
+	}
+	if kept == nil || kept.Started != first || kept.Stages[0].Summary != "one" {
+		t.Fatalf("%+v", runs)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "runs", kept.Archive, "dev-1.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "dev-1.json")); err == nil {
+		t.Fatal("the result must move, or it would count for the new run")
+	}
+	if loadRun().Workflow != "review" {
+		t.Fatal("the new run is the current one")
+	}
+}
+
+func TestAnArchiveStaysInsideItsFolder(t *testing.T) {
+	setup(t, "t1")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := archiveRun(&Run{Started: "../../evil", Stages: []Stage{{ID: "a"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "..", "..", "evil")); err == nil {
+		t.Fatal("left the state folder")
+	}
+}
+
 func TestCloseAndStop(t *testing.T) {
 	log := setup(t, "t1 t9")
 	must(t, "run", "implement", "x")
@@ -354,6 +488,107 @@ func TestANewRunEndsTheLastRunsSessionsAndNamesItsModel(t *testing.T) {
 	if !strings.Contains(hcLog(t, log), "kill t9") || strings.Contains(hcLog(t, log), "kill t1") {
 		t.Fatal(hcLog(t, log))
 	}
+}
+
+const reuseStage = `{"id":"dev","role":"developer","session":"reuse"`
+
+func writeWorkflow(t *testing.T, stage string) {
+	t.Helper()
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, "workflow.json", `{"workflows":{"w":{"stages":[`+stage+`]}}}`)
+}
+
+func oneStageRun(t *testing.T) {
+	t.Helper()
+	must(t, "run", "w", "first task")
+	must(t, "next")
+	report(t, "dev", 1, `{"summary":"one"}`)
+}
+
+func TestAReuseStageKeepsItsLiveSessionAcrossRuns(t *testing.T) {
+	log := setup(t, "t1 t9")
+	writeWorkflow(t, reuseStage+"}")
+	oneStageRun(t)
+	// Spelling out the defaults is still the same launch.
+	writeWorkflow(t, reuseStage+`,"agent":"claude","model":"`+defaultClaudeModel+`"}`)
+	must(t, "run", "w", "second task")
+	if run := loadRun(); run.Stages[0].Term != "t9" || run.Stages[0].Attempt != 0 || run.Events[1].Text != "dev keeps its session from the last run" {
+		t.Fatalf("%+v", run)
+	}
+	must(t, "next")
+	called := hcLog(t, log)
+	if strings.Contains(called, "kill") || strings.Count(called, "run --bg") != 1 {
+		t.Fatal(called)
+	}
+	if !strings.Contains(called, "send t9 A new run starts here. Your earlier messages were for the last run; this is your task now.\n\nsecond task") {
+		t.Fatal(called)
+	}
+	// Only the first message says so.
+	report(t, "dev", 1, `{"summary":"two"}`)
+	must(t, "rerun", "dev")
+	if strings.Count(hcLog(t, log), "A new run starts here") != 1 {
+		t.Fatal(hcLog(t, log))
+	}
+}
+
+func TestAReuseStageLaunchedDifferentlyGetsANewSession(t *testing.T) {
+	log := setup(t, "t1 t9")
+	writeWorkflow(t, reuseStage+`,"effort":"low"}`)
+	oneStageRun(t)
+	writeWorkflow(t, reuseStage+`,"effort":"high"}`)
+	must(t, "run", "w", "second task")
+	if !strings.Contains(hcLog(t, log), "kill t9") || loadRun().Stages[0].Term != "" {
+		t.Fatal(hcLog(t, log))
+	}
+	must(t, "next")
+	called := hcLog(t, log)
+	if strings.Contains(called, "send t9") || strings.Count(called, "run --bg") != 2 || strings.Contains(called, "A new run starts here") {
+		t.Fatal(called)
+	}
+}
+
+func TestAStageWithoutReuseGetsANewSession(t *testing.T) {
+	log := setup(t, "t1 t9")
+	writeWorkflow(t, `{"id":"dev","role":"developer"}`)
+	oneStageRun(t)
+	must(t, "run", "w", "second task")
+	if !strings.Contains(hcLog(t, log), "kill t9") || loadRun().Stages[0].Term != "" {
+		t.Fatal(hcLog(t, log))
+	}
+}
+
+func TestAReuseStageWhoseSessionEndedGetsANewOne(t *testing.T) {
+	setup(t, "t1 t9")
+	writeWorkflow(t, reuseStage+"}")
+	oneStageRun(t)
+	t.Setenv("HC_LIVE", "t1")
+	must(t, "run", "w", "second task")
+	if run := loadRun(); run.Stages[0].Term != "" || len(run.Events) != 1 {
+		t.Fatalf("%+v", run)
+	}
+}
+
+func TestAWorkflowFileCannotAimAStageAtATerminal(t *testing.T) {
+	log := setup(t, "t1 t5")
+	writeWorkflow(t, `{"id":"dev","role":"developer","terminal":"t5"}`)
+	must(t, "run", "w", "x")
+	must(t, "next")
+	if strings.Contains(hcLog(t, log), "send t5") {
+		t.Fatal(hcLog(t, log))
+	}
+}
+
+func TestSessionValueIsChecked(t *testing.T) {
+	setup(t, "t1")
+	writeWorkflow(t, `{"id":"dev","role":"developer","session":"keep"}`)
+	if err := dispatch([]string{"list"}); err == nil || !strings.Contains(err.Error(), "session") {
+		t.Fatalf("got %v", err)
+	}
+	// Not a flag, so a repo file may set it.
+	writeWorkflow(t, reuseStage+"}")
+	must(t, "list")
 }
 
 const loopConfig = `{"workflows":{"w":{"stages":[
@@ -611,6 +846,84 @@ func TestARepoStageInheritsOnlyTheHomeArgsOfTheSameWorkflowAndStage(t *testing.T
 	must(t, "next")
 	if !strings.Contains(hcLog(t, log), "--permission-mode acceptEdits") {
 		t.Fatal(hcLog(t, log))
+	}
+}
+
+func TestAWorkflowSaysWhereItComesFrom(t *testing.T) {
+	setup(t, "")
+	writeWorkflow(t, `{"id":"dev","role":"developer"}`)
+	if err := os.WriteFile(filepath.Join(stateDir, "workflow.json"), []byte(`{"workflows":{"mine":{"source":"base","path":"/etc/passwd","stages":[{"id":"a","role":"r"}]},"review":{"stages":[{"id":"a","role":"r"}]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	found, err := availableWorkflows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := found["mine"]; w.Source != "repo" || !filepath.IsAbs(w.Path) || !strings.HasSuffix(w.Path, ".herdr-factory/workflow.json") {
+		t.Fatalf("%+v", w)
+	}
+	if w := found["implement"]; w.Source != "base" || w.Path != filepath.Join(configDir(), "workflow.json") {
+		t.Fatalf("%+v", w)
+	}
+	if _, listed := found["base:implement"]; listed {
+		t.Fatal("only a name in both needs the prefix")
+	}
+	if w := found["review"]; w.Source != "repo" || w.Stages[0].ID != "a" {
+		t.Fatalf("%+v", w)
+	}
+	if w := found["base:review"]; w.Source != "base" || w.Stages[0].ID != "review" {
+		t.Fatalf("%+v", w)
+	}
+}
+
+func TestABaseWorkflowRunsEvenWhenTheRepoHasOneOfThatName(t *testing.T) {
+	log := setup(t, "t1")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, "workflow.json", `{"workflows":{"implement":{"stages":[{"id":"mine","role":"developer"}]}}}`)
+	must(t, "run", "base:implement", "x")
+	must(t, "next")
+	run := loadRun()
+	if run.Workflow != "implement" || run.Stages[0].ID != "dev" {
+		t.Fatalf("%+v", run)
+	}
+	if !strings.Contains(hcLog(t, log), "--permission-mode acceptEdits") {
+		t.Fatal("the base stage keeps its own args: " + hcLog(t, log))
+	}
+	must(t, "stop")
+	must(t, "run", "implement", "y")
+	if run := loadRun(); run.Stages[0].ID != "mine" {
+		t.Fatalf("the plain name is the repo's: %+v", run)
+	}
+}
+
+func TestExtraArgsComeOnlyFromTheHomeConfig(t *testing.T) {
+	setup(t, "")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := initConfig(); err != nil {
+		t.Fatal(err)
+	}
+	home := `{"workflows":{"shared":{"extra_args":["--permission-mode","auto"],"stages":[{"id":"a","role":"r"}]}}}`
+	if err := os.WriteFile(filepath.Join(configDir(), "workflow.json"), []byte(home), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeResult(t, "workflow.json", `{"workflows":{"shared":{"stages":[{"id":"b","role":"r"}]},"mine":{"stages":[{"id":"c","role":"r"}]}}}`)
+	found, err := availableWorkflows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(found["shared"].ExtraArgs, " "); got != "--permission-mode auto" {
+		t.Fatalf("a repo workflow takes the home one's of the same name: %q", got)
+	}
+	if len(found["mine"].ExtraArgs) != 0 {
+		t.Fatalf("%+v", found["mine"])
+	}
+	writeResult(t, "workflow.json", `{"workflows":{"bad":{"extra_args":["--dangerously-skip-permissions"],"stages":[{"id":"c","role":"r"}]}}}`)
+	if _, err := availableWorkflows(); err == nil || !strings.Contains(err.Error(), "extra_args") {
+		t.Fatalf("a repo file must not choose flags: %v", err)
 	}
 }
 

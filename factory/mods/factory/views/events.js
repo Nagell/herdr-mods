@@ -1,10 +1,25 @@
 // The Events tab: the run's log, grouped by day, narrowed to one stage if wanted.
 import { div } from "gpui-kit";
-import { h_flex } from "gpui-base";
+import { h_flex, TextView } from "gpui-base";
 import { theme } from "herdr";
-import { eventsFor } from "../run/model.js";
+import { eventsFor, titleCase } from "../run/model.js";
 import { DayList } from "./days.js";
 import { TEXT, codeFont } from "./ui.js";
+
+// The badge says whose event it is, so the text needn't.
+const eventWho = (e, run) => (e.stage ? `${run.workflow}:${e.stage}` : run.workflow);
+const eventText = (e) => {
+  const own = e.stage && e.text.startsWith(`${e.stage} `);
+  const text = own ? e.text.slice(e.stage.length + 1) : e.text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+// The badge and message flow as one paragraph, beside the time's own column. A stage's
+// summary is an agent's words, so it's escaped: it can't add markup or links to the panel.
+const escaped = (text) =>
+  String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const eventHtml = (e, run) =>
+  `<code>${escaped(eventWho(e, run))}</code> ${escaped(eventText(e))}`;
 
 export const eventMethods = {
   eventFilter(run) {
@@ -12,7 +27,7 @@ export const eventMethods = {
     const choices = [
       { id: "all", label: "All events" },
       { id: "run", label: "The run itself" },
-      ...(run?.stages ?? []).map((s, i) => ({ id: s.id, label: s.id, divided: i === 0 })),
+      ...(run?.stages ?? []).map((s, i) => ({ id: s.id, label: titleCase(s.id), divided: i === 0 })),
     ];
     const value = choices.some((c) => c.id === this.eventsShown) ? this.eventsShown : "all";
     return h_flex()
@@ -65,16 +80,20 @@ export const eventMethods = {
                 .text_size(TEXT.caption)
                 .text_color(t.dim)
                 .font_family(codeFont())
-                .child(e.at.slice(11, 16)),
+                .child(e.at.slice(11, 16)), // Always 24-hour: the helper writes it so.
             )
             .child(
               div()
                 .flex_1()
                 .min_w(0)
-                .whitespace_normal()
-                .text_size(TEXT.small)
-                .text_color(t.muted)
-                .child(e.text),
+                .child(
+                  TextView.html(`factory-event-text-${e.at}-${i}`, eventHtml(e, run))
+                    .text_size(TEXT.small)
+                    .text_color(t.muted)
+                    .w_full()
+                    .min_w(0)
+                    .scrollable(false),
+                ),
             ),
         empty: run?.events?.length ? "No events match this filter." : "Nothing has happened yet.",
         collapsed: this.closedGroups,

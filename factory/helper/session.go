@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -56,6 +57,17 @@ func sessionName(id string) string {
 	return name
 }
 
+// What a session can't change once it has started.
+func sameLaunch(a, b *Stage) bool {
+	agent := func(s *Stage) string {
+		if s.Agent == "" {
+			return "claude"
+		}
+		return s.Agent
+	}
+	return agent(a) == agent(b) && a.Role == b.Role && a.Model == b.Model && a.Effort == b.Effort && slices.Equal(a.Args, b.Args)
+}
+
 func launchArgs(s *Stage, role, message string, run *Run, cwd string) ([]string, error) {
 	agent := s.Agent
 	if agent == "" {
@@ -101,6 +113,9 @@ func stageMessage(s *Stage, task string) string {
 // Sends the stage its message and records the attempt. The session it reports
 // to is the orchestrator, so a stage cannot start without a live one.
 func start(run *Run, s *Stage, task string) error {
+	if run.State == "paused" {
+		return errors.New("the run is paused: resume it first")
+	}
 	if !alive(run.Orchestrator) {
 		return errors.New("Factory's session is gone: continue the run from a Claude session first")
 	}
@@ -111,9 +126,13 @@ func start(run *Run, s *Stage, task string) error {
 			task += "\n\nThe work may have changed since your last attempt, so look at its current state."
 		}
 	}
-	message := fmt.Sprintf("%s\n\nWhen done, write .herdr-factory/%s-%d.json as your role instructions say, then run exactly this, alone and chained to nothing, so it needs no permission: hc send %s '%s done'. Then stop.",
+	message := fmt.Sprintf("%s\n\nWhen done, write .herdr-factory/%s-%d.json as your role instructions say, with a summary in plain words that names no finding by its id, then run exactly this, alone and chained to nothing, so it needs no permission: hc send %s '%s done'. Then stop.",
 		task, s.ID, attempt, run.Orchestrator, s.ID)
 	if alive(s.Term) {
+		// Only a session kept from the last run is live before its first attempt.
+		if s.Attempt == 0 {
+			message = "A new run starts here. Your earlier messages were for the last run; this is your task now.\n\n" + message
+		}
 		if _, err := hc("send", s.Term, message, "--json"); err != nil {
 			return err
 		}

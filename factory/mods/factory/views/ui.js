@@ -183,6 +183,36 @@ export function Button({ id, icon, label, onClick, primary = false, disabled = f
     .child(label);
 }
 
+// An outlined control for a run: there when wanted, without asking for attention.
+export function ControlButton({ id, icon, label, tooltip, active = false, disabled = false, onClick }) {
+  const t = theme();
+  return h_flex()
+    .id(id)
+    .h(26)
+    .flex_none()
+    .px(9)
+    .gap(5)
+    .items_center()
+    .rounded(6)
+    .border_1()
+    .border_color(t.border)
+    .text_size(TEXT.small)
+    .text_color(disabled ? t.dim : active ? t.accent : t.foreground)
+    .accessibility_label(tooltip ?? label)
+    .when(Boolean(tooltip), (el) => el.tooltip(tooltip))
+    .when(!disabled, (el) =>
+      el
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          onClick(cx);
+        }),
+    )
+    .child(Icon(icon, 12))
+    .child(label);
+}
+
 // The same, as the trigger of a menu.
 export function MenuButton({ id, label }) {
   const t = theme();
@@ -281,6 +311,21 @@ export function Busy(label) {
     .text_color(t.dim)
     .child(Icon("refresh", 20).spin(SPIN_MS))
     .child(label);
+}
+
+// Something to know about what's on screen: the same soft block as the Runs stat strip.
+export function Notice(text) {
+  const t = theme();
+  return div()
+    .flex_none()
+    .px(10)
+    .py(6)
+    .rounded(6)
+    .bg(halfTone(t.raised))
+    .whitespace_normal()
+    .text_size(TEXT.small)
+    .text_color(t.muted)
+    .child(text);
 }
 
 export function Message(text, error = false) {

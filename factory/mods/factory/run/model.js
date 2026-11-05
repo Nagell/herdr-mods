@@ -1,7 +1,18 @@
 // What a run's record means. No drawing and no side effects.
 export const SEVERITIES = ["critical", "high", "medium", "low"];
 
-export const running = (run) => (run?.stages ?? []).some((s) => s.state === "working");
+export const running = (run) =>
+  (run?.stages ?? []).some((s) => s.state === "working" || s.state === "paused");
+
+// Going: pinned at the top with its controls, and blocks starting another.
+export const going = (run) => run?.state === "working" || run?.state === "paused";
+
+// Workflow and stage names are written for the config: pr-analyst shows as Pr Analyst.
+export const titleCase = (name) =>
+  String(name ?? "")
+    .split(/[-_\s]+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 
 export function panelShown(node, mod) {
   if (!node || node.hidden) return false;
@@ -21,6 +32,7 @@ export function stageStatus(stage, session) {
       return { icon: "check-pending", color: "blocked", label: "Needs you" };
     return { icon: "spinner", color: "working", label: "Working" };
   }
+  if (stage.state === "paused") return { icon: "pause", color: "dim", label: "Paused" };
   if (stage.state === "failed") return { icon: "check-failure", color: "blocked", label: "Failed" };
   if (stage.state === "stopped") return { icon: "check-skipped", color: "dim", label: "Stopped" };
   if (stage.state === "done") {
@@ -35,9 +47,9 @@ export function stageStatus(stage, session) {
 // Beside a stage's name. A finished one shows its result instead.
 export function stageLabel(stage, status) {
   if (stage.state === "done") return null;
-  if (stage.state === "queued" && stage.round) return `Checks again after ${stage.loop.with}`;
+  if (stage.state === "queued" && stage.round) return `Checks again after ${titleCase(stage.loop.with)}`;
   if (stage.state === "queued")
-    return stage.after?.length ? `After ${stage.after.join(", ")}` : "Waiting";
+    return stage.after?.length ? `After ${stage.after.map(titleCase).join(", ")}` : "Waiting";
   return status.label;
 }
 
@@ -119,4 +131,3 @@ export function eventsFor(run, filter) {
   return events.filter((e) => (filter === "run" ? !e.stage : e.stage === filter));
 }
 
-export const chain = (workflow) => workflow.stages.map((s) => s.id).join(" → ");
