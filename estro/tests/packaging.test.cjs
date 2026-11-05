@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const SHIPPED = new Set(['files', 'workspace-chrome', 'workspace-status']);
+const SHIPPED = new Set(['workspace-chrome', 'workspace-status']);
 
 const layout = JSON.parse(fs.readFileSync(path.join(root, 'layouts/estro.json')));
 const blocks = (node) => [...(node.content?.mod ? [node] : []), ...(node.children ?? []).flatMap(blocks)];

@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "place": "none",
+  "title": "Better Files",
+  "settings": {
+    "refresh": {
+      "tree": "10s",
+      "file": "2s"
+    },
+    "editors": [],
+    "gutter": true
+  }
+}

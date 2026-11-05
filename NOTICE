@@ -1,8 +1,9 @@
-Herdr Mods — Better Changes, Better Sidebar, Better Tabs, Branch PR, Branch Issue,
-Hands, and Factory
+Herdr Mods — Better Changes, Better Files, Better Sidebar, Better Tabs, Branch PR,
+Branch Issue, Hands, and Factory
 Copyright 2026 Tawsif Aqib
 
 Better Changes adapts behavior and code from Herdr Desktop's shipped Changes mod.
+Better Files adapts behavior and code from Herdr Desktop's shipped Files mod.
 Herdr Desktop is available at https://github.com/herdrdev/herdr-app and is
 licensed under the Apache License, Version 2.0.
 
