@@ -4,7 +4,7 @@ Independent mods for [Herdr Desktop](https://herdr.dev/).
 
 ![Herdr Mods](preview.png)
 
-A collection of standalone mods—not a bundled workflow or replacement layout. Choose a mod below and install only that package.
+A collection of standalone mods. Choose a mod below and install only that package, or use the [Estro layout](#estro-a-layout) to get them all at once.
 
 ## Available mods
 
@@ -52,6 +52,29 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 
 ![Estro](estro/preview.png)
 
+### Install Estro
+
+Copy this prompt into your Herdr agent:
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro
+```
+
+**This installs all seven mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Branch PR, Branch Issue, Hands and Factory. You don't need to add them separately. A mod you already have is updated instead of installed again, and Factory also installs its `/factory` skill.
+
+The agent then copies the layout, checks each mod and switches your window to Estro. It tells you what each mod can do as it goes, and if you already have a layout called `estro`, it won't overwrite it.
+
+Four of the mods need extra tools:
+
+| Mod | Needs |
+| --- | --- |
+| Branch PR | Go 1.23+ and `gh` |
+| Branch Issue | Go 1.23+ and a Linear API key |
+| Hands | Go 1.23+ and macOS |
+| Factory | Go 1.23+ and Claude Code |
+
+If you don't want one of them, tell the agent, and it can leave out that mod's button and block. [estro/RECIPE.md](estro/RECIPE.md) has the full steps.
+
 ## Quick install
 
 Copy this template into your Herdr agent, replacing `<mod-folder>` with the folder name of the mod you want:
@@ -64,7 +87,7 @@ For example, to install Better Sidebar:
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-sidebar
 
-Each mod's README covers its features and requirements; its `RECIPE.md` guides installation. Installing one mod does not install the others.
+Each mod's README covers its features and requirements; its `RECIPE.md` guides installation. Installing one mod does not install the others; to get them all, [install Estro](#install-estro).
 
 ## Versions and settings
 
