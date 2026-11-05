@@ -61,7 +61,7 @@ export const detailMethods = {
     else if (this.section === "conversation") this.conversationView(body, pr);
     else this.overview(body, pr);
     root.child(body);
-    // Docked below the scroll area: gpui-kit can only scroll a virtual list from code.
+    // A handoff of several comments. Docked below the scroll area: gpui-kit can only scroll a virtual list from code.
     if (this.composer && !this.composer.entry) root.child(this.dockedComposer());
     return root.child(this.footer());
   },

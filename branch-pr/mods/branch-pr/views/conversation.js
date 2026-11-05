@@ -19,7 +19,6 @@ import {
   IconButton,
   Markdown,
   Message,
-  SmallButton,
   TextBox,
   TextButton,
   codeFont,
@@ -107,15 +106,6 @@ export const conversationMethods = {
                 send: (agent, cx) => this.sendUnresolved(agent, cx),
               }),
             ),
-          )
-          .child(
-            SmallButton({
-              id: "pr-add-comment",
-              icon: "comment",
-              label: "Comment",
-              disabled: this.mutating,
-              onClick: (cx) => this.compose("comment", null, null, cx),
-            }),
           ),
       );
   },
@@ -213,7 +203,12 @@ export const conversationMethods = {
   conversationView(body, pr) {
     const t = theme();
     const entries = conversationEntries(pr, { author: this.author, unresolved: this.unresolved });
-    if (!entries.length) body.child(Message("No comments match these filters."));
+    if (!entries.length)
+      body.child(
+        Message(
+          this.author || this.unresolved ? "No comments match these filters." : "No comments yet.",
+        ),
+      );
     entries.forEach((entry, i) => {
       const thread = entry.thread;
       const comments = thread ? thread.comments : [entry];
@@ -268,6 +263,35 @@ export const conversationMethods = {
       }
       body.child(block);
     });
+    body.child(this.newCommentBox(entries.length > 0));
+  },
+
+  // Always here after the last comment, so saying something takes no extra click.
+  newCommentBox(divided) {
+    const t = theme();
+    const posting = this.mutating && !this.composer;
+    return v_flex()
+      .id("pr-new-comment")
+      .flex_none()
+      .min_w(0)
+      .px(8)
+      .py(10)
+      .gap(8)
+      .when(divided, (el) => el.mt(4).border_t(1).border_color(t.border))
+      .child(TextBox({ id: "pr-comment-input", state: this.newComment, label: "New comment" }))
+      .child(
+        h_flex()
+          .justify_end()
+          .child(
+            Button({
+              id: "pr-add-comment",
+              label: posting ? "Sending…" : "Comment",
+              primary: true,
+              disabled: this.mutating || !this.newComment.value().trim(),
+              onClick: (cx) => this.postComment(cx),
+            }),
+          ),
+      );
   },
 
   dockedComposer() {
@@ -316,13 +340,7 @@ export const conversationMethods = {
           .child(
             Button({
               id: "pr-submit",
-              label: this.mutating
-                ? "Sending…"
-                : toAgent
-                  ? "Send"
-                  : composer.entry
-                    ? "Reply"
-                    : "Comment",
+              label: this.mutating ? "Sending…" : toAgent ? "Send" : "Reply",
               primary: true,
               disabled,
               onClick: (cx) =>

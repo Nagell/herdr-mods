@@ -32,6 +32,7 @@ import { Panel } from "./views/ui.js";
 const CONTEXT_POLL_MS = 1000;
 const REFRESH_INTERVAL_MS = 60000;
 const FIRST_LOAD_LIMIT_MS = 30000;
+const NOTICE_MS = 5000;
 // Preferences a person may change in the installed mod.json under `settings`.
 const DEFAULT_SETTINGS = {
   refresh: { every: "60s", search_debounce: "450ms" },
@@ -98,6 +99,12 @@ class PullRequests extends View {
       if (this.draftKey) localStorage.setItem(this.draftKey, this.editor.value());
       cx.notify();
     });
+    // Its own state, so a new comment stays put while a reply or handoff is being written.
+    this.newComment = TextareaState.new({ placeholder: "Write a comment…", rows: 4 });
+    this.newComment.on("change", (_e, cx) => {
+      if (this.commentKey) localStorage.setItem(this.commentKey, this.newComment.value());
+      cx.notify();
+    });
     // Its own state, so a squash message never mixes with a comment draft.
     this.squashMessage = TextareaState.new({ placeholder: "Commit message", rows: 6 });
     this.squashMessage.on("change", (_e, cx) => cx.notify());
@@ -137,6 +144,14 @@ class PullRequests extends View {
       if (Date.now() - this.contextSince > FIRST_LOAD_LIMIT_MS) {
         this.listLoaded = true;
         this.branchLoaded = true;
+      }
+      // A confirmation says its piece and goes; an error stays until it's dealt with.
+      if (this.notice !== this.noticeShown) {
+        this.noticeShown = this.notice;
+        this.noticeSince = Date.now();
+      } else if (this.notice && Date.now() - this.noticeSince > NOTICE_MS) {
+        this.notice = null;
+        cx.notify();
       }
       const sp = activeSpace();
       const key = spaceContextKey(sp);

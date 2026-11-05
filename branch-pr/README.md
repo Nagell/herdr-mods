@@ -8,7 +8,7 @@ A pull-request panel for [Herdr Desktop](https://herdr.dev/), built to look like
 - **Fix with agent** on a failed check, and **Send N to agent** for all unresolved threads, deliver in one click to the agent on the PR, or another you pick.
 - **Agents on the PR** are listed with their state; click one to go to it.
 - **Actions** in the PR's header holds Merge, Close and Reopen, which ask first. A merge names the commit you saw, so a newer push is refused. **Merge when ready** turns on GitHub's auto-merge, offered only when GitHub has something required to wait for; a merge past anything else lists it first. GitHub merges whatever the branch holds once checks pass, so a push after you turn it on goes in too.
-- **Comments:** threads, reviews and comments with their code, unread markers, author and unresolved filters, reply, resolve and reopen, and sending one comment to an agent with a prompt you can edit.
+- **Comments:** threads, reviews and comments with their code, unread markers, author and unresolved filters, a box for a new comment after the last, reply, resolve and reopen, and sending one comment to an agent with a prompt you can edit.
 - **Checks:** workflows, jobs, steps and failed output, with links to GitHub.
 - **Reviewers:** who approved, who asked for changes, who is still to review, and asking someone again.
 - **Worktrees:** a PR's checkouts, and **New worktree** to make another as its own space, with a terminal or an agent in its first tab.

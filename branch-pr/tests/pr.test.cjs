@@ -676,6 +676,50 @@ test('a failed post keeps the draft; a good one clears it', async () => {
   assert.equal(h.storage.has(draft), false);
 });
 
+test('a new comment is written after the last one, and its draft stays with the PR', async () => {
+  const h = harness();
+  h.mod.adoptPR(PR());
+  h.mod.section = 'conversation';
+  let tree = h.mod.render();
+  assert.ok(find(tree, 'pr-new-comment'));
+  assert.equal(find(tree, 'pr-add-comment').handlers.click, undefined, 'nothing to post yet');
+  h.mod.newComment.set_value('Hello');
+  h.storage.set(h.mod.commentKey, 'Hello');
+  h.mod.backToList(h.cx);
+  h.mod.adoptPR(PR());
+  assert.equal(h.mod.newComment.value(), 'Hello');
+  h.mod.api = async () => { throw Error('offline'); };
+  find(h.mod.render(), 'pr-add-comment').handlers.click({}, h.cx); await h.flush();
+  assert.equal(h.mod.newComment.value(), 'Hello', 'a failed post keeps it');
+  const asked = [];
+  h.mod.api = async (r) => { asked.push(r); return r.action === 'detail' ? PR() : {}; };
+  find(h.mod.render(), 'pr-add-comment').handlers.click({}, h.cx); await h.flush();
+  assert.equal(asked[0].action, 'comment');
+  assert.equal(asked[0].body, 'Hello');
+  assert.equal(h.mod.newComment.value(), '');
+  assert.equal(h.storage.has(h.mod.commentKey), false);
+});
+
+test('a confirmation leaves after a few seconds', () => {
+  const h = harness();
+  h.tick(); // settles on the space first, which clears any notice
+  h.mod.notice = 'Saved to GitHub.';
+  h.tick();
+  assert.equal(h.mod.notice, 'Saved to GitHub.');
+  h.mod.noticeSince = Date.now() - 6000;
+  h.tick();
+  assert.equal(h.mod.notice, null);
+});
+
+test('comments say none exist unless a filter is hiding them', () => {
+  const h = harness();
+  h.mod.pr = PR({ comments: [], reviews: [], threads: [] });
+  h.mod.section = 'conversation';
+  assert.match(strings(h.mod.render()), /No comments yet/);
+  h.mod.unresolved = true;
+  assert.match(strings(h.mod.render()), /No comments match these filters/);
+});
+
 test('read markers notice new and edited comments, and survive leaving', () => {
   const storage = new Map();
   const h = harness({ storage });

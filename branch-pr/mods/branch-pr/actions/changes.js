@@ -105,21 +105,33 @@ export const changeMethods = {
     cx.notify();
   },
 
-  mutate(action, cx, thread) {
+  postComment(cx) {
+    const draft = this.commentKey;
+    this.mutate("comment", cx, undefined, {
+      body: this.newComment.value(),
+      saved: () => {
+        this.newComment.set_value("");
+        localStorage.removeItem(draft);
+      },
+    });
+  },
+
+  mutate(action, cx, thread, { body = this.editor.value(), saved } = {}) {
     if (this.mutating) return;
     const key = this.spaceKey;
     const repo = this.pr.repository;
     const number = this.pr.number;
     const draft = this.draftKey;
-    const body = this.editor.value();
     this.mutating = true;
     this.error = null;
+    cx.notify();
     cx.spawn(async (cx) => {
       try {
         await this.api({ action, repo, number, thread, body });
         if (key !== this.spaceKey || repo !== this.pr?.repository || number !== this.pr?.number)
           return;
-        if (action === "comment" || action === "reply") {
+        if (saved) saved();
+        else if (action === "comment" || action === "reply") {
           localStorage.removeItem(draft);
           this.composer = null;
           this.draftKey = null;

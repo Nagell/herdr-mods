@@ -109,6 +109,11 @@ export const savedMethods = {
         saved.checkOpen && typeof saved.checkOpen === "object" ? saved.checkOpen : {};
       this.composer = null;
       this.draftKey = null;
+      // Cleared first so that restoring the draft doesn't write it to the old PR's key.
+      this.commentKey = null;
+      const commentKey = `pr-draft:${this.spaceKey}:${repo}:${pr.id}:comment`;
+      this.newComment.set_value(localStorage.getItem(commentKey) ?? "");
+      this.commentKey = commentKey;
       this.conversationsVisited = this.section === "conversation";
     }
     this.pr = { ...pr, repository: repo };
