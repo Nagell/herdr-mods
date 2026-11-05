@@ -234,13 +234,19 @@ static void postMouse(int pid, CGEventType type, CGPoint point, CGMouseButton bu
                                          eventNumber:0
                                           clickCount:clicks
                                             pressure:pressing ? 1.0 : 0.0];
-        if (event.CGEvent) {
-            CGEventPostToPid(pid, event.CGEvent);
+        // Read once: each read of the property may be a new copy, losing the field set below.
+        CGEventRef native = event.CGEvent;
+        if (native) {
+            // The event type alone is not enough: apps read the button from this field, and
+            // it starts at 0, so a right press would arrive as a left one.
+            CGEventSetIntegerValueField(native, kCGMouseEventButtonNumber, button);
+            CGEventPostToPid(pid, native);
             return;
         }
     }
     CGEventRef event = CGEventCreateMouseEvent(NULL, type, point, button);
     CGEventSetIntegerValueField(event, kCGMouseEventClickState, clicks);
+    CGEventSetIntegerValueField(event, kCGMouseEventButtonNumber, button);
     CGEventPostToPid(pid, event);
     CFRelease(event);
 }
