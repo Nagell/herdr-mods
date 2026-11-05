@@ -67,6 +67,9 @@ export const agentMethods = {
       return command
         ? {
             ...parent,
+            // Its own address, so a prompt box remembers the choice and not just the parent.
+            address,
+            parentAddress: parent.address,
             spawn: true,
             run: command,
             parentName: agentName(parent),
@@ -103,7 +106,7 @@ export const agentMethods = {
       "--bg",
       "--json",
       "--parent",
-      agent.address,
+      agent.parentAddress,
       ...(machine ? ["--on", machine] : []),
       ...(this.workFolder() ? ["--cwd", this.workFolder()] : []),
       ...agent.run,

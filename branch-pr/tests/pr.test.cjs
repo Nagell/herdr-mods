@@ -625,6 +625,24 @@ test('(spawn) starts a sub-agent under the running agent, in the worktree, with 
   assert.equal(h.ran.at(-1)[1].folder, '/wt/PR-2', 'a new agent works in the worktree too');
 });
 
+test('a comment sent with (spawn) stays a spawn through the editable prompt', async () => {
+  const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
+  h.mod.pr = PR({ threads: [THREAD()] });
+  h.mod.section = 'conversation';
+  h.mod.sp = { id: 'space', folder: '/repo', machine: null };
+  h.mod.loadNewAgents(h.mod.sp, h.cx); await h.flush();
+  h.live.agents = [AGENT('t1', { status: 'working', program: { key: 'claude' } })];
+  await pick(h, 'pr-agent-send-t1', 'spawn:t1');
+  const box = strings(h.mod.render());
+  assert.match(box, /Send to Agent t1 \(spawn\)/);
+  assert.doesNotMatch(box, /busy/);
+  h.mod.editor.set_value('Look at this');
+  click(h.mod.render(), 'pr-submit', h); await h.flush();
+  assert.equal(h.sent[0][0], 'run');
+  assert.equal(h.sent[0][4], 't1');
+  assert.match(h.sent[0].at(-1), /^Look at this/);
+});
+
 test('a comment can go to a new agent through the same editable prompt', async () => {
   const h = harness({ known: [{ key: 'claude', name: 'Claude Code', run: ['claude'], installed: true }] });
   h.mod.pr = PR({ threads: [THREAD()] });
