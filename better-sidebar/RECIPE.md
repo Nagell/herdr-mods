@@ -8,9 +8,9 @@ A replacement spaces sidebar for a person's existing Herdr layout. Space names a
 
 A full-height theme-chrome sidebar with a 31px header labeled Spaces and a plus button. The body scrolls vertically. Main space rows are 30px high; nested worktrees are 28px. A row with PR status gets 22px extra height. Active rows use the theme's selected background; other rows highlight on hover.
 
-Main rows have an 18px rounded colored initial avatar, a truncating space name, then a flexible right-aligned branch tail at 90% of the UI font size. Always show the branch, even main/master or a duplicate of the name. Show detached for detached HEAD. Ahead counts use green and behind counts red. Worktrees indent 22px with a branch icon instead of an avatar. Keep names and branches on the same line and make long text truncate rather than widening the sidebar.
+Main rows have an 18px rounded colored initial avatar, a truncating space name, then a flexible right-aligned branch tail at 11.5px. Hide the branch when it is main, master or the same as the name. Show detached for detached HEAD. The selected space also shows ahead and behind as badges, like `↑2`. Worktrees indent 22px with a branch icon instead of an avatar. Keep names and branches on the same line and make long text truncate rather than widening the sidebar.
 
-PR lines indent beneath the name: 27px for main rows, 44px for worktrees. Show the newest matching open PR as `#42 · Open` with its local SVG icon. Open is theme ansi2 green; draft is dim gray with a draft icon; merged is ansi5 purple with a merged icon; closed is ansi1 red with a closed icon. Failed/error/timed-out/action-required/startup-failure checks color an open non-draft PR red and label it Checks failed. Omit the visible Draft label: show only its icon and linked number, keeping Draft in the tooltip. Other statuses keep their labels. Terminal PR states take precedence over draft/check flags. A +N summary represents additional open matches. Tooltips identify repository, number, title, and state.
+PR lines indent beneath the name: 27px for main rows, 44px for worktrees. Show the newest matching open PR as its icon and number, `#42`, with its state in the color and the tooltip. Open is theme ansi2 green; draft is dim gray with a draft icon; merged is ansi5 purple with a merged icon; closed is ansi1 red with a closed icon. Failed/error/timed-out/action-required/startup-failure checks color an open non-draft PR red and name it Checks failed in the tooltip. Keep Draft in the tooltip. Other statuses keep their labels. Terminal PR states take precedence over draft/check flags. A +N summary represents additional open matches. Tooltips identify repository, number, title, and state.
 
 When other machines are known, add a 26px machine header with a monitor/server icon, connection indication, fold control, and new-space button. A mod narrower than 160px becomes a compact rail of space numbers and a PR icon, or the existing attention glyph when no PR exists. Use the element's actual size, not an assumed layout node name.
 
@@ -30,7 +30,7 @@ Agent states are not PR states: working/blocked/done/idle do not change the PR's
 
 ## Built from
 
-One runtime folder, `mods/better-sidebar/`: `main.js`, `pr-status.js`, `typography.js`, `mod.json`, and its own SVG assets. No layouts folder, key snippet, helper binary, or other custom mod is required. Manifest: `{ "place": "none", "title": "Better Sidebar" }`.
+One runtime folder, `mods/better-sidebar/`: `main.js`, `settings.js`, `mod.json`, `git/` (`checkouts.js`, `pr-status.js`), `views/` (`spaces.js`, `agents.js`, `footer.js`, `panel-toggle.js`, `ui.js`, `find-node.js`) and `icons/`. Text sizes are plain px from Herdr's own mods.
 
 Use GPUI div/svg and gpui-base vertical/horizontal flex containers. Herdr supplies spaces, panes, machines, theme, settings, exec, hc, watchFolder, window, layout, shared/setShared, localStorage, run, openOverlay, timers, and size-change callbacks. Commands are space.new, space.select, and space.move. Open the shipped menu as a popup with `{tab: "space", target: {id}}`.
 
@@ -54,7 +54,7 @@ A `settings` block in the installed `mods/better-sidebar/mod.json` carries the p
 ## Done when
 
 - All tests pass and herdr-app check succeeds for the runtime folder.
-- Live rendering shows right-aligned branches on the same name row for spaces and worktrees, including main/master.
+- Live rendering shows right-aligned branches on the same name row for spaces and worktrees, hiding main, master and a branch that repeats the name.
 - Worktrees nest under the correct checkout, without grouping identical paths across machines.
 - Open, draft, merged, closed, and failing-check PR rows have the described icons/colors in populated native renders.
 - Git reads use the space machine while gh uses the local login and explicit repository.

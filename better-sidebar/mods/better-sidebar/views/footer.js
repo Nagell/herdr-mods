@@ -1,8 +1,9 @@
 // The sidebar's last line: Settings and Add machine as icons. Herdr's own footer
 // gives each a labelled row, which costs twice the height.
-import { div, svg } from "gpui-kit";
+import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, run, updates } from "herdr";
+import { Icon, SIZE } from "./ui.js";
 
 export class Footer {
   init() {}
@@ -10,7 +11,7 @@ export class Footer {
   button(id, label, action, t, icons) {
     return h_flex()
       .id(id)
-      .h(26)
+      .h(SIZE.icon)
       .px(6)
       .gap(3)
       .flex_none()
@@ -27,7 +28,7 @@ export class Footer {
 
   render() {
     const t = theme();
-    const icon = (name, size = 14) => svg(`mods/better-sidebar/${name}.svg`).size(size).flex_none();
+    const updateDot = updates().app.ready ? [div().size(6).rounded_full().bg(t.accent)] : [];
     return h_flex()
       .id("sidebar-footer")
       .size_full()
@@ -39,15 +40,14 @@ export class Footer {
       .border_color(t.border)
       .child(
         this.button("settings", "Settings", () => run("app.settings"), t, [
-          icon("settings"),
-          // An update is ready.
-          ...(updates().app.ready ? [div().size(6).rounded_full().bg(t.accent)] : []),
+          Icon("settings"),
+          ...updateDot,
         ]),
       )
       .child(
         this.button("machine", "Add machine", () => run("mod.open", { name: "machine-add" }), t, [
-          icon("plus", 12),
-          icon("server"),
+          Icon("plus", 12),
+          Icon("server"),
         ]),
       );
   }

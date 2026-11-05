@@ -4,11 +4,11 @@ A standalone sidebar for Herdr Desktop: spaces with right-aligned Git branches, 
 
 ![Better Sidebar](preview.png)
 
-The screenshot shows a nested worktree with its branch aligned right and a gray draft PR badge beneath it. Cmd-click the PR number to open it on GitHub.
+Cmd-click a PR number to open it on GitHub.
 
-- The current branch stays on the **same row as the space name, aligned right**, including `main`, `master`, and branches already used as the space's name.
+- The current branch sits on the **same row as the space name, aligned right**, except `main`, `master` and a branch that repeats the name, which go without saying. The selected space also shows how far it is ahead of or behind its remote.
 - Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status.
-- A PR line below the space/worktree shows an icon and number: **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. Drafts omit the visible status label; their icon, color, and tooltip convey the state. Colors follow the current theme.
+- A PR line below the space/worktree shows an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. The tooltip says which. Colors follow the current theme.
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, colored avatars, ahead/behind counts, machine groups, and the compact sidebar rail.
 
@@ -81,11 +81,13 @@ The installed `mods/better-sidebar/mod.json` has a `settings` block; copy your e
 
 ## Development
 
-- `mods/better-sidebar/main.js` — space navigation, Git metadata, worktree/machine grouping, and native rendering.
-- `mods/better-sidebar/agents.js` — the agents block and its groupings.
-- `mods/better-sidebar/footer.js` — the one-line footer.
-- `mods/better-sidebar/pr-status.js` — GitHub discovery, PR appearance, caching, and stale-response protection.
-- `mods/better-sidebar/typography.js` — sizing from Herdr's live font settings.
+In `mods/better-sidebar/`:
+
+- `main.js`: picks the part a block draws, from `view` in its props. `settings.js`: shared with the other mods.
+- `git/checkouts.js`: reading a space's checkout. `git/pr-status.js`: GitHub discovery, PR appearance, caching, and stale-result handling.
+- `views/spaces.js`, `views/agents.js`, `views/footer.js`, `views/panel-toggle.js`: the parts. `views/ui.js`: the design kit, Herdr's sizes and small components, with only what this mod uses.
+- `icons/`: this mod's icons.
+- `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.
 - `tests/spaces.test.cjs` — isolated Herdr/GPUI stand-ins for discovery, polling, races, grouping, rendering, and packaging.
 
 ```sh

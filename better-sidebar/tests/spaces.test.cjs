@@ -73,13 +73,10 @@ function harness() {
     panes: () => live.panes,
     machines: () => live.machines,
     theme: () => colors,
-    settings: () => ({ ui_font_size: 13 }),
     layout: () => ({ id: "sidebar", size: { px: 268 } }),
     window: () => ({ active: true }),
     props: () => ({}),
-    Agents: class {},
-    Footer: class {},
-    PanelToggle: class {},
+    Popover: { new: element },
     shared: (key) => values[key],
     setShared: (key, value) => {
       values[key] = value;
@@ -97,11 +94,18 @@ function harness() {
     },
   };
   vm.createContext(context);
-  for (const file of ["typography.js", "settings.js", "pr-status.js", "main.js"]) {
+  for (const file of [
+    "settings.js",
+    "git/pr-status.js",
+    "git/checkouts.js",
+    "views/find-node.js",
+    "views/ui.js",
+    "views/spaces.js",
+  ]) {
     const source = fs
       .readFileSync(path.join(runtime, file), "utf8")
       .replace(/^import\s+[\s\S]*?;\n/gm, "")
-      .replace("export default class Spaces", "globalThis.Spaces = class Spaces")
+      .replace("export class Spaces", "globalThis.Spaces = class Spaces")
       .replaceAll("export ", "");
     vm.runInContext(source, context);
   }
@@ -318,6 +322,15 @@ test("worktree spaces nest under the matching main checkout, with machines isola
   assert.equal(rows[2].tree, null);
 });
 
+test("a row shows an unusual branch, and ahead/behind only when selected", () => {
+  const h = harness();
+  const g = { branch: "topic", ahead: 2, behind: 1 };
+  assert.match(text(h.mod.gitTail(g, true, h.colors)), /topic.*\u21912.*\u21931/);
+  assert.equal(text(h.mod.gitTail(g, false, h.colors)).trim(), "topic");
+  assert.equal(text(h.mod.gitTail({ branch: "master" }, false, h.colors)).trim(), "");
+  assert.equal(text(h.mod.gitTail({ branch: "topic" }, false, h.colors, "topic")).trim(), "");
+});
+
 test("space rows align branches right and show their own PR underneath", () => {
   const h = harness();
   const space = { id: "main", name: "repo", folder: "/repo", tabs: [{ id: "tab", active: true }] };
@@ -330,9 +343,10 @@ test("space rows align branches right and show their own PR underneath", () => {
     prs: [{ number: 42, repository: "owner/repo", title: "Fix", state: "OPEN" }],
   });
   const row = h.mod.row({ w: space, i: 0, g, tree: null }, h.colors);
-  assert.match(text(row), /repo main/);
-  assert.match(text(find(row, "space-pr-line-main")), /#42 · Open/);
-  assert.ok("justify_end" in h.mod.gitTail(g, null, "repo", h.colors).attributes);
+  assert.doesNotMatch(text(row), /main/);
+  assert.match(text(find(row, "space-pr-line-main")), /#42/);
+  assert.doesNotMatch(text(find(row, "space-pr-line-main")), /Open/);
+  assert.ok("justify_end" in h.mod.gitTail(g, false, h.colors).attributes);
   row.handlers.mouse_down_left();
   row.handlers.mouse_up_left({}, h.cx);
   assert.equal(h.commands[0].name, "space.select");
@@ -483,7 +497,14 @@ test("real Git metadata groups a worktree beneath its main checkout", async () =
 });
 
 test("package is standalone with local icons and no layout or helper dependency", () => {
-  const source = ["main.js", "agents.js", "footer.js", "panel-toggle.js"]
+  const source = [
+    "main.js",
+    "views/spaces.js",
+    "views/agents.js",
+    "views/footer.js",
+    "views/panel-toggle.js",
+    "views/ui.js",
+  ]
     .map((file) => fs.readFileSync(path.join(runtime, file), "utf8"))
     .join("\n");
   assert.doesNotMatch(
@@ -514,7 +535,7 @@ test("package is standalone with local icons and no layout or helper dependency"
     "merged",
     "closed",
   ]) {
-    assert.ok(fs.existsSync(path.join(runtime, `${icon}.svg`)), icon);
+    assert.ok(fs.existsSync(path.join(runtime, `icons/${icon}.svg`)), icon);
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, "mod.json"))).place, "none");
   assert.equal(fs.existsSync(path.join(__dirname, "../layouts")), false);
@@ -554,6 +575,10 @@ test("spaces publish each space's main space for the agents block", () => {
   assert.equal(parents.main.label, "shop");
   assert.equal(parents.wt.label, "shop", "a worktree goes under its main space");
   assert.equal(parents.wt.key, parents.main.key);
-  assert.equal(parents.orphan.label, "lonely", "without an open main space, the repository's folder");
+  assert.equal(
+    parents.orphan.label,
+    "lonely",
+    "without an open main space, the repository's folder",
+  );
   assert.equal(parents.plain, undefined, "not a repository");
 });
