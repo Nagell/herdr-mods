@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "place": "none",
+  "title": "Factory",
+  "settings": {
+    "refresh": {
+      "run": "1500ms"
+    }
+  }
+}

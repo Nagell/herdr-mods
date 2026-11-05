@@ -14,6 +14,7 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 | [Branch PR](branch-pr/README.md) | GitHub PR sidebar that shows what stands between a PR and a merge, hands failures and comments to agents, and merges when ready. |
 | [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, with an All tab, state, priority and assignee edits, comments, and Start work worktrees with agent handoff. |
 | [hands](hands/README.md) | A `hands` CLI that gives agents hands on the Mac: read any app's accessibility tree, click, type, set values, scroll, screenshot a window, record the screen. Plus a panel with its captures, a filterable action history and its permissions. |
+| [Factory](factory/README.md) | Staged agent runs: a named workflow of agents, such as developer then reviewer, shown as a tree of live sessions, with findings by severity, review loops and follow-ups. |
 
 ### Better Changes
 
@@ -38,6 +39,10 @@ A collection of standalone mods—not a bundled workflow or replacement layout. 
 ### hands
 
 ![hands](hands/preview.png)
+
+### Factory
+
+![Factory](factory/preview.png)
 
 ## Quick install
 
@@ -71,6 +76,8 @@ Requires Node.js and Go for development tests:
 (cd branch-issue/helper && go test ./... && go vet ./...)
 (cd hands && node --test tests/*.test.cjs)
 (cd hands/helper && go test ./... && go vet ./...)
+(cd factory && node --test tests/*.test.cjs)
+(cd factory/helper && go test ./... && go vet ./...)
 ```
 
 The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes uses Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a bundled local Go helper (built during installation with Go 1.23+); see its README for access and explicit write actions. hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a bundled Go helper and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing.
