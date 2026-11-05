@@ -1,8 +1,8 @@
-# hands
+# Hands
 
 Hands for a coding agent on the rest of the Mac, as a Herdr mod for [Herdr Desktop](https://herdr.dev/): a small `hands` command that lists apps and windows, reads an app's accessibility tree as numbered lines, clicks, types, presses keys, sets values, scrolls, screenshots a window and records the screen. Plus a panel with its screenshots and recordings, a history of what it did, and whether Herdr holds the two permissions it needs.
 
-![hands](preview.png)
+![Hands](preview.png)
 
 - **See:** `hands see --app Finder` prints the app's accessibility tree, one numbered element per line with role, title, value and frame, and saves that snapshot. `--find text` shows only matches with their ancestors; `--window title` narrows to one window; `--max` caps the output.
 - **Act:** `hands click 12`, `hands set 7 "query"`, `hands focus 7`, `hands scroll 3 --dy -5` act on elements from the last snapshot through the Accessibility API, falling back to synthetic mouse or keyboard events when an element has no action. `hands type "text"` and `hands key cmd+shift+s` send keyboard input. `hands click --at 400,300` clicks a screen point.

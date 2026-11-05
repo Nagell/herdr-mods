@@ -19,7 +19,7 @@ import (
 
 const (
 	mod    = "hands"
-	title  = "hands"
+	title  = "Hands"
 	binary = "hands"
 )
 
@@ -144,7 +144,8 @@ func install(appHome string, update bool, linkDir string) error {
 	}
 	if err == nil {
 		found, readErr := readManifest(target)
-		if !update || readErr != nil || found["title"] != title {
+		// Installs from before 0.5.1 are titled in lower case.
+		if !update || readErr != nil || (found["title"] != title && found["title"] != "hands") {
 			return fmt.Errorf("%s already exists; use --update only for an existing %s install", target, title)
 		}
 		installed = found

@@ -1,7 +1,7 @@
 {
-  "version": "0.5.0",
+  "version": "0.5.1",
   "place": "none",
-  "title": "hands",
+  "title": "Hands",
   "settings": {
     "pause": {
       "after_action": "500ms",

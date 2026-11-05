@@ -3,7 +3,7 @@ name: hands
 description: Operate macOS apps from a Herdr terminal with the `hands` CLI: read an app's accessibility tree as numbered elements, click, set text, press keys, scroll, screenshot a window, record the screen. Use when a task needs a native app's GUI that no shell command, file, API or existing CLI can reach.
 ---
 
-# hands
+# Hands
 
 `hands` gives you hands on the Mac. Prefer a programmatic path first: a shell command, a file, an API, the app's own CLI. Reach for `hands` only when a visible app must be driven.
 

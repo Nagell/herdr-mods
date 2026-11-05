@@ -1,4 +1,4 @@
-# hands
+# Hands
 
 A Herdr mod that gives a coding agent hands on the rest of the Mac through one command, `hands`: list apps and windows, read an app's accessibility tree as numbered lines, press, set, focus, type, key chords, scroll, screenshot a window, record the screen. Built from scratch on the system frameworks: Go with cgo and Objective-C, no third-party computer-use tool as a dependency or a reference. Simple, light, just works. The mod pane shows screenshots and recordings, a filterable history of actions, permission state with a button to ask for it, and whether a recording runs.
 
@@ -35,4 +35,4 @@ A `settings` block in the installed `mods/hands/mod.json` carries the person's p
 
 - `go test ./...` and `go vet ./...` pass in `helper/`; `node --test tests/*.test.cjs` pass; `herdr-app check ~/.config/herdr-app/mods/hands` passes.
 - From a Herdr terminal: `hands see --app Finder` prints a numbered tree; `hands click N` opens a sidebar item; `hands set` fills a text field in TextEdit; `hands shot --app Finder out.png` writes a PNG; `hands record start x.mov`, a few actions, `hands record stop` yields a playable movie.
-- The root README table has a hands row and `hands/README.md` reads like the other mods'.
+- The root README table has a Hands row and `hands/README.md` reads like the other mods'.

@@ -177,3 +177,16 @@ func TestLinksTheBinaryAndLeavesARealFileAlone(t *testing.T) {
 		t.Fatalf("printed %q", printed)
 	}
 }
+
+func TestUpdatesAnInstallFromBeforeTheTitleChanged(t *testing.T) {
+	fakeTools(t)
+	app, links := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(app, "mods", mod, "mod.json"), `{"title":"hands","version":"0.5.0"}`)
+	if err := install(app, true, links); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readManifest(filepath.Join(app, "mods", mod))
+	if err != nil || got["title"] != "Hands" {
+		t.Fatalf("manifest %v, %v", got, err)
+	}
+}
