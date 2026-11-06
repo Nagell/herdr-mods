@@ -66,7 +66,7 @@ Copy this prompt into your Herdr agent:
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro
 ```
 
-**This installs all eight mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Better Files, Branch PR, Branch Issue, Hands and Factory. You don't need to add them separately. A mod you already have is updated instead of installed again, and Factory also installs its `/factory` skill.
+**This installs all nine mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Better Files, Better Config, Branch PR, Branch Issue, Hands and Factory. You don't need to add them separately. A mod you already have is updated instead of installed again, and Factory also installs its `/factory` skill.
 
 The agent then copies the layout, checks each mod and switches your window to Estro. It tells you what each mod can do as it goes, and if you already have a layout called `estro`, it won't overwrite it.
 
