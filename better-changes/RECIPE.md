@@ -36,13 +36,15 @@ Refresh spins its icon for at least one 900ms turn, and until the reads finish. 
 
 Mod commands, for shown copies: `better-changes.refresh`, `changes`, `commit`, `flat`, `tree`, `inline`, `split`, `open:<path>`.
 
+A key bound to `mod.open:better-changes` opens the panel, showing hidden nodes above it and selecting it in its stacks. On an open panel it does nothing, unless the `panel.toggle` setting is `true` (default `false`): then it hides the slot the panel fills. A layout without the panel gets a notification.
+
 A conflicted file's diff reads the working file and shows each marked block with three lines around it, under a heading "Conflict N of M · line L", with the file's own line numbers. Markers are on `raised`, yours tinted `accent`, incoming `ansi2`, base `dim`. Inline keeps file order; side by side pairs yours and incoming by position under columns labelled Yours and Incoming, and leaves out the base. A file with no markers says so. If `git ls-files -u` lacks stage 2 or 3, it says that side deleted the file. There's no resolution view.
 
 ## Built from
 
-One mod, `mods/better-changes/`: `main.js`, `settings.js`, `mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `git/` (`repository.js`, `reads.js`, `model.js`), `views/` (`sidebar.js`, `diff.js`, `pane-header.js`, `ui.js`) and `icons/` (Lucide, plus Herdr's pane header icons). `mod.json` is `{ "place": "right", "size": 368, "title": "Better Changes" }`. Props `{ "mode": "diff", "space", "source", "selection" }` make a diff tab; with none it's the sidebar.
+One mod, `mods/better-changes/`: `main.js`, `settings.js`, `panel.js`, `mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `git/` (`repository.js`, `reads.js`, `model.js`), `views/` (`sidebar.js`, `diff.js`, `pane-header.js`, `ui.js`) and `icons/` (Lucide, plus Herdr's pane header icons). `mod.json` is `{ "place": "right", "size": 368, "title": "Better Changes", "overlay": { "kind": "popup", "width": 1, "height": 1, "frame": "none" } }`. Props `{ "mode": "diff", "space", "source", "selection" }` make a diff tab; `props().overlay` means the panel key, which acts on the layout and closes itself, because `<mod>.<command>` can't reach a hidden copy; with none it's the sidebar.
 
-It uses `div`, `svg`, flex containers, `Popover`, `TextareaState`/`Textarea`, `v_virtual_list` and `Scrollbar`. From Herdr: spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, layout, shared, setShared, run, nextCommand, localStorage. Commands: `tab.new` with mod and props, `tab.select`, `tab.rename`, `tab.close`. The only program it runs is Git; `cx.open_url` opens commit links. It reaches the network only through the person's own browser.
+It uses `div`, `svg`, flex containers, `Popover`, `TextareaState`/`Textarea`, `v_virtual_list` and `Scrollbar`. From Herdr: spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, layout, shared, setShared, run, nextCommand, notify, closeOverlay, localStorage. Commands: `tab.new` with mod and props, `tab.select`, `tab.rename`, `tab.close`, `layout.select`, `layout.show`, `layout.hide`. The only program it runs is Git; `cx.open_url` opens commit links. It reaches the network only through the person's own browser.
 
 It publishes `shared("mod-icons")["better-changes"]` for a tab bar that draws mod icons. In the diff tab, a 30px row under the pane header shows the file. A layout can instead use this mod as its pane header (`pane.header.content.mod`, props `{ pane, terminal }`): it draws Herdr's header, reads no Git, and shows `shared("pane-heads")[pane]` = `{ title, detail, icon, add, del }`, which the diff publishes, so it then skips its own row.
 
@@ -62,3 +64,4 @@ Limit the list to 1,000 files, diffs to 1,500 lines and 4,000 characters per lin
 - Commit takes only what's staged. Amend can change only the message, keeps a draft, and refuses when HEAD moved.
 - Commits shows the unpushed group only when something is unpushed, and clears when it's pushed. A feature branch shows `origin/HEAD` separately.
 - One tab per space, reused and renamed, restoring its file after a restart, in the chosen diff style.
+- A key on `mod.open:better-changes` opens a closed panel and leaves an open one alone; with `panel.toggle` on, it closes an open one.

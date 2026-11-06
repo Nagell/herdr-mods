@@ -53,6 +53,12 @@
         "height": {
           "type": "number",
           "minimum": 0
+        },
+        "frame": {
+          "enum": [
+            "none"
+          ],
+          "description": "\"none\": no frame around it."
         }
       }
     },
@@ -147,6 +153,18 @@
                 "split": "Side by side"
               },
               "default": "inline"
+            }
+          }
+        },
+        "panel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "toggle": {
+              "title": "Key closes the panel",
+              "description": "Lets the panel key close an open panel, instead of leaving it alone.",
+              "type": "boolean",
+              "default": false
             }
           }
         }

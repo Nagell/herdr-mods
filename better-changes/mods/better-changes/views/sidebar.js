@@ -69,6 +69,7 @@ export const sidebarMethods = {
   // ── Sidebar ───────────────────────────────────────────────────────────────
 
   render() {
+    if (this.mode === "panel-key") return div();
     if (this.mode === "pane-header") return this.renderPaneHeader();
     if (this.mode === "diff") return this.renderDiff();
     return Panel({ id: "better-changes" })

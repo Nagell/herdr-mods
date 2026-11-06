@@ -1,7 +1,13 @@
 {
   "$schema": "./mod.schema.json",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "place": "right",
   "size": 368,
-  "title": "Better Changes"
+  "title": "Better Changes",
+  "overlay": {
+    "kind": "popup",
+    "width": 1,
+    "height": 1,
+    "frame": "none"
+  }
 }
