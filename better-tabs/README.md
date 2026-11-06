@@ -67,7 +67,9 @@ A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Ch
 
 ## Settings
 
-The installed `mods/better-tabs/mod.json` has a `settings` block:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+
+Add a `settings` block to the installed `mods/better-tabs/mod.json` with only what you change. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
 "settings": { "tabs": { "max_width": 170, "drag_delay": "400ms" }, "menu": { "width": 240 } }

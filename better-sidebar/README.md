@@ -71,7 +71,9 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 
 ## Settings
 
-The installed `mods/better-sidebar/mod.json` has a `settings` block; copy your edits forward when you update the mod:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+
+Add a `settings` block to the installed `mods/better-sidebar/mod.json` with only what you change. Copy your edits forward when you update the mod. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
 "settings": { "git": { "retry_after": "15s" }, "pull_request_status": true }

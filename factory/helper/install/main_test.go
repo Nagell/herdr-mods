@@ -94,11 +94,13 @@ func TestUpdateKeepsEditedSettingsAndReportsStaleKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := shipped["settings"].(map[string]any)
 	first := ""
-	for key := range settings {
+	for key := range knownSettings(filepath.Join(root(), "mods", mod), nil) {
 		first = key
 		break
+	}
+	if first == "" {
+		t.Fatal("mod.schema.json describes no settings")
 	}
 	edited := map[string]any{"title": title, "version": "0.0.1", "settings": map[string]any{first: "edited", "gone": true}}
 	b, _ := json.Marshal(edited)
@@ -111,7 +113,7 @@ func TestUpdateKeepsEditedSettingsAndReportsStaleKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	kept := got["settings"].(map[string]any)
-	if got["version"] != shipped["version"] || kept[first] != "edited" || kept["gone"] != nil {
+	if got["version"] != shipped["version"] || kept[first] != "edited" || kept["gone"] != nil || len(kept) != 1 {
 		t.Fatalf("manifest = %v", got)
 	}
 	if !strings.Contains(printed.String(), "dropped: gone") {
@@ -119,12 +121,13 @@ func TestUpdateKeepsEditedSettingsAndReportsStaleKeys(t *testing.T) {
 	}
 }
 
-func TestNestedSettingsMergeAndNameWhatIsDropped(t *testing.T) {
-	defaults := map[string]any{"a": map[string]any{"b": 1.0, "c": 2.0}}
-	dropped := merge(defaults, map[string]any{"a": map[string]any{"b": 9.0, "old": true}}, "")
-	inner := defaults["a"].(map[string]any)
-	if inner["b"] != 9.0 || inner["c"] != 2.0 || len(dropped) != 1 || dropped[0] != "a.old" {
-		t.Fatalf("defaults %v, dropped %v", defaults, dropped)
+func TestNestedSettingsMergeKeepOnlyChangesAndNameWhatIsDropped(t *testing.T) {
+	known := map[string]any{"a": map[string]any{"b": 1.0, "c": 2.0}}
+	settings := map[string]any{}
+	dropped := merge(settings, known, map[string]any{"a": map[string]any{"b": 9.0, "c": 2.0, "old": true}}, "")
+	inner := settings["a"].(map[string]any)
+	if inner["b"] != 9.0 || len(inner) != 1 || len(dropped) != 1 || dropped[0] != "a.old" {
+		t.Fatalf("settings %v, dropped %v", settings, dropped)
 	}
 }
 

@@ -69,7 +69,9 @@ Prefer `hands set N "text"` over typing into a text field: it writes the value t
 
 ## Settings
 
-The installed `mods/hands/mod.json` has a `settings` block that both the CLI and the pane read, kept across `go -C helper run ./install --update`:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+
+Add a `settings` block to the installed `mods/hands/mod.json` with only what you change. Both the CLI and the pane read it, and it is kept across `go -C helper run ./install --update`. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
 "settings": {

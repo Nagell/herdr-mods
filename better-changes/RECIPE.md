@@ -40,7 +40,7 @@ A conflicted file's diff reads the working file and shows each marked block with
 
 ## Built from
 
-One mod, `mods/better-changes/`: `main.js`, `settings.js`, `mod.json`, `git/` (`repository.js`, `reads.js`, `model.js`), `views/` (`sidebar.js`, `diff.js`, `pane-header.js`, `ui.js`) and `icons/` (Lucide, plus Herdr's pane header icons). `mod.json` is `{ "place": "right", "size": 368, "title": "Better Changes", "settings": {...} }`. Props `{ "mode": "diff", "space", "source", "selection" }` make a diff tab; with none it's the sidebar.
+One mod, `mods/better-changes/`: `main.js`, `settings.js`, `mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `git/` (`repository.js`, `reads.js`, `model.js`), `views/` (`sidebar.js`, `diff.js`, `pane-header.js`, `ui.js`) and `icons/` (Lucide, plus Herdr's pane header icons). `mod.json` is `{ "place": "right", "size": 368, "title": "Better Changes" }`. Props `{ "mode": "diff", "space", "source", "selection" }` make a diff tab; with none it's the sidebar.
 
 It uses `div`, `svg`, flex containers, `Popover`, `TextareaState`/`Textarea`, `v_virtual_list` and `Scrollbar`. From Herdr: spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, props, layout, shared, setShared, run, nextCommand, localStorage. Commands: `tab.new` with mod and props, `tab.select`, `tab.rename`, `tab.close`. The only program it runs is Git; `cx.open_url` opens commit links. It reaches the network only through the person's own browser.
 

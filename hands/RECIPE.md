@@ -20,7 +20,7 @@ Clicks are AppKit mouse events with their window attached, about 50 ms apart, po
 
 ## Built from
 
-`hands/` holds `helper/` (`go.mod` with no requirements, `main.go`, `tree.go`, `keys.go`, `record.go`, `actions.go`, `bridge.go`, `bridge.h`, `bridge.m`, `hands_test.go`), `mods/hands/` (`mod.json`, `main.js`, `settings.js`, `views/` with `permissions.js`, `days.js`, `actions.js`, `recordings.js` and `ui.js`, and `icons/`), `tests/` (`packaging.test.cjs`), `README.md`, `SKILL.md`, `.gitignore` for `mods/hands/bin/`. The bridge links AppKit, ApplicationServices, CoreGraphics, ScreenCaptureKit, ImageIO, UniformTypeIdentifiers and Foundation with ARC. `helper/install/` builds with `CGO_ENABLED=1`, copies only the runtime files and binary to `~/.config/herdr-app/mods/hands/`, runs `herdr-app check`, and symlinks `~/.local/bin/hands` unless a real file is there.
+`hands/` holds `helper/` (`go.mod` with no requirements, `main.go`, `tree.go`, `keys.go`, `record.go`, `actions.go`, `bridge.go`, `bridge.h`, `bridge.m`, `hands_test.go`), `mods/hands/` (`mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `main.js`, `settings.js`, `views/` with `permissions.js`, `days.js`, `actions.js`, `recordings.js` and `ui.js`, and `icons/`), `tests/` (`packaging.test.cjs`), `README.md`, `SKILL.md`, `.gitignore` for `mods/hands/bin/`. The bridge links AppKit, ApplicationServices, CoreGraphics, ScreenCaptureKit, ImageIO, UniformTypeIdentifiers and Foundation with ARC. `helper/install/` builds with `CGO_ENABLED=1`, copies only the runtime files and binary to `~/.config/herdr-app/mods/hands/`, runs `herdr-app check`, and symlinks `~/.local/bin/hands` unless a real file is there.
 
 ## Watch out
 

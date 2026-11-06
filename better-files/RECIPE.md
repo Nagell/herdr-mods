@@ -34,7 +34,7 @@ Changed lines come from `git diff -U0 HEAD`, with external diff and text convers
 
 ## Built from
 
-`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Files), `files/` (`model.js`, `reads.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
+`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
 
 ## Watch out
 

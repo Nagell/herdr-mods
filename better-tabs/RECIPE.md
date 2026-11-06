@@ -28,7 +28,7 @@ Actions are `panel` (`container`, `stack`, `target`) and `command` (`name`, `arg
 
 ## Built from
 
-One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
+One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
 
 ## Watch out
 

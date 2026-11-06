@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -54,7 +55,8 @@ func readManifest(folder string) (map[string]any, error) {
 }
 
 // keepSettings writes a person's settings into the new manifest and returns the
-// keys the new version no longer has.
+// keys the new version no longer has. A value back at its default is left out,
+// since settings hold only what the person changed.
 // shortcut: the rewritten mod.json has its keys sorted, which only matters to someone reading it.
 func keepSettings(path string, kept map[string]any) ([]string, error) {
 	b, err := os.ReadFile(path)
@@ -65,13 +67,15 @@ func keepSettings(path string, kept map[string]any) ([]string, error) {
 	if err := json.Unmarshal(b, &fresh); err != nil {
 		return nil, err
 	}
-	defaults, _ := fresh["settings"].(map[string]any)
-	if defaults == nil {
-		defaults = map[string]any{}
-		fresh["settings"] = defaults
+	settings, _ := fresh["settings"].(map[string]any)
+	if settings == nil {
+		settings = map[string]any{}
 	}
-	dropped := merge(defaults, kept, "")
+	dropped := merge(settings, knownSettings(filepath.Dir(path), settings), kept, "")
 	slices.Sort(dropped)
+	if len(settings) > 0 {
+		fresh["settings"] = settings
+	}
 	written, err := json.MarshalIndent(fresh, "", "  ")
 	if err != nil {
 		return nil, err
@@ -79,21 +83,63 @@ func keepSettings(path string, kept map[string]any) ([]string, error) {
 	return dropped, os.WriteFile(path, append(written, '\n'), 0o644)
 }
 
-func merge(defaults, given map[string]any, path string) []string {
+// knownSettings is every setting the new version takes, nested, with its default:
+// from its mod.schema.json, else the settings its mod.json ships.
+func knownSettings(dir string, shipped map[string]any) map[string]any {
+	var schema struct {
+		Properties struct {
+			Settings any `json:"settings"`
+		} `json:"properties"`
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "mod.schema.json")); err == nil && json.Unmarshal(b, &schema) == nil {
+		if known, ok := defaults(schema.Properties.Settings).(map[string]any); ok {
+			return known
+		}
+	}
+	return shipped
+}
+
+// defaults turns a schema node into its default, or an object of its properties' defaults.
+func defaults(node any) any {
+	n, _ := node.(map[string]any)
+	properties, ok := n["properties"].(map[string]any)
+	if !ok {
+		return n["default"]
+	}
+	out := map[string]any{}
+	for key, value := range properties {
+		out[key] = defaults(value)
+	}
+	return out
+}
+
+// merge writes the given values that known has into settings, and names the rest.
+func merge(settings, known, given map[string]any, path string) []string {
 	dropped := []string{}
 	for key, value := range given {
 		name := path + key
-		current, known := defaults[key]
-		if !known {
+		current, isKnown := known[key]
+		if !isKnown {
 			dropped = append(dropped, name)
 			continue
 		}
-		inner, isMap := current.(map[string]any)
+		knownInner, isMap := current.(map[string]any)
 		givenInner, givenMap := value.(map[string]any)
 		if isMap && givenMap {
-			dropped = append(dropped, merge(inner, givenInner, name+".")...)
+			inner, _ := settings[key].(map[string]any)
+			if inner == nil {
+				inner = map[string]any{}
+			}
+			dropped = append(dropped, merge(inner, knownInner, givenInner, name+".")...)
+			if len(inner) > 0 {
+				settings[key] = inner
+			} else {
+				delete(settings, key)
+			}
+		} else if reflect.DeepEqual(value, current) {
+			delete(settings, key)
 		} else {
-			defaults[key] = value
+			settings[key] = value
 		}
 	}
 	return dropped

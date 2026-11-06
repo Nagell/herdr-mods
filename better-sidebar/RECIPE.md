@@ -30,7 +30,7 @@ Agent states are not PR states: working/blocked/done/idle do not change the PR's
 
 ## Built from
 
-One runtime folder, `mods/better-sidebar/`: `main.js`, `settings.js`, `mod.json`, `git/` (`checkouts.js`, `pr-status.js`), `views/` (`spaces.js`, `agents.js`, `footer.js`, `panel-toggle.js`, `ui.js`, `find-node.js`) and `icons/`. Text sizes are plain px from Herdr's own mods.
+One runtime folder, `mods/better-sidebar/`: `main.js`, `settings.js`, `mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `git/` (`checkouts.js`, `pr-status.js`), `views/` (`spaces.js`, `agents.js`, `footer.js`, `panel-toggle.js`, `ui.js`, `find-node.js`) and `icons/`. Text sizes are plain px from Herdr's own mods.
 
 Use GPUI div/svg and gpui-base vertical/horizontal flex containers. Herdr supplies spaces, panes, machines, theme, settings, exec, hc, watchFolder, window, layout, shared/setShared, localStorage, run, openOverlay, timers, and size-change callbacks. Commands are space.new, space.select, and space.move. Open the shipped menu as a popup with `{tab: "space", target: {id}}`.
 

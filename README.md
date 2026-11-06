@@ -13,6 +13,7 @@ A collection of standalone mods. Choose a mod below and install only that packag
 | [Better Changes](better-changes/README.md) | Git panel in Herdr's own style: staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and a reusable inline or side-by-side diff tab. |
 | [Better Sidebar](better-sidebar/README.md) | Spaces and nested worktrees with right-aligned Git branches and color-coded pull-request status from `gh`, agents grouped by main space or name prefix, and a one-line footer. |
 | [Better Files](better-files/README.md) | Read-only file browser that opens files in the centre pane: a shared tab on click, kept on double-click, with Git marks, Open in your code editor, and a right-click menu that hands a file to an agent. |
+| [Better Config](better-config/README.md) | Every installed mod's settings in one dialog, like Herdr's own Settings: described, checked before saving, reset in a click, and restored after an update wipes them. |
 | [Better Tabs](better-tabs/README.md) | Tab bar with draggable tabs that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them. |
 | [Branch PR](branch-pr/README.md) | GitHub PR sidebar that shows what stands between a PR and a merge, hands failures and comments to agents, and merges when ready. |
 | [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, with an All tab, state, priority and assignee edits, comments, and worktrees that open with an agent holding the issue, waiting for your go-ahead. |
