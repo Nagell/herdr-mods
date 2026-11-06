@@ -28,6 +28,10 @@ A collection of standalone mods. Choose a mod below and install only that packag
 
 ![Better Files](better-files/preview.png)
 
+### Better Config
+
+![Better Config](better-config/preview.png)
+
 ### Better Sidebar
 
 ![Better Sidebar](better-sidebar/preview.png)
@@ -97,7 +101,7 @@ Each mod's README covers its features and requirements; its `RECIPE.md` guides i
 
 ## Versions and settings
 
-Every mod carries a `version` and a `settings` block in its `mods/<name>/mod.json`, which the installed copy keeps, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and what it is set to. Edit the installed file to change a setting; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and prints the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
+Every mod carries a `version` in its `mods/<name>/mod.json`, and a `mod.schema.json` beside it that describes every setting with its default. The installed `mod.json` holds a `settings` block only for what you changed, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and how it differs from the defaults. Change settings in [Better Config](better-config/README.md), or edit the installed file, which an editor checks against its schema; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and prints the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which Better Config offers to restore your settings, or you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
 
 ## Test
 
