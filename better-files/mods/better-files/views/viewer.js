@@ -3,7 +3,17 @@
 import { div, image } from "gpui-kit";
 import { h_flex, v_flex, Editor, EditorState, Scrollbar, v_virtual_list } from "gpui-base";
 import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme } from "herdr";
-import { baseName, isImage, languageOf, lineMarks, parseHunks, tokenize, viewable } from "../files/model.js";
+import {
+  baseName,
+  buildRows,
+  fileLinesOf,
+  hunkKey,
+  isImage,
+  languageOf,
+  parseHunks,
+  tokenize,
+  viewable,
+} from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { TEXT, Icon, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
@@ -11,6 +21,7 @@ import { TEXT, Icon, Message, MenuButton, TextButton, codeFont, codeSize } from 
 const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
 const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
 const rowHeight = () => Math.round(codeSize() * 1.6);
+const REMOVED_ROW = 8;
 
 // $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
 // the script itself, and only the cache's own copies are ever removed.
@@ -50,6 +61,7 @@ export const viewerMethods = {
       this.code?.release();
       this.code = null;
       this.hunks = [];
+      this.openHunks = new Set();
       this.readFile(cx);
       this.readHunks(cx);
       cx.notify();
@@ -69,7 +81,7 @@ export const viewerMethods = {
       let marks = [];
       const status = await git(["status", "--porcelain=v1", "--", file.path]);
       if (status?.code === 0 && status.stdout.startsWith("??")) {
-        marks = [{ line: 0, count: Infinity, kind: "added" }];
+        marks = [{ line: 0, count: Infinity, kind: "added", oldStart: 0, old: [] }];
       } else if (status?.code === 0 && status.stdout.trim()) {
         const diff = await git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", "HEAD", "--", file.path]);
         if (diff?.code === 0) marks = parseHunks(diff.stdout);
@@ -172,21 +184,22 @@ export const viewerMethods = {
   linesView() {
     const lines = this.fileLines();
     const language = languageOf(this.file.path);
-    const marks = lineMarks(this.hunks ?? [], lines.length);
+    const rows = buildRows(lines, this.hunks ?? [], this.openHunks);
     const height = rowHeight();
+    const sized = rows.some((row) => row.type === "removed")
+      ? rows.map((row) => (row.type === "removed" ? REMOVED_ROW : height))
+      : height;
     const listId = `viewer-lines-${this.viewerId}-${this.file.path}`;
     const list = v_virtual_list(
       listId,
-      lines.length,
-      height,
-      (i) => String(i),
-      (range) => {
-        const rows = [];
-        for (let i = range.start; i < range.end; i++)
-          rows.push(this.lineRow(i, lines[i], language, marks, height, lines.length));
-        return rows;
-      },
-    ).size_full();
+      rows.length,
+      sized,
+      (i) => rows[i].key,
+      (range) => rows.slice(range.start, range.end).map((row) => this.fileRow(row, language)),
+    )
+      // A handler per list, not per row: Herdr's virtual lists allow no handlers in a row.
+      .on_item_click((key, cx) => this.toggleChange(rows.find((row) => row.key === key), cx))
+      .size_full();
     const widest = lines.reduce((most, line) => Math.max(most, line.length), 0);
     return div()
       .id("viewer-lines")
@@ -212,35 +225,57 @@ export const viewerMethods = {
       .child(Scrollbar.vertical(listId).viewport_from_layout().absolute().inset_0());
   },
 
+  // Only a change that replaced something has anything to open.
+  toggleChange(row, cx) {
+    if (!row?.hunk?.old.length) return;
+    const key = hunkKey(row.hunk);
+    if (!this.openHunks.delete(key)) this.openHunks.add(key);
+    cx.notify();
+  },
+
   // Split once per version of the file: rows are drawn on every scroll.
   fileLines() {
     if (this.linesOf !== this.text) {
       this.linesOf = this.text;
-      this.lines = (this.text ?? "").split("\n").map((line) => line.replace(/\r$/, "").replace(/\t/g, "    "));
+      this.lines = fileLinesOf(this.text ?? "");
     }
     return this.lines;
   },
 
-  lineRow(i, line, language, marks, height, count) {
+  fileRow(row, language) {
     const t = theme();
-    const COLORS = { added: t.ansi2, changed: t.ansi3 };
+    if (row.type === "removed")
+      return h_flex()
+        .id(`viewer-${row.key}`)
+        .h(REMOVED_ROW)
+        .w_full()
+        .items_center()
+        .cursor_pointer()
+        .child(div().h(2).w_full().bg(t.ansi1));
+    const old = row.type === "old";
+    const open = row.hunk && this.openHunks.has(hunkKey(row.hunk));
+    // A line whose old version is showing reads as what replaced it.
+    const color = old
+      ? t.ansi1
+      : row.hunk
+        ? { added: t.ansi2, changed: open ? t.ansi2 : t.ansi3 }[row.hunk.kind]
+        : null;
     const SYNTAX = { keyword: t.ansi5, string: t.ansi2, comment: t.dim, number: t.ansi1 };
-    const kind = marks.kinds.get(i);
-    const removed = (at) => div().id(`viewer-removed-${at}`).absolute().left(0).right(0).h(2).bg(t.ansi1);
-    const row = h_flex()
-      .id(`viewer-line-${i}`)
-      .relative()
-      .h(height)
+    const runs = old ? [{ text: row.text, kind: "old" }] : tokenize(row.text, language);
+    return h_flex()
+      .id(`viewer-${row.key}`)
+      .h(rowHeight())
       .w_full()
       .items_center()
-      .when(Boolean(kind), (el) => el.bg(`${COLORS[kind]?.slice(0, 7)}26`))
+      .when(Boolean(color), (el) => el.bg(`${color?.slice(0, 7)}26`))
+      .when(Boolean(row.hunk?.old.length), (el) => el.cursor_pointer())
       .child(
         div()
-          .id(kind ? `viewer-mark-${i}` : `viewer-bar-${i}`)
+          .id(color && !old ? `viewer-mark-${row.number - 1}` : `viewer-bar-${row.key}`)
           .w(3)
           .h_full()
           .flex_none()
-          .when(Boolean(kind), (el) => el.bg(COLORS[kind])),
+          .when(Boolean(color), (el) => el.bg(color)),
       )
       .child(
         div()
@@ -249,7 +284,7 @@ export const viewerMethods = {
           .flex_none()
           .text_right()
           .text_color(t.dim)
-          .child(String(i + 1)),
+          .child(String(row.number)),
       )
       .child(
         h_flex()
@@ -257,18 +292,15 @@ export const viewerMethods = {
           .min_w(0)
           .whitespace_nowrap()
           .children(
-            tokenize(line, language).map((run) =>
+            runs.map((run) =>
               div()
                 .flex_none()
                 .whitespace_nowrap()
-                .text_color(SYNTAX[run.kind] ?? t.foreground)
+                .text_color(run.kind === "old" ? t.ansi1 : (SYNTAX[run.kind] ?? t.foreground))
                 .child(run.text || " "),
             ),
           ),
       );
-    if (marks.removedAbove.has(i)) row.child(removed(i).top(0));
-    if (i === count - 1 && marks.removedAbove.has(count)) row.child(removed(count).bottom(0));
-    return row;
   },
 
   // Herdr only loads images from under its own folder, so the file is shown through a copy
@@ -325,10 +357,26 @@ export const viewerMethods = {
     const file = this.file;
     const preview = this.viewerEntry()?.preview;
     const editors = file?.on ? [] : foundEditors();
+    // Only changes that replaced something have old lines to show.
+    const openable = this.gutterOn ? (this.hunks ?? []).filter((hunk) => hunk.old.length).map(hunkKey) : [];
+    const allOpen = openable.length > 0 && openable.every((key) => this.openHunks.has(key));
     return h_flex()
       .id("viewer-actions")
       .gap(6)
       .items_center()
+      .when(openable.length > 0, (el) =>
+        el.child(
+          TextButton({
+            id: "viewer-show-old",
+            label: "Expand all",
+            active: allOpen,
+            onClick: (cx) => {
+              this.openHunks = new Set(allOpen ? [] : openable);
+              cx.notify();
+            },
+          }),
+        ),
+      )
       .when(Boolean(preview), (el) =>
         el.child(
           TextButton({

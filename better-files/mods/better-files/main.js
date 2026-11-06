@@ -51,6 +51,7 @@ class BetterFiles extends View {
     this.viewerFile = p.file;
     this.gutterOn = true;
     this.hunks = [];
+    this.openHunks = new Set();
     this.syncViewer(cx);
     cx.timer.every(SYNC_MS, (cx) => this.syncViewer(cx));
     cx.spawn(async (cx) => {

@@ -2,11 +2,13 @@
 
 A file browser for [Herdr Desktop](https://herdr.dev/) that opens files in the centre pane, beside your agents, instead of squeezing them into the sidebar. Built to look like Herdr's own panels and to fit how you work with agents: see where an agent has been, read what it wrote, and hand a file to one.
 
+![Better Files](preview.png)
+
 - **Tree:** the focused pane's folder, named in the panel's title, with changed files coloured and lettered by what happened (green new, yellow edited, red gone or in conflict), and folders holding changes in yellow with a dot. It refreshes as files change.
 - **Click** a file to show it in one shared centre tab, so browsing doesn't pile up tabs.
 - **Double-click**, or **Keep tab**, to keep that tab. The next click starts a new shared tab.
 - **The file view** is read-only, at your terminal's font size, and follows the file as it changes on disk. Only a real change touches it. Binary and unreadable files say so, and very long files are cut at 400,000 characters.
-- **Changed lines:** lines that differ from the last commit are tinted, with a solid bar at their edge: green added, yellow changed, and a thin red line across the file where lines were removed. A new file is all green. They update as the file changes, and clear when it's committed. The file is drawn as rows so the colours can't drift, so text can't be selected and there's no folding, and highlighting is simpler. Use **Open in** for those, or turn `gutter` off.
+- **Changed lines:** lines that differ from the last commit are tinted, with a solid bar at their edge: green added, yellow changed, and a thin red line across the file where lines were removed. A new file is all green. Click a yellow line or the red line to open the change in place, with the old lines in red, and click again to close it. **Expand all**, beside Open in, opens or closes them all at once. They update as the file changes, and clear when it's committed. The file is drawn as rows so the colours can't drift, so text can't be selected and there's no folding, and highlighting is simpler. Use **Open in** for those, or turn `gutter` off.
 - **Images:** PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures, fitted to the pane, and update when the file changes. Herdr only loads images from its own folder, so each is shown through a copy in `mods/better-files/cache/`, removed when its tab closes.
 - **Open the whole folder** in your editor or Finder, from the folder icon beside refresh.
 - **One title:** the tab's title row reads like a diff's, with the file, its folder, and Preview while it's the shared tab.

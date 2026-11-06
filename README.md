@@ -23,6 +23,10 @@ A collection of standalone mods. Choose a mod below and install only that packag
 
 ![Better Changes](better-changes/preview.png)
 
+### Better Files
+
+![Better Files](better-files/preview.png)
+
 ### Better Sidebar
 
 ![Better Sidebar](better-sidebar/preview.png)

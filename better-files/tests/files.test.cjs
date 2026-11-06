@@ -12,7 +12,7 @@ const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, lineMarks, tokenize, viewable, languageOf, sortEntries, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, MAX_CHARS });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
@@ -40,6 +40,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
           if (k === 'id') t.elementId = a[0];
           if (k === 'text_color') t.colors.push(a[0]);
           if (k === 'on_click') t.handlers.click = a[0];
+          if (k === 'on_item_click') t.handlers.item = a[0];
           if (k === 'on_open_change') t.handlers.open = a[0];
           if (k === 'on_mouse_down') t.handlers[`down-${a[0]}`] = a[1];
           return proxy;
@@ -52,7 +53,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const context = {
     View: class {}, div: el, svg: el, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
-    Scrollbar: { vertical: () => el() }, v_virtual_list: (_id, count, _h, _k, render) => { const e = el(); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
+    Scrollbar: { vertical: () => el() }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
@@ -221,17 +222,44 @@ test('the viewer follows the file, and keeps the same rows until it really chang
   assert.match(strings(h.mod.render()), /no longer available/);
 });
 
-test('each line carries its own colour, and removed lines draw a line where they were', async () => {
+const CHANGES = { mode: 'viewer', viewer: 'v', file: { path: '/repo/b.md', root: '/repo', on: null }, texts: { '/repo/b.md': 'a\nb\nc' }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n-old a\n+a\n@@ -3,2 +1,0 @@\n-gone 1\n-gone 2\n@@ -9,0 +3 @@\n+c\n' };
+const clickRow = (h, key) => find(h.mod.render(), 'viewer-list').handlers.item(key, h.cx);
+
+test('rows put each mark with its own line, and a removal gets a thin row of its own', async () => {
   const { context: m } = await ready();
-  const marks = m.lineMarks([{ line: 0, count: 2, kind: 'added' }, { line: 3, count: 1, kind: 'changed' }, { line: 2, count: 0, kind: 'removed' }, { line: 9, count: 0, kind: 'removed' }, { line: 4, count: null, kind: 'added' }], 6);
-  assert.deepEqual(JSON.parse(JSON.stringify([...marks.kinds.entries()])), [[0, 'added'], [1, 'added'], [3, 'changed'], [4, 'added'], [5, 'added']]);
-  assert.deepEqual(JSON.parse(JSON.stringify([...marks.removedAbove])), [2, 6], 'past the end is the end');
-  const h = await ready({ mode: 'viewer', viewer: 'v', file: { path: '/repo/b.md', root: '/repo', on: null }, texts: { '/repo/b.md': 'a\nb\nc' }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n@@ -2,1 +1,0 @@\n@@ -9,0 +3 @@\n' });
+  const rows = (hunks, open = new Set()) => JSON.parse(JSON.stringify(m.buildRows(['a', 'b'], hunks, open).map((r) => r.key)));
+  const removed = { line: 1, count: 0, kind: 'removed', oldStart: 4, old: ['x'] };
+  assert.deepEqual(rows([removed]), ['line-0', 'removed-1', 'line-1']);
+  assert.deepEqual(rows([{ ...removed, line: 9 }]), ['line-0', 'line-1', 'removed-2'], 'past the end is the end');
+  const h = await ready(CHANGES);
   const tree = h.mod.render();
   assert.ok(find(find(tree, 'viewer-line-0'), 'viewer-mark-0'), 'the mark is inside its own row');
-  assert.ok(find(find(tree, 'viewer-line-1'), 'viewer-removed-1'));
+  assert.ok(find(tree, 'viewer-removed-1'));
   assert.equal(find(find(tree, 'viewer-line-1'), 'viewer-mark-1'), undefined);
   assert.ok(find(find(tree, 'viewer-line-2'), 'viewer-mark-2'));
+});
+
+test('clicking a change opens the old lines in place, and clicking again closes it', async () => {
+  const h = await ready(CHANGES);
+  clickRow(h, 'line-1');
+  assert.equal(h.mod.openHunks.size, 0, 'an unchanged line does nothing');
+  clickRow(h, 'line-2');
+  assert.equal(h.mod.openHunks.size, 0, 'added lines replaced nothing');
+  clickRow(h, 'line-0');
+  let list = strings(find(h.mod.render(), 'viewer-lines'));
+  assert.match(list, /1\s+old a\s+1\s+a/, 'old above new');
+  clickRow(h, 'removed-1');
+  list = strings(find(h.mod.render(), 'viewer-lines'));
+  assert.match(list, /3\s+gone 1\s+4\s+gone 2\s+2\s+b/, 'old numbers, where they were');
+  assert.equal(find(h.mod.render(), 'viewer-removed-1'), undefined);
+  clickRow(h, 'old-1');
+  assert.doesNotMatch(strings(find(h.mod.render(), 'viewer-lines')), /old a/, 'an old line closes it too');
+  clickRow(h, 'old-3');
+  assert.ok(find(h.mod.render(), 'viewer-removed-1'), 'back to the thin line');
+  clickRow(h, 'line-0');
+  h.store.set('better-files.viewers', { v: { file: { path: '/repo/a.md', root: '/repo', on: null }, tab: 'tab1' } });
+  h.tick();
+  assert.equal(h.mod.openHunks.size, 0, 'another file starts closed');
 });
 
 test('a line is coloured by what its words are', async () => {
@@ -292,14 +320,14 @@ test('there is one title: the pane header with Better Changes\' header, else the
   assert.match(strings(find(own.mod.render(), 'viewer-bar')), /main\.go[\s\S]*src/);
 });
 
-test('git diff becomes gutter marks by the file\'s lines as they are now', async () => {
+test('git diff becomes changes by the file\'s lines as they are now, with what they replaced', async () => {
   const { context: m } = await ready();
-  const hunks = m.parseHunks('@@ -0,0 +1,2 @@\n+a\n+b\n@@ -5 +7 @@\n-x\n+y\n@@ -9,3 +11,2 @@ func\n@@ -20,2 +18,0 @@\n-z\n-w\n');
+  const hunks = m.parseHunks('diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -0,0 +1,2 @@\n+a\n+b\n@@ -5 +7 @@\n-x\n+y\n@@ -9,3 +11,2 @@ func\n-p\n-- q\n-r\n+s\n+t\n@@ -20,2 +18,0 @@\n-z\n-w\n\\\\ No newline at end of file\n');
   assert.deepEqual(JSON.parse(JSON.stringify(hunks)), [
-    { line: 0, count: 2, kind: 'added' },
-    { line: 6, count: 1, kind: 'changed' },
-    { line: 10, count: 2, kind: 'changed' },
-    { line: 18, count: 0, kind: 'removed' },
+    { line: 0, count: 2, kind: 'added', oldStart: 0, old: [] },
+    { line: 6, count: 1, kind: 'changed', oldStart: 5, old: ['x'] },
+    { line: 10, count: 2, kind: 'changed', oldStart: 9, old: ['p', '- q', 'r'] },
+    { line: 18, count: 0, kind: 'removed', oldStart: 20, old: ['z', 'w'] },
   ]);
 });
 
@@ -311,7 +339,7 @@ test('a changed file shows marks, an untracked one is all new, and a clean one h
   const changed = await ready({ ...opts, status: ' M b.md\n', diff: '@@ -1 +1 @@\n-x\n+one\n@@ -3,0 +4,1 @@\n+z\n' });
   assert.equal(markBars(changed).length, 2);
   const fresh = await ready({ ...opts, status: '?? b.md\n' });
-  assert.equal(JSON.stringify(fresh.mod.hunks), JSON.stringify([{ line: 0, count: null, kind: 'added' }]));
+  assert.equal(JSON.stringify(fresh.mod.hunks), JSON.stringify([{ line: 0, count: null, kind: 'added', oldStart: 0, old: [] }]));
   assert.equal(markBars(fresh).length, 4, 'every line is new');
   const clean = await ready({ ...opts, status: '' });
   assert.equal(markBars(clean).length, 0);

@@ -30,7 +30,7 @@ Editors are found by macOS app ID with `mdfind`, because a Nix or per-user insta
 
 Show diff hands over in the form Better Changes' own list uses: `better-changes.selection` and `better-changes.diff-tabs`, keyed to the Git root, with `tab.new` when no diff tab is open.
 
-Changed lines come from `git diff -U0 HEAD`, with external diff and text conversion off, or all green for an untracked file. Herdr's editor can't mark a line or report its scroll, and marks laid over it slid as it scrolled, so the file is drawn as rows in a `v_virtual_list`, like a Better Changes diff: a 3px bar, the line number, then the code in simple one-line colouring, tinted by its mark, with a 2px red line where lines were removed. `settings.gutter: false` uses Herdr's editor instead.
+Changed lines come from `git diff -U0 HEAD`, with external diff and text conversion off, or all green for an untracked file. Herdr's editor can't mark a line or report its scroll, and marks laid over it slid as it scrolled, so the file is drawn as rows in a `v_virtual_list`, like a Better Changes diff: a 3px bar, the line number, then the code in simple one-line colouring, tinted by its mark, with a thin row holding a 2px red line where lines were removed. Clicking a change that replaced something, through the list's `on_item_click`, shows the old lines in red above it, and its new lines turn green. `settings.gutter: false` uses Herdr's editor instead.
 
 ## Built from
 

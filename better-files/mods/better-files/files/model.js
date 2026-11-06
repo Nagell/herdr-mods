@@ -66,36 +66,74 @@ export function parseStatus(stdout, top) {
   return marks;
 }
 
-// `git diff -U0` as gutter marks, by 0-based line in the file as it is now. A hunk with new
-// lines and none removed is added; with both, changed; with only removed lines, there's no
-// line to colour, so it marks the place they were.
+// `git diff -U0` as changes, by 0-based line in the file as it is now, each with the old
+// lines it replaced. A hunk with new lines and none removed is added; with both, changed;
+// with only removed lines, there's no line to colour, so it marks the place they were.
 export function parseHunks(diff) {
-  const marks = [];
-  for (const [, removed, start, added] of diff.matchAll(
-    /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm,
-  )) {
-    const gone = removed === undefined ? 1 : Number(removed);
-    const fresh = added === undefined ? 1 : Number(added);
-    const first = Number(start);
-    if (!fresh) marks.push({ line: first, count: 0, kind: "removed" });
-    else marks.push({ line: first - 1, count: fresh, kind: gone ? "changed" : "added" });
+  const hunks = [];
+  let current = null;
+  for (const text of diff.split("\n")) {
+    const header = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(text);
+    if (header) {
+      const [, oldStart, removed, start, added] = header;
+      const gone = removed === undefined ? 1 : Number(removed);
+      const fresh = added === undefined ? 1 : Number(added);
+      current = {
+        line: fresh ? Number(start) - 1 : Number(start),
+        count: fresh,
+        kind: !fresh ? "removed" : gone ? "changed" : "added",
+        oldStart: Number(oldStart),
+        old: [],
+      };
+      hunks.push(current);
+    } else if (current && text.startsWith("-")) current.old.push(text.slice(1));
   }
-  return marks;
+  return hunks;
 }
 
-// Each line's own mark, from the hunks: a kind for the line, and whether lines were removed
-// just above it. `lines` is one past the last line, for removals at the very end.
-export function lineMarks(hunks, lines) {
-  const kinds = new Map();
-  const removedAbove = new Set();
+const cleanLine = (line) => line.replace(/\r$/, "").replace(/\t/g, "    ");
+export const fileLinesOf = (text) => text.split("\n").map(cleanLine);
+
+// What to draw, top to bottom: the file's lines, and where a change is open, the lines it
+// replaced. A closed removal is a thin row of its own, so it can be clicked without a line.
+export function buildRows(lines, hunks, open) {
+  const covering = new Map();
+  const startingAt = new Map();
+  const removedAt = new Map();
   for (const hunk of hunks) {
-    if (hunk.kind === "removed") removedAbove.add(Math.min(hunk.line, lines));
-    else
-      for (let i = hunk.line; i < Math.min(hunk.line + (hunk.count ?? lines), lines); i++)
-        kinds.set(i, hunk.kind);
+    if (hunk.kind === "removed") removedAt.set(Math.min(hunk.line, lines.length), hunk);
+    else {
+      startingAt.set(hunk.line, hunk);
+      for (let i = hunk.line; i < Math.min(hunk.line + (hunk.count ?? lines.length), lines.length); i++)
+        covering.set(i, hunk);
+    }
   }
-  return { kinds, removedAbove };
+  const rows = [];
+  const oldRows = (hunk) =>
+    hunk.old.forEach((text, n) =>
+      rows.push({
+        key: `old-${hunk.oldStart + n}`,
+        type: "old",
+        number: hunk.oldStart + n,
+        text: cleanLine(text),
+        hunk,
+      }),
+    );
+  for (let i = 0; i <= lines.length; i++) {
+    const removal = removedAt.get(i);
+    if (removal) {
+      if (open.has(hunkKey(removal))) oldRows(removal);
+      else rows.push({ key: `removed-${i}`, type: "removed", hunk: removal });
+    }
+    const starting = startingAt.get(i);
+    if (starting && open.has(hunkKey(starting))) oldRows(starting);
+    if (i < lines.length)
+      rows.push({ key: `line-${i}`, type: "line", number: i + 1, text: lines[i], hunk: covering.get(i) });
+  }
+  return rows;
 }
+
+export const hunkKey = (hunk) => `${hunk.kind}-${hunk.oldStart}`;
 
 const LINE_COMMENT = { py: "#", rb: "#", sh: "#", bash: "#", zsh: "#", yaml: "#", yml: "#", nix: "#", lua: "--", sql: "--" };
 const UNCOLOURED = new Set(["txt", "md", "markdown", "log", "csv"]);
