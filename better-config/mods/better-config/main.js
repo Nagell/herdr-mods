@@ -5,7 +5,7 @@
 // kept in ~/.config/herdr-mods/better-config/, outside every mod, so values an
 // update wiped can be put back.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, InputState, Input, Select, Popup } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, InputState, Input, Select, Popup, Checkbox } from "gpui-base";
 import { appHome, home, exec, readTextFile, writeTextFile, theme, props, closeOverlay, run } from "herdr";
 import {
   fieldsOf,
@@ -29,6 +29,7 @@ export default class BetterConfig extends View {
     this.loaded = false;
     this.section = null;
     this.inputs = {}; // "mod:key" → { state, focused }
+    this.unticked = new Set();
     this.notes = {}; // "mod:key" → why the typed value wasn't saved
     this.handle = cx.focus_handle();
     this.handle.focus();
@@ -152,8 +153,13 @@ export default class BetterConfig extends View {
     this.change(mod.name, [[field.key, field.default]], cx);
   }
 
+  // Puts back the lost values still ticked; the rest stay as they are now, and the copy
+  // forgets them once the write updates it.
   restore(mod, cx) {
-    this.change(mod.name, Object.entries(mod.lost), cx);
+    const picked = Object.entries(mod.lost).filter(([key]) => !this.unticked.has(`${mod.name}:${key}`));
+    for (const key of Object.keys(mod.lost)) this.unticked.delete(`${mod.name}:${key}`);
+    if (picked.length) this.change(mod.name, picked, cx);
+    else this.forget(mod, cx);
   }
 
   // The values aren't wanted back: the copy starts again from the file.
@@ -496,10 +502,16 @@ export default class BetterConfig extends View {
   }
 
   // When an update put the shipped values back over the person's own.
+  // What an update (or anything else) put back over the person's values: each one, yours then now.
   lostBanner(t, mod) {
-    const count = Object.keys(mod.lost).length;
-    const fields = mod.fields;
-    const names = Object.keys(mod.lost).map((key) => fields.find((f) => f.key === key)?.title ?? key);
+    const keys = Object.keys(mod.lost);
+    const updated = mod.kept?.version && mod.manifest?.version && mod.kept.version !== mod.manifest.version;
+    const ticked = keys.filter((key) => !this.unticked.has(`${mod.name}:${key}`)).length;
+    const restoreLabel =
+      ticked === keys.length ? "Restore mine" : ticked === 0 ? "Keep the new values" : `Restore ${ticked}, keep ${keys.length - ticked}`;
+    const which = keys.length === 1 ? "one of your settings" : `${keys.length} of your settings`;
+    const shown = (value, field) =>
+      value === undefined || showValue(value) === "" ? "empty" : (field?.choices?.[value] ?? showValue(value));
     return v_flex()
       .mt(14)
       .p(12)
@@ -513,14 +525,55 @@ export default class BetterConfig extends View {
           .text_size(13)
           .text_color(t.foreground)
           .child(
-            `${this.titleOf(mod)} was updated, and ${count} of your settings ${count === 1 ? "was" : "were"} reset: ${names.join(", ")}.`,
+            updated
+              ? `Updating ${this.titleOf(mod)} from ${mod.kept.version} to ${mod.manifest.version} reset ${which}:`
+              : `Something outside Better Config put back ${which}:`,
           ),
       )
       .child(
-        h_flex()
-          .gap(8)
-          .child(this.button(t, `bc-restore-${mod.name}`, "Restore them", (cx) => this.restore(mod, cx)))
-          .child(this.button(t, `bc-forget-${mod.name}`, "Keep the new values", (cx) => this.forget(mod, cx))),
+        v_flex()
+          .gap(4)
+          .children(
+            keys.map((key) => {
+              const field = mod.fields.find((f) => f.key === key);
+              const now = getPath(mod.manifest?.settings, key) ?? field?.default;
+              const id = `${mod.name}:${key}`;
+              const on = !this.unticked.has(id);
+              return Checkbox.new(`bc-pick-${id}`)
+                .checked(on)
+                .on_change((checked, cx) => {
+                  if (checked) this.unticked.delete(id);
+                  else this.unticked.add(id);
+                  cx.notify();
+                })
+                .accessibility_label(`Restore ${field?.title ?? key}`)
+                .flex()
+                .gap(8)
+                .items_center()
+                .cursor_pointer()
+                .text_size(12.5)
+                .child(
+                  div()
+                    .size(15)
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(4)
+                    .border_1()
+                    .border_color(on ? t.accent : t.border)
+                    .bg(on ? t.accent : t.background)
+                    .when(on, (el) => el.child(svg(I("check")).size(11).text_color(t.accent_foreground))),
+                )
+                .child(div().w(150).flex_none().truncate().text_color(t.muted).child(field?.title ?? key))
+                .child(div().font_family("JetBrains Mono").text_color(t.foreground).child(shown(mod.lost[key], field)))
+                .child(div().text_color(t.dim).child("→"))
+                .child(div().font_family("JetBrains Mono").text_color(t.dim).child(`${shown(now, field)}${getPath(mod.manifest?.settings, key) === undefined ? " (default)" : ""}`));
+            }),
+          ),
+      )
+      .child(
+        h_flex().child(this.button(t, `bc-restore-${mod.name}`, restoreLabel, (cx) => this.restore(mod, cx))),
       );
   }
 

@@ -9,7 +9,7 @@ Every installed mod's settings in one dialog for [Herdr Desktop](https://herdr.d
 - **Checked before saving:** a value that doesn't fit is explained under its field and never written. A bad value someone typed into `mod.json` by hand shows there too, instead of only in a log.
 - **Applies at once:** a change is saved to the mod's own `mod.json`, and Herdr reloads the mod straight away.
 - **See what you changed:** a dot marks every setting you've changed. **Reset** puts one back, and **Reset all** puts a whole mod back.
-- **Survives updates:** updating a mod replaces its `mod.json`, which used to throw your settings away. Better Config keeps a copy of what you changed, notices when an update put the defaults back, and offers **Restore them**.
+- **Survives updates:** updating a mod replaces its `mod.json`, which used to throw your settings away. Better Config keeps a copy of what you changed, notices when an update put the defaults back, and lists each one, yours beside the current value, with a tick to choose which to restore and which to keep as they are now.
 - **Works with any mod:** a mod that ships a schema of its settings (below) gets names, descriptions and checks. Any other mod with a `settings` block still shows, with its types guessed.
 
 ## Install

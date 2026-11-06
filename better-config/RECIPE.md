@@ -8,7 +8,7 @@ A dialog overlay, 860 by 620, the same look as Herdr's own Settings: a 190px lis
 
 Below, the mod's settings in rows, grouped under a heading by the first part of their key, keys with one part first. A row has the title, its description and the key in the code font on the left, a dot after the title when it differs from the default, then Reset, then the control: a switch for on/off; segments for up to four choices, else a dropdown with ↑, ↓, Enter and Esc; − value + for a number; a text box for times, sizes, text and comma-separated lists, which saves on Enter or when it loses focus. A value that doesn't fit is explained in red under its row.
 
-When an update has put defaults back over the person's values, a box at the top names them, with Restore them and Keep the new values.
+When an update, or anything else, has put defaults back over the person's values, a box at the top says which (naming the versions when the version changed) and lists each setting as a checkbox row, ticked to start: the person's value, an arrow, the current one, with "(default)" when it's unset, and choice labels rather than ids. One button restores the ticked ones and keeps the rest, named for what it will do: Restore mine, Keep the new values, or Restore 1, keep 1. The copy then forgets the ones kept.
 
 ## How it works
 
@@ -33,4 +33,4 @@ Merge `keys.json` into the person's only when they agree: Herdr stops updating t
 - `herdr-app check` passes and `mod.open better-config` shows every mod that has settings.
 - Changing a setting writes only that key to the mod's `mod.json`, and the mod reloads with it.
 - A value that doesn't fit is explained and not written.
-- Copying a mod's shipped `mod.json` over the installed one brings up Restore them, which puts the values back.
+- Copying a mod's shipped `mod.json` over the installed one brings up the box listing them, and Restore mine puts the values back. With one unticked, only the ticked one comes back, and the copy forgets the other.
