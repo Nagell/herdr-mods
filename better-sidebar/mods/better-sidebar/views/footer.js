@@ -1,12 +1,22 @@
-// The sidebar's last line: Settings and Add machine as icons. Herdr's own footer
-// gives each a labelled row, which costs twice the height.
+// The sidebar's last line: Settings, Mod settings and Add machine as icons. Herdr's
+// own footer gives each a labelled row, which costs twice the height. Mod settings
+// opens Better Config, and shows only when that mod is installed.
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, run, updates } from "herdr";
+import { theme, run, updates, readTextFile, appHome } from "herdr";
 import { Icon, SIZE } from "./ui.js";
 
 export class Footer {
-  init() {}
+  init(_given, cx) {
+    this.hasConfig = false;
+    // shortcut: checked once, so installing Better Config shows the button after the next reload.
+    readTextFile(`${appHome()}/mods/better-config/mod.json`)
+      .then((raw) => {
+        this.hasConfig = raw !== null;
+        cx?.notify();
+      })
+      .catch(() => {});
+  }
 
   button(id, label, action, t, icons) {
     return h_flex()
@@ -43,6 +53,13 @@ export class Footer {
           Icon("settings"),
           ...updateDot,
         ]),
+      )
+      .when(this.hasConfig, (el) =>
+        el.child(
+          this.button("mod-settings", "Mod settings", () => run("mod.open", { name: "better-config" }), t, [
+            Icon("sliders"),
+          ]),
+        ),
       )
       .child(
         this.button("machine", "Add machine", () => run("mod.open", { name: "machine-add" }), t, [

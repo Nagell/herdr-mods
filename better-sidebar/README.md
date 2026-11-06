@@ -22,7 +22,7 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 
 ## Footer
 
-Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready.
+Settings and Add machine sit on one line as icons, with their names in tooltips. Settings shows a dot when an update is ready. With [Better Config](../better-config/README.md) installed, a Mod settings icon after Settings opens it.
 
 ## Right panel toggle
 

@@ -64,6 +64,8 @@ function harness(view) {
     updates: () => ({ app: { ready: live.updateReady } }),
     nextCommand: () => new Promise((resolve) => live.commands.push(resolve)),
     localStorage: { getItem: () => null, setItem() {} },
+    appHome: () => "/app",
+    readTextFile: async (file) => live.files?.[file] ?? null,
   };
   vm.createContext(context);
   return { live, overlays, order, commands, context };
@@ -241,6 +243,22 @@ test("the footer is one line of icons that still reaches Settings and Add machin
   assert.equal(find(tree, "settings").nodes.length, 1);
   h.live.updateReady = true;
   assert.equal(find(footer.render(), "settings").nodes.length, 2, "a ready update adds its dot");
+  assert.ok(!find(tree, "mod-settings"), "no Better Config, no button");
+});
+
+test("Mod settings sits after Settings and opens Better Config, when it's installed", async () => {
+  const h = harness("footer");
+  h.live.files = { "/app/mods/better-config/mod.json": "{}" };
+  const footer = load(h, "views/footer.js", "Footer");
+  let notified = 0;
+  footer.init(null, { notify: () => notified++ });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(notified, 1);
+  const tree = footer.render();
+  assert.deepEqual(tree.nodes.map((n) => n.id), ["settings", "mod-settings", "machine"]);
+  find(tree, "mod-settings").handlers.click({}, cx);
+  assert.equal(h.commands[0].name, "mod.open");
+  assert.equal(h.commands[0].args.name, "better-config");
 });
 
 test("the panel toggle hides the right panel by click and key, and names what it will do", async () => {
