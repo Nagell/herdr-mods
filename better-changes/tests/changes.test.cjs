@@ -16,14 +16,18 @@ const read = (file) => strip(fs.readFileSync(`${dir}/${file}`, "utf8"));
 const MODEL_NAMES =
   "conflictRows, changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo";
 const model = new Function(`${read("git/model.js")}; return { ${MODEL_NAMES} };`)();
+const { panelCommands } = new Function(`${read("panel.js")}; return { panelCommands };`)();
 
-function load(cwd, { props, saved, home = "/nonexistent" } = {}) {
+function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {}) {
   const store = new Map();
   const memory = new Map(saved ? [["diff.selection", JSON.stringify(saved)]] : []);
   const never = () => new Promise(() => {});
   const stub = new Proxy(() => stub, { get: () => stub, apply: () => stub });
   const env = {
     ...model,
+    panelCommands,
+    closeOverlay: (id) => calls.push(["closeOverlay", id]),
+    notify: ({ title }) => calls.push(["notify", title]),
     View: class {},
     props: () => props ?? { source: { cwd, on: null } },
     appHome: () => home,
@@ -33,7 +37,7 @@ function load(cwd, { props, saved, home = "/nonexistent" } = {}) {
     theme: () => ({}),
     shared: (key) => store.get(key),
     setShared: (key, value) => store.set(key, value),
-    run: () => {},
+    run: (name, args) => calls.push([name, args]),
     nextCommand: never,
     watchFolder: never,
     readTextFile: async (file) => fs.readFileSync(file, "utf8"),
@@ -79,6 +83,7 @@ function load(cwd, { props, saved, home = "/nonexistent" } = {}) {
     "SplitTrigger",
   ])
     env[name] = stub;
+  if (tree) env.layout = () => tree;
   env.SPIN_MS = 20;
   env.codeSize = () => 14;
   env.TextareaState = {
@@ -557,4 +562,100 @@ test("settings come from mod.json and a limit of zero falls back", async () => {
   assert.equal(mod.total, 2);
   assert.equal(mod.files.length, 1);
   assert.equal(mod.settings.limits.diff_lines, 1500);
+});
+
+// The shape of Herdr's main layout, with the panel beside the tabs.
+const panelTree = ({ hidden = false, active = "changes" } = {}) => ({
+  id: "root",
+  type: "row",
+  children: [
+    { id: "tabs", type: "block", content: { tab: "active" } },
+    {
+      id: "panel",
+      type: "column",
+      hidden,
+      children: [
+        {
+          id: "panel-body",
+          type: "stack",
+          active,
+          children: [
+            { id: "files", type: "block", content: { mod: "files" } },
+            { id: "changes", type: "block", content: { mod: "better-changes" } },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const SHOW = ["layout.show", { id: "panel" }];
+const SELECT = ["layout.select", { stack: "panel-body", child: "changes" }];
+
+test("a closed panel opens, selected in its stack", () => {
+  for (const toggle of [false, true]) {
+    const commands = (tree) => panelCommands(tree, "better-changes", toggle);
+    assert.deepEqual(commands(panelTree({ hidden: true })), [SHOW]);
+    assert.deepEqual(commands(panelTree({ active: "files" })), [SELECT]);
+    assert.deepEqual(commands(panelTree({ hidden: true, active: "files" })), [SHOW, SELECT]);
+  }
+});
+
+test("an open panel stays open unless toggling is on", () => {
+  assert.deepEqual(panelCommands(panelTree(), "better-changes", false), []);
+  assert.deepEqual(panelCommands(panelTree(), "better-changes", true), [
+    ["layout.hide", { id: "panel" }],
+  ]);
+});
+
+test("toggling a docked panel hides only its own block", () => {
+  const tree = {
+    id: "root",
+    type: "row",
+    children: [
+      { id: "work", type: "block", content: { tab: "active" } },
+      { id: "docked", type: "block", content: { mod: "better-changes" } },
+    ],
+  };
+  assert.deepEqual(panelCommands(tree, "better-changes", true), [["layout.hide", { id: "docked" }]]);
+});
+
+test("a layout without the panel has nothing to run", () => {
+  const tree = { id: "root", type: "block", content: { tab: "active" } };
+  assert.equal(panelCommands(tree, "better-changes", true), null);
+});
+
+async function pressPanelKey(tree, panel) {
+  const { root } = repo();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "better-changes-home-"));
+  fs.mkdirSync(`${home}/mods/better-changes`, { recursive: true });
+  fs.writeFileSync(
+    `${home}/mods/better-changes/mod.json`,
+    JSON.stringify(panel === undefined ? {} : { settings: { panel } }),
+  );
+  const calls = [];
+  const { mod, cx } = load(root, { props: { overlay: "o1" }, home, tree, calls });
+  await cx.settle();
+  assert.equal(mod.mode, "panel-key");
+  return calls;
+}
+
+test("the panel key only opens by default, reads no Git, and closes its overlay", async () => {
+  const closed = ["closeOverlay", "o1"];
+  assert.deepEqual(await pressPanelKey(panelTree()), [closed]);
+  assert.deepEqual(await pressPanelKey(panelTree({ hidden: true })), [SHOW, closed]);
+});
+
+test("the panel key toggles when the setting is on", async () => {
+  assert.deepEqual(await pressPanelKey(panelTree(), { toggle: true }), [
+    ["layout.hide", { id: "panel" }],
+    ["closeOverlay", "o1"],
+  ]);
+});
+
+test("the panel key says so when the layout has no panel", async () => {
+  const tree = { id: "root", type: "block", content: { tab: "active" } };
+  assert.deepEqual(await pressPanelKey(tree), [
+    ["notify", "Better Changes isn't in this layout"],
+    ["closeOverlay", "o1"],
+  ]);
 });
