@@ -77,7 +77,9 @@ A hidden panel doesn't refresh, and catches up when shown.
 
 ## Settings
 
-The installed `mods/branch-issue/mod.json` has a `settings` block, kept across `--update`:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+
+Add a `settings` block to the installed `mods/branch-issue/mod.json` with only what you change. It is kept across `--update`. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
 "settings": {

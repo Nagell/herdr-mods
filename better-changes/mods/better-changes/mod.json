@@ -1,25 +1,13 @@
 {
+  "$schema": "./mod.schema.json",
   "version": "2.2.0",
   "place": "right",
   "size": 368,
   "title": "Better Changes",
-  "overlay": { "kind": "popup", "width": 1, "height": 1, "frame": "none" },
-  "settings": {
-    "refresh": {
-      "status": "10s"
-    },
-    "limits": {
-      "files": 1000,
-      "diff_lines": 1500,
-      "line_length": 4000,
-      "commits_per_page": 50
-    },
-    "default": {
-      "view": "tree",
-      "diff": "inline"
-    },
-    "panel": {
-      "toggle": false
-    }
+  "overlay": {
+    "kind": "popup",
+    "width": 1,
+    "height": 1,
+    "frame": "none"
   }
 }

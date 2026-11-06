@@ -30,7 +30,7 @@ Agent states are not PR states: working/blocked/done/idle do not change the PR's
 
 ## Built from
 
-One runtime folder, `mods/better-sidebar/`: `main.js`, `settings.js`, `mod.json`, `git/` (`checkouts.js`, `pr-status.js`), `views/` (`spaces.js`, `agents.js`, `footer.js`, `panel-toggle.js`, `ui.js`, `find-node.js`) and `icons/`. Text sizes are plain px from Herdr's own mods.
+One runtime folder, `mods/better-sidebar/`: `main.js`, `settings.js`, `mod.json`, `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `git/` (`checkouts.js`, `pr-status.js`), `views/` (`spaces.js`, `agents.js`, `footer.js`, `panel-toggle.js`, `ui.js`, `find-node.js`) and `icons/`. Text sizes are plain px from Herdr's own mods.
 
 Use GPUI div/svg and gpui-base vertical/horizontal flex containers. Herdr supplies spaces, panes, machines, theme, settings, exec, hc, watchFolder, window, layout, shared/setShared, localStorage, run, openOverlay, timers, and size-change callbacks. Commands are space.new, space.select, and space.move. Open the shipped menu as a popup with `{tab: "space", target: {id}}`.
 
@@ -40,7 +40,7 @@ Git commands run with `{cwd: folder, on: space.machine}`. GitHub CLI commands ru
 
 Read every package file before installation. Explain that it runs programs, reads repository metadata, and reaches GitHub with local gh credentials. Copy only the runtime folder. If its name is taken, rename the new copy and all its asset paths consistently; never overwrite an unrelated mod.
 
-The same mod draws three blocks, chosen by `props.view`: none for spaces, `agents` for the agents list, adapted from the shipped `agents` mod, and `footer` for one 37px line with a Settings icon, its update dot, and a plus-and-server Add machine icon. The agents view adds "Grouped by main space", read from `better-sidebar.space-parents` that the spaces view publishes from its Git data, and "Grouped by prefix", from the space name then the tab name: `[A-Z][A-Z0-9]*-` plus anything, or any case with a number after the dash, at the start or after a `/`. Groups are made neighbours before `setAgentOrder`, prefix groups sort by name with "No prefix" last.
+The same mod draws three blocks, chosen by `props.view`: none for spaces, `agents` for the agents list, adapted from the shipped `agents` mod, and `footer` for one 37px line with a Settings icon, its update dot, a sliders Mod settings icon that opens Better Config (shown only when `mods/better-config/mod.json` exists, read once; the only look outside its own folder), and a plus-and-server Add machine icon. The agents view adds "Grouped by main space", read from `better-sidebar.space-parents` that the spaces view publishes from its Git data, and "Grouped by prefix", from the space name then the tab name: `[A-Z][A-Z0-9]*-` plus anything, or any case with a number after the dash, at the start or after a `/`. Groups are made neighbours before `setAgentOrder`, prefix groups sort by name with "No prefix" last.
 
 `props.view: panel-toggle` is a 36px block beside the tab bar with a panel-right button that runs `layout.toggle` on `props.target`, default `panel`, dim when hidden, tooltip Show or Hide sidebar. It also takes the `toggle-panel` command, bound to Cmd+Shift+B by the included `keys.json`.
 

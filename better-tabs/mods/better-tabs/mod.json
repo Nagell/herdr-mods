@@ -1,14 +1,6 @@
 {
+  "$schema": "./mod.schema.json",
   "version": "3.0.0",
   "place": "none",
-  "title": "Better Tabs",
-  "settings": {
-    "tabs": {
-      "max_width": 170,
-      "drag_delay": "400ms"
-    },
-    "menu": {
-      "width": 240
-    }
-  }
+  "title": "Better Tabs"
 }

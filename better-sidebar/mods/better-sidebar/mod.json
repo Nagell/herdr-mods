@@ -1,11 +1,6 @@
 {
+  "$schema": "./mod.schema.json",
   "version": "3.0.0",
   "place": "none",
-  "title": "Better Sidebar",
-  "settings": {
-    "git": {
-      "retry_after": "15s"
-    },
-    "pull_request_status": true
-  }
+  "title": "Better Sidebar"
 }

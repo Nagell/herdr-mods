@@ -40,7 +40,7 @@ A missing or logged-out `gh` replaces everything below the tabs with what's wron
 
 ## Built from
 
-`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-pr/bin/herdr-pr`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-pr/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch PR), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `github/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `conversation.js`, `checks.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-pr/bin/herdr-pr`. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 

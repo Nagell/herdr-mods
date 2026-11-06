@@ -10,7 +10,7 @@ This file is the brief: enough to build Estro from an empty folder. The files ne
 
 A row filling the window, with no title bar, `canvas` behind and 1px `border` dividers. Terminals have 14px and 12px padding.
 
-**Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, sharing the height equally, the spaces list and the agents list, both from Better Sidebar: branches on the same line as space names, worktrees nested under their repository, and a pull request's state under its space. Better Sidebar's one-line footer closes it at 37px.
+**Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, sharing the height equally, the spaces list and the agents list, both from Better Sidebar: branches on the same line as space names, worktrees nested under their repository, and a pull request's state under its space. Better Sidebar's one-line footer closes it at 37px, with Settings, Mod settings (Better Config's dialog) and Add machine.
 
 **Work area, the rest.** At the top, 42px, Better Tabs with Better Sidebar's 36px panel toggle at the far right. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, Herdr's 28px `workspace-status`.
 
@@ -25,6 +25,8 @@ A row filling the window, with no title bar, `canvas` behind and 1px `border` di
 | Hands | Hands | What an agent did in other apps, and what it captured |
 | Factory | Factory | Staged agent runs, as a tree of sessions |
 
+Better Config has no block: it's a dialog of every mod's settings, opened from the footer's Mod settings button.
+
 The toolbar's buttons are `panel` actions with `container: "panel"` and `stack: "panel-body"`, and each space remembers its panel through `rememberPanels`.
 
 ## Installing it
@@ -35,7 +37,7 @@ Copy only `layouts/estro.json`. Then add each mod with its pointer's prompt, for
 
 > Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes
 
-Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `branch-pr`, `branch-issue`, `hands` and `factory`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
+Do that for `better-files`, `better-changes`, `better-sidebar`, `better-tabs`, `better-config`, `branch-pr`, `branch-issue`, `hands` and `factory`, reading each mod's README and telling the person what it can do first. Skip any step in a mod's recipe that places it in a layout, because Estro already does. Where a mod is already installed, update it instead.
 
 Anyone who doesn't want one of them can drop its button and block from the layout: Branch PR needs `gh`, Branch Issue a Linear key, Hands macOS, and Factory Claude Code. All four need Go 1.23+ to build their helper.
 
@@ -43,7 +45,7 @@ Then `herdr-app check` each mod and `layout.switch {"name": "estro"}`.
 
 ## Built from
 
-`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `branch-pr`, `branch-issue`, `hands` and `factory`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
+`layouts/estro.json`, with `cloned_from` Herdr's `main`, and `mods/`, a one-line pointer for each of `better-files`, `better-sidebar`, `better-tabs`, `better-changes`, `better-config`, `branch-pr`, `branch-issue`, `hands` and `factory`. `workspace-chrome` and `workspace-status` ship with Herdr. Each mod's own `RECIPE.md` in [munza/herdr-mods](https://github.com/munza/herdr-mods) is the brief for that mod.
 
 ## Watch out
 

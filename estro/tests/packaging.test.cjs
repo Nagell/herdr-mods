@@ -11,7 +11,9 @@ const blocks = (node) => [...(node.content?.mod ? [node] : []), ...(node.childre
 test('every mod the layout names is here or ships with Herdr', () => {
   const named = new Set(blocks(layout).map((b) => b.content.mod));
   for (const mod of named) assert.ok(SHIPPED.has(mod) || fs.existsSync(path.join(root, 'mods', mod, 'RECIPE.md')), mod);
-  for (const mod of fs.readdirSync(path.join(root, 'mods'))) assert.ok(named.has(mod), `${mod} is unused`);
+  // A dialog, such as Better Config, has no block: Better Sidebar's footer opens it.
+  const dialog = (mod) => JSON.parse(fs.readFileSync(path.join(root, '..', mod, 'mods', mod, 'mod.json'), 'utf8')).overlay?.kind === 'dialog';
+  for (const mod of fs.readdirSync(path.join(root, 'mods'))) assert.ok(named.has(mod) || dialog(mod), `${mod} is unused`);
 });
 
 test('every toolbar button points at a panel and an icon that exist', () => {

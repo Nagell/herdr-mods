@@ -1,10 +1,6 @@
 {
+  "$schema": "./mod.schema.json",
   "version": "1.2.0",
   "place": "none",
-  "title": "Factory",
-  "settings": {
-    "refresh": {
-      "run": "1500ms"
-    }
-  }
+  "title": "Factory"
 }

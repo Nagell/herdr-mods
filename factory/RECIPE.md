@@ -26,7 +26,7 @@ Pause interrupts working stages with `hc interrupt` and starts nothing new; Resu
 
 ## Built from
 
-`mods/factory/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Factory), `run/` (`model.js`, `reads.js`), `actions/` (`commands.js`, `menus.js`), `views/` (`ui.js`, `days.js`, `run.js`, `workflows.js`, `empty.js`, `events.js`), `icons/`. `helper/` is a standard-library Go program with `defaults/` embedded, split into `main.go`, `run.go`, `config.go` and `session.go`; `helper/install/` builds it to `mods/factory/bin/factory`, writes the defaults and installs `skills/factory/SKILL.md`.
+`mods/factory/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Factory), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `run/` (`model.js`, `reads.js`), `actions/` (`commands.js`, `menus.js`), `views/` (`ui.js`, `days.js`, `run.js`, `workflows.js`, `empty.js`, `events.js`), `icons/`. `helper/` is a standard-library Go program with `defaults/` embedded, split into `main.go`, `run.go`, `config.go` and `session.go`; `helper/install/` builds it to `mods/factory/bin/factory`, writes the defaults and installs `skills/factory/SKILL.md`.
 
 ## Watch out
 

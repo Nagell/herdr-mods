@@ -38,7 +38,7 @@ Writes never retry by themselves. A failure keeps the draft and says to refresh 
 
 ## Built from
 
-`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-issue/bin/herdr-linear`. Remote spaces run Git there, and the helper stays local.
+`mods/branch-issue/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Branch Issue), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `linear/` (`model.js`, `discovery.js`, `reads.js`), `actions/` (`changes.js`, `agents.js`, `worktrees.js`, `menus.js`), `state/saved.js`, `views/` (`ui.js`, `list.js`, `detail.js`, `comments.js`, `worktrees.js`), `icons/`. `helper/` is `go.mod`, `main.go`, `main_test.go` with no dependencies; `helper/install/` builds it to `mods/branch-issue/bin/herdr-linear`. Remote spaces run Git there, and the helper stays local.
 
 ## Watch out
 

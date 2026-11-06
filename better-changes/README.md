@@ -56,7 +56,9 @@ Terminals look the same as with Herdr's header. It's a copy of Herdr's `pane` mo
 
 ## Settings
 
-The installed `mods/better-changes/mod.json` has a `settings` block, and saving it applies at once:
+[Better Config](../better-config/README.md) shows these with what each one does, and changes, checks and resets them for you. By hand:
+
+Add a `settings` block to the installed `mods/better-changes/mod.json` with only what you change. Saving it applies at once. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
 "settings": {
