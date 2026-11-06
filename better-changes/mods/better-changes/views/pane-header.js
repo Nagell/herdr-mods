@@ -112,6 +112,7 @@ export const paneHeaderMethods = {
       .when(p.status === "done", (el) => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
       .when(Boolean(this.hovered), (el) =>
         el
+          .when(p.mod === "better-changes", (el) => el.child(this.FullFileButton()))
           .child(
             this.paneButton(t, `ph-r-${pane}`, "split-right", "pane.split", {
               direction: "right",

@@ -164,7 +164,7 @@ export function IconButton({
 }
 
 // A small labelled action, for a heading with room to say what it does.
-export function TextButton({ id, icon, label, onClick }) {
+export function TextButton({ id, icon, label, onClick, active = false }) {
   const t = theme();
   return h_flex()
     .id(id)
@@ -175,14 +175,15 @@ export function TextButton({ id, icon, label, onClick }) {
     .items_center()
     .rounded(RADIUS.small)
     .text_size(TEXT.caption)
-    .text_color(t.dim)
+    .text_color(active ? t.foreground : t.dim)
+    .when(active, (el) => el.bg(t.selected))
     .cursor_pointer()
     .hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click((_e, cx) => {
       cx.stop_propagation();
       onClick(cx);
     })
-    .child(Icon(icon, 12))
+    .when(Boolean(icon), (el) => el.child(Icon(icon, 12)))
     .child(label);
 }
 

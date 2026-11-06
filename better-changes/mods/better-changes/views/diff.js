@@ -3,7 +3,7 @@ import { div } from "gpui-kit";
 import { h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, readTextFile, theme, shared, setShared, run, layout } from "herdr";
 import { diffRows, splitDiffRows, conflictRows } from "../git/model.js";
-import { TEXT, SIZE, codeFont, codeSize, Icon, Panel, PaneBar, DiffStat, Message } from "./ui.js";
+import { TEXT, SIZE, codeFont, codeSize, Icon, Panel, PaneBar, DiffStat, Message, TextButton } from "./ui.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
 // In widths of the code font's size, so a diff looks the same at any terminal size.
@@ -135,6 +135,29 @@ export const diffMethods = {
     };
   },
 
+  // Whether diffs show the whole file around their changes. The header row toggles it for every diff tab.
+  fullFile() {
+    return shared("better-changes.full-file") ?? localStorage.getItem("full-file") === "1";
+  },
+
+  toggleFullFile() {
+    const full = !this.fullFile();
+    localStorage.setItem("full-file", full ? "1" : "0");
+    setShared("better-changes.full-file", full);
+  },
+
+  FullFileButton() {
+    return TextButton({
+      id: "diff-full-file",
+      label: "Full file",
+      active: this.fullFile(),
+      onClick: (cx) => {
+        this.toggleFullFile();
+        cx.notify();
+      },
+    });
+  },
+
   diffArgs() {
     if (this.scope === "commit")
       return ["show", "--diff-merges=first-parent", "--format=", this.commitRef.hash];
@@ -176,6 +199,7 @@ export const diffMethods = {
   },
 
   loadDiff(cx) {
+    this.shownFull = this.fullFile();
     const { path, context, root, on, scope } = this;
     const file = this.diffFile();
     const token = ++this.diffToken;
@@ -238,6 +262,8 @@ export const diffMethods = {
 
   async readDiffLines(file, path, root, on) {
     const args = ["--literal-pathspecs", ...this.diffArgs()];
+    // shortcut: a file over 1,000,000 lines still shows in pieces, fine for a diff view.
+    if (this.shownFull) args.push("--unified=1000000");
     args.push("--no-ext-diff", "--no-textconv", "--no-color", "--", path);
     const result = await this.git(args, root, on);
     if (result.code !== 0) throw Error(result.stderr || "Cannot read diff");
@@ -323,7 +349,8 @@ export const diffMethods = {
       .child(Icon("file", 14).text_color(t.dim))
       .child(div().flex_none().truncate().max_w(260).font_medium().child(head.title))
       .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))
-      .child(DiffStat(head));
+      .child(DiffStat(head))
+      .child(this.FullFileButton());
   },
 
   renderColumnTitles() {

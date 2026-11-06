@@ -147,6 +147,7 @@ class BetterChanges extends View {
     if (this.contextKey() !== this.context) this.refresh(cx);
     if (this.mode === "diff") {
       this.syncSelection(cx);
+      if (this.root && this.path && this.shownFull !== this.fullFile()) this.loadDiff(cx);
       this.publishHead();
     }
     const reload = shared("better-changes.reload");

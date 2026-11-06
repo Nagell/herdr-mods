@@ -7,6 +7,7 @@ A Git panel for Herdr Desktop, built to look like Herdr's own panels: file chang
 - **Changes** lists **Conflicts**, **Staged**, **Unstaged** and **Committed** (not pushed yet) files in collapsible groups. Groups with nothing in them are hidden.
 - **+** and **−** stage or unstage a file; **Stage all** and **Unstage all** act on the whole repository except conflicts. Working files are never touched.
 - The **⋮** menu picks **Flat** or **Tree** for file lists, and **Inline** or **Side by side** for diffs.
+- **Full file**, shown when you hover over the diff's header row, shows the whole file with its changes marked, instead of only the changed lines. It applies to every diff until you turn it off. A diff still stops at `limits.diff_lines`.
 - Clicking a file opens its diff in one reusable centre tab, named after the file. It comes back to that file after a restart.
 - **Commits** lists history, grouped by your branch and its remote, and opens any commit's description and changes, with a link to GitHub for commits already pushed.
 - A commit box with **Commit** and **Amend**.
