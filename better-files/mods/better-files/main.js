@@ -23,7 +23,7 @@ import { treeMethods } from "./views/tree.js";
 import { viewerMethods } from "./views/viewer.js";
 import { contextMenuMethods } from "./views/context-menu.js";
 
-const DEFAULT_SETTINGS = { refresh: { tree: "10s", file: "2s" }, editors: [], gutter: true };
+const DEFAULT_SETTINGS = { refresh: { tree: "10s", file: "2s" }, editors: [], gutter: true, markdown: "preview" };
 const SYNC_MS = 300;
 
 class BetterFiles extends View {
@@ -50,12 +50,15 @@ class BetterFiles extends View {
     this.viewerSpace = p.space;
     this.viewerFile = p.file;
     this.gutterOn = true;
+    this.markdownDefault = DEFAULT_SETTINGS.markdown;
     this.hunks = [];
     this.openHunks = new Set();
     this.syncViewer(cx);
     cx.timer.every(SYNC_MS, (cx) => this.syncViewer(cx));
     cx.spawn(async (cx) => {
       const { settings } = await loadSettings("better-files", DEFAULT_SETTINGS);
+      this.markdownDefault = settings.markdown === "code" ? "code" : "preview";
+      cx.notify();
       // Folding can't change once a view is made, so turning the gutter off starts a new one.
       if (settings.gutter === false) {
         this.gutterOn = false;
@@ -96,9 +99,10 @@ class BetterFiles extends View {
     });
   }
 
-  // A closing tab takes its copy of an image with it.
+  // A closing tab takes its copies of images with it.
   async close() {
-    if (this.imageCopy) await exec("rm", ["-f", "--", `${appHome()}/${this.imageCopy}`], {}).catch(() => {});
+    const copies = [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter(Boolean);
+    if (copies.length) await exec("rm", ["-f", "--", ...copies.map((c) => `${appHome()}/${c}`)], {}).catch(() => {});
   }
 
   // Keeps up with the focused pane, tabs closing, and questions left by the menu.

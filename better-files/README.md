@@ -10,6 +10,7 @@ A file browser for [Herdr Desktop](https://herdr.dev/) that opens files in the c
 - **The file view** is read-only, at your terminal's font size, and follows the file as it changes on disk. Only a real change touches it. Binary and unreadable files say so, and very long files are cut at 400,000 characters.
 - **Changed lines:** lines that differ from the last commit are tinted, with a solid bar at their edge: green added, yellow changed, and a thin red line across the file where lines were removed. A new file is all green. Click a yellow line or the red line to open the change in place, with the old lines in red, and click again to close it. **Expand all**, beside Open in, opens or closes them all at once. They update as the file changes, and clear when it's committed. The file is drawn as rows so the colours can't drift, so text can't be selected and there's no folding, and highlighting is simpler. Use **Open in** for those, or turn `gutter` off.
 - **Images:** PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures, fitted to the pane, and update when the file changes. Herdr only loads images from its own folder, so each is shown through a copy in `mods/better-files/cache/`, removed when its tab closes.
+- **Markdown:** a `.md` or `.markdown` file opens rendered, in Herdr's own Markdown view: headings, lists, tables, code blocks, quotes, links and the rest, with text you can select. **Preview** and **Code**, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice, and `markdown` in settings picks the first one. A web link opens in your browser, and a link to another file here opens it in the viewer. A picture on a line of its own, from this computer, shows through the cache like an image file; one inside a paragraph, list or table, or from the web, is left to Herdr's view. The preview follows the file as it changes on disk.
 - **Open the whole folder** in your editor or Finder, from the folder icon beside refresh.
 - **One title:** the tab's title row reads like a diff's, with the file, its folder, and Preview while it's the shared tab.
 - **Open in** your code editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more.
@@ -58,11 +59,12 @@ Add a `settings` block to the installed `mods/better-files/mod.json` with only w
 "settings": {
   "refresh": { "tree": "10s", "file": "2s" },
   "editors": [{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }],
-  "gutter": true
+  "gutter": true,
+  "markdown": "preview"
 }
 ```
 
-`refresh.tree` is how often the tree rereads, on top of watching the folder, and never closer than 1 second. `refresh.file` is how often an open file is checked, never closer than 500ms. `editors` adds to the built-in list, by macOS app ID, and is only offered if installed. `gutter: false` uses Herdr's own editor instead: fuller highlighting, selection and folding, but no line colours.
+`refresh.tree` is how often the tree rereads, on top of watching the folder, and never closer than 1 second. `refresh.file` is how often an open file is checked, never closer than 500ms. `editors` adds to the built-in list, by macOS app ID, and is only offered if installed. `gutter: false` uses Herdr's own editor instead: fuller highlighting, selection and folding, but no line colours. `markdown` is how a Markdown file first opens, `"preview"` or `"code"`; the toggle in a tab overrides it for that tab.
 
 ## Limits
 
