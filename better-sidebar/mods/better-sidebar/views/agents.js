@@ -611,6 +611,10 @@ export class Agents {
     // The tab's title, as Herdr's tab bar shows it.
     const name = tab.name;
     const prog = l?.program?.name;
+    // A mod's pane runs no program, but the mod may publish an icon, as Better Tabs reads it.
+    const modIcon = shared("mod-icons")?.[panes().find((p) => p.tab === tab.id && p.mod)?.mod];
+    const pic =
+      icon(l?.program, 16, t.dim) ?? (modIcon ? svg(modIcon).size(16).flex_none().text_color(t.dim) : null);
     return h_flex()
       .id(`tab-${tab.id}`)
       .px(8)
@@ -626,7 +630,7 @@ export class Agents {
         run("space.select", { id: w.id });
         run("tab.select", { id: tab.id });
       })
-      .child(icon(l?.program, 16, t.dim) ?? div().w(16).flex_none())
+      .child(pic ?? div().w(16).flex_none())
       .child(
         h_flex()
           .flex_1()

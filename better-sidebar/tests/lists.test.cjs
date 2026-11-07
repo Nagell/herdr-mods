@@ -24,7 +24,7 @@ function element() {
   return proxy;
 }
 
-async function harness({ settings = {}, tab = null } = {}) {
+async function harness({ settings = {}, tab = null, panes = [], sharedValues = {} } = {}) {
   const pending = [];
   const stored = { "lists.tab": tab };
   const live = { order: [] };
@@ -49,19 +49,19 @@ async function harness({ settings = {}, tab = null } = {}) {
   const context = {
     Date, JSON, Map, Set, Math, console,
     View: class {},
-    div: element, svg: element, image: element, v_flex: element, h_flex: element,
+    div: element, svg: (p) => element().child(`svg:${p}`), image: element, v_flex: element, h_flex: element,
     Popover: { new: element },
     spaces: () => spaces,
     agents: () => agents,
     terminals: () => [],
-    panes: () => [],
+    panes: () => panes,
     focused: () => null,
     machines: () => [],
     theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
     layout: () => ({ id: "sidebar", size: { px: 268 } }),
     window: () => ({ active: true, platform: "macos" }),
     props: () => ({ view: "lists" }),
-    shared: () => undefined,
+    shared: (k) => sharedValues[k],
     setShared() {},
     setAgentOrder: (list) => (live.order = [...list]),
     run() {},
@@ -138,4 +138,14 @@ test("in Spaces a pinned agent sits above every space", async () => {
 test("an Agents row reads its tab's title, then its space", async () => {
   const { mod } = await harness({ tab: "agents" });
   assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+shop/);
+});
+
+test("a mod's tab shows the icon the mod publishes, and a tab with neither keeps the gap", async () => {
+  const { mod } = await harness({
+    panes: [{ pane: "pd", tab: "d", mod: "better-files" }],
+    sharedValues: { "mod-icons": { "better-files": "mods/better-files/icons/file.svg" } },
+  });
+  assert.match(text(find(mod.render(), "tab-d")), /svg:mods\/better-files\/icons\/file\.svg/);
+  const { mod: bare } = await harness();
+  assert.doesNotMatch(text(find(bare.render(), "tab-d")), /svg:/);
 });
