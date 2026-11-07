@@ -9,10 +9,11 @@
 //   actions/worktrees.js  a PR's checkouts
 //   actions/menus.js      the popup menus
 //   views/list.js, detail.js, conversation.js, checks.js, worktrees.js   the drawing
+//   views/files.js        the Files tab, and handing a file's diff to Better Changes
 // github/model.js says what GitHub's answers mean; views/ui.js holds every look.
 import { View } from "gpui-kit";
 import { InputState, TextareaState } from "gpui-base";
-import { spaces, panes, nextCommand, layout } from "herdr";
+import { spaces, panes, nextCommand, layout, readTextFile, appHome } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { savedMethods } from "./state/saved.js";
 import { discoveryMethods } from "./github/discovery.js";
@@ -26,6 +27,7 @@ import { detailMethods } from "./views/detail.js";
 import { conversationMethods } from "./views/conversation.js";
 import { checksMethods } from "./views/checks.js";
 import { worktreeViewMethods } from "./views/worktrees.js";
+import { filesMethods } from "./views/files.js";
 import { panelShown, ghProblem } from "./github/model.js";
 import { Panel } from "./views/ui.js";
 
@@ -42,13 +44,19 @@ const DEFAULT_SETTINGS = {
   tools: { github: "gh" },
 };
 
+// Each space's last terminal folder and branch.
+const lastTerminal = new Map();
+
 function activeSpace() {
   const sp = spaces().find((s) => s.active);
   if (!sp) return null;
   const tab = sp.tabs?.find((t) => t.active)?.id;
   const candidates = panes().filter((p) => p.tab === tab && p.cwd);
   const current = candidates.find((p) => p.focused) ?? candidates[0];
-  return { ...sp, folder: current?.cwd ?? sp.folder, branch: current?.branch ?? sp.branch };
+  if (current) lastTerminal.set(sp.id, { folder: current.cwd, branch: current.branch });
+  // A tab with no terminal, such as a diff, keeps the last one's, so the PR isn't read again.
+  const last = lastTerminal.get(sp.id);
+  return { ...sp, folder: last?.folder ?? sp.folder, branch: last?.branch ?? sp.branch };
 }
 
 function spaceContextKey(space) {
@@ -85,11 +93,18 @@ class PullRequests extends View {
     this.logs = {};
     this.author = "";
     this.section = "overview";
+    this.fileLayout = localStorage.getItem("files-layout") === "flat" ? "flat" : "tree";
+    this.closedFolders = new Set();
     this.settings = DEFAULT_SETTINGS;
     this.settingsProblems = [];
     this.tab = DEFAULT_SETTINGS.list.default.tab;
     this.state = DEFAULT_SETTINGS.list.default.state;
     this.applySettings(cx);
+    // shortcut: checked once, so installing Better Changes takes effect after the next reload.
+    this.hasBetterChanges = false;
+    readTextFile(`${appHome()}/mods/better-changes/mod.json`)
+      .then((raw) => (this.hasBetterChanges = raw !== null))
+      .catch(() => {});
     this.search = InputState.new({ placeholder: "Search · #482, text, author:login" });
     this.search.on("change", (_e, cx) => {
       if (!this.restoringSearch) this.searchChanged(cx);
@@ -214,6 +229,7 @@ Object.assign(
   conversationMethods,
   checksMethods,
   worktreeViewMethods,
+  filesMethods,
 );
 
 export default PullRequests;

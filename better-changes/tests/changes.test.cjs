@@ -659,3 +659,14 @@ test("the panel key says so when the layout has no panel", async () => {
     ["closeOverlay", "o1"],
   ]);
 });
+
+test("a handed-over patch, as from Branch PR, shows without reading Git's diff", async () => {
+  const { root } = repo();
+  const source = { cwd: root, on: null };
+  const file = { path: "src/a.go", add: 1, del: 1, patch: "@@ -1 +1 @@\n-old\n+new" };
+  const selection = { context: JSON.stringify(source), path: file.path, scope: "patch", commit: { short: "PR #5" }, file, at: 1 };
+  const { mod, cx } = load(root, { props: { mode: "diff", space: "s", source, selection } });
+  await cx.settle();
+  assert.deepEqual(mod.rows.map((row) => row.text).filter((text) => text === "old" || text === "new"), ["old", "new"]);
+  assert.deepEqual(mod.head(), { title: "a.go", detail: "src · PR #5", icon: "mods/better-changes/icons/file.svg", add: 1, del: 1 });
+});

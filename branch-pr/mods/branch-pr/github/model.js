@@ -418,3 +418,33 @@ export function commentMessage(pr, repo, composer, prompt) {
   };
   return `${prompt}\n\nContext: ${JSON.stringify(about)}\n\n${AS_DATA}\n\nThe comment:\n${composer.context ?? ""}`;
 }
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+// Folders first, then files, omitting what's inside a closed folder. A copy of Better
+// Changes' fileTree, keyed on GitHub's `filename`: one mod can't import another.
+export function fileTree(files, closed = new Set()) {
+  const root = { dirs: new Map(), files: [] };
+  for (const file of files) {
+    const parts = file.filename.split("/");
+    parts.pop();
+    let node = root;
+    let path = "";
+    for (const part of parts) {
+      path = path ? `${path}/${part}` : part;
+      if (!node.dirs.has(part)) node.dirs.set(part, { path, dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push(file);
+  }
+  const rows = [];
+  function walk(node, depth) {
+    for (const [name, directory] of [...node.dirs].sort(([a], [b]) => a.localeCompare(b))) {
+      rows.push({ kind: "folder", name, path: directory.path, depth });
+      if (!closed.has(directory.path)) walk(directory, depth + 1);
+    }
+    for (const file of node.files) rows.push({ kind: "file", file, depth });
+  }
+  walk(root, 0);
+  return rows;
+}

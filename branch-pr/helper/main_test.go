@@ -392,3 +392,18 @@ func TestAutoMergeAsksGitHubForAutoMergeAndNeverMerges(t *testing.T) {
 		t.Fatalf("GitHub's refusal was lost: %v", err)
 	}
 }
+
+func TestFilesReadsEveryPageOfThePRsFiles(t *testing.T) {
+	mock(t, func(a []string, _ []byte) ([]byte, error) {
+		if !reflect.DeepEqual(a, []string{"api", "--paginate", "--slurp", "repos/owner/repo/pulls/5/files?per_page=100"}) {
+			t.Fatal(a)
+		}
+		return []byte(`[[{"filename":"a.go"}]]`), nil
+	})
+	if _, e := handle(context.Background(), Request{Action: "files", Repo: "owner/repo", Number: 5}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := handle(context.Background(), Request{Action: "files", Repo: "owner/repo"}); e == nil {
+		t.Fatal("a missing number must fail")
+	}
+}

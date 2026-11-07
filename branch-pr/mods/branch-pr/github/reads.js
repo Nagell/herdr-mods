@@ -129,6 +129,7 @@ export const readMethods = {
         this.adoptPR(pr, repo);
         this.refreshed = Date.now();
         this.loadWorktrees(cx);
+        if (this.section === "files") this.loadFiles(cx);
       } catch (e) {
         if (token === this.detailToken) {
           this.error = e.message;

@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const dir = path.join(__dirname, '../mods/branch-pr');
-const FILES = ['settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'main.js'];
+const FILES = ['settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'views/files.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -38,7 +38,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     return proxy;
   }
   const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {}, set_selected_range(r) { this.selected = r; } });
-  const live = { spaces: [], panes: [], agents: [] };
+  const live = { spaces: [], panes: [], agents: [], shared: {} };
   const context = {
     View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
     Popover: { new: (id) => el().id(id) }, Input: { new: () => el() }, Textarea: { new: () => el() },
@@ -48,6 +48,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     exec: exec ?? (async () => ({ code: 1, stdout: '', stderr: '' })),
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
+    shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
     home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
     layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
     
@@ -943,6 +944,14 @@ test('settings set list defaults and page size, and problems show at the top', a
 
 // ── Worktrees ───────────────────────────────────────────────────────────────
 
+test('a worktree on the PR\'s head branch counts without a herdr-pr binding, as when the PR came from it', async () => {
+  const list = 'worktree /repo\nHEAD a\nbranch refs/heads/main\n\nworktree /wt/mine\nHEAD b\nbranch refs/heads/fix\n\n';
+  const h = harness({ exec: git([['--get-regexp', ''], ['worktree list', list]]) });
+  h.mod.pr = PR();
+  h.mod.loadWorktrees(h.cx); await h.flush();
+  same(h.mod.currentWorktrees(), [{ path: '/wt/mine', branch: 'fix', name: 'mine' }]);
+});
+
 test('a PR\'s worktrees are listed and a click switches to or opens their space', async () => {
   const h = harness({ exec: git([['--get-regexp', 'branch.fix.herdr-pr owner/repo#2\n'], ['worktree list', 'worktree /wt/PR-2\nHEAD abc\nbranch refs/heads/fix\n\n']]) });
   h.mod.pr = PR({ repository: 'owner/repo' });
@@ -1010,6 +1019,87 @@ test('a worktree name with a path in it is refused, and a moved PR stops the che
   assert.equal(log.some((l) => l.includes('worktree add')), false);
 });
 
+// A file's diff opens in Better Changes' centre tab; Branch PR has none of its own.
 test('nothing left of GitLab, previews, pending reviews, proposals or a center tab', () => {
-  assert.doesNotMatch(source, /gitlab|glab|merge-requests|proposal|pendingReview|start-review|setPreview|\.workflow\/|tab\.new[^;]*mod:|openBrowser/i);
+  assert.doesNotMatch(source, /gitlab|glab|merge-requests|proposal|pendingReview|start-review|setPreview|\.workflow\/|mod: "branch-pr"|openBrowser/i);
+});
+
+// ── Files ───────────────────────────────────────────────────────────────────
+
+test('a merged PR shows a Merged badge where Actions would be', () => {
+  const h = harness();
+  h.mod.pr = PR({ state: 'MERGED' });
+  const tree = h.mod.render();
+  assert.equal(find(tree, 'pr-actions'), undefined);
+  assert.match(strings(find(tree, 'pr-merged')), /Merged/);
+  h.mod.pr = PR();
+  assert.equal(find(h.mod.render(), 'pr-merged'), undefined);
+});
+
+const FILE = { filename: 'src/a.go', additions: 3, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' };
+const filesHarness = () => harness({ exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[FILE]] : {}), stderr: '' }) });
+
+test('the Files tab counts the files, lists them, and opens one on GitHub without Better Changes', async () => {
+  const h = filesHarness();
+  h.mod.pr = PR({ changedFiles: 1 });
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-files')), /Files 1/);
+  click(tree, 'pr-files', h);
+  await h.flush();
+  tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-file-src/a.go')), /a\.go \+3 −1/);
+  click(tree, 'pr-file-src/a.go', h);
+  same(h.opened, ['https://github.com/owner/repo/pull/2/files']);
+  same(h.ran, []);
+});
+
+test("with Better Changes, a file's GitHub patch opens in its diff tab", async () => {
+  const h = filesHarness();
+  await h.flush(); // the check for Better Changes, which finds none here
+  h.mod.hasBetterChanges = true;
+  h.live.spaces = [{ id: 'space', active: true, tabs: [{ id: 't1' }] }];
+  h.mod.pr = PR();
+  h.mod.selectSection('files', h.cx);
+  await h.flush();
+  click(h.mod.render(), 'pr-file-src/a.go', h);
+  const entry = h.live.shared['better-changes.diff-tabs'].space;
+  same(entry.source, { cwd: '/repo', on: null });
+  assert.equal(entry.selection.scope, 'patch');
+  assert.equal(entry.selection.context, JSON.stringify(entry.source));
+  same(entry.selection.file, { path: 'src/a.go', add: 3, del: 1, patch: FILE.patch });
+  assert.equal(h.ran[0][0], 'tab.new');
+  h.live.panes = [{ mod: 'better-changes', tab: 't1' }];
+  click(h.mod.render(), 'pr-file-src/a.go', h);
+  same(h.ran.slice(1), [['tab.rename', { id: 't1', name: 'a.go' }], ['tab.select', { id: 't1' }]]);
+  same(h.opened, []);
+});
+
+test('the Files tab shows a tree by default, folders close, and the toggle remembers a flat list', async () => {
+  const h = filesHarness();
+  h.mod.pr = PR();
+  h.mod.selectSection('files', h.cx);
+  await h.flush();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-folder-src')), /src/);
+  click(tree, 'pr-folder-src', h);
+  assert.equal(find(h.mod.render(), 'pr-file-src/a.go'), undefined);
+  click(h.mod.render(), 'pr-folder-src', h);
+  click(h.mod.render(), 'pr-files-layout', h);
+  tree = h.mod.render();
+  assert.equal(find(tree, 'pr-folder-src'), undefined);
+  assert.match(strings(find(tree, 'pr-file-src/a.go')), /a\.go src \+3 −1/);
+  assert.equal(h.storage.get('files-layout'), 'flat');
+});
+
+test('moving to a tab with no terminal, such as a diff, keeps the PR instead of reading it again', () => {
+  const h = harness();
+  const space = (tab) => [{ id: 's', active: true, folder: '/home', branch: 'main', tabs: [{ id: 't1', active: tab === 't1' }, { id: 't2', active: tab === 't2' }] }];
+  h.live.panes = [{ tab: 't1', cwd: '/repo', branch: 'fix' }, { tab: 't2', mod: 'better-changes' }];
+  h.live.spaces = space('t1');
+  h.tick();
+  const key = h.mod.spaceKey;
+  assert.match(key, /\/repo:fix/);
+  h.live.spaces = space('t2');
+  h.tick();
+  assert.equal(h.mod.spaceKey, key);
 });
