@@ -325,28 +325,29 @@ test("worktree spaces nest under the matching main checkout, with machines isola
 test("a row shows an unusual branch, and ahead/behind only when selected", () => {
   const h = harness();
   const g = { branch: "topic", ahead: 2, behind: 1 };
-  assert.match(text(h.mod.gitTail(g, true, h.colors)), /topic.*\u21912.*\u21931/);
-  assert.equal(text(h.mod.gitTail(g, false, h.colors)).trim(), "topic");
-  assert.equal(text(h.mod.gitTail({ branch: "master" }, false, h.colors)).trim(), "");
-  assert.equal(text(h.mod.gitTail({ branch: "topic" }, false, h.colors, "topic")).trim(), "");
+  assert.equal(text(h.mod.branchName(g, "repo", h.colors)).trim(), "topic");
+  assert.match(text(h.mod.gitTail(g, true, h.colors)), /\u21912.*\u21931/);
+  assert.equal(text(h.mod.gitTail(g, false, h.colors)).trim(), "");
+  assert.equal(text(h.mod.branchName({ branch: "master" }, "repo", h.colors)).trim(), "");
+  assert.equal(text(h.mod.branchName({ branch: "topic" }, "topic", h.colors)).trim(), "");
 });
 
-test("space rows align branches right and show their own PR underneath", () => {
+test("space rows put the branch beside the name and their own PR at the right", () => {
   const h = harness();
   const space = { id: "main", name: "repo", folder: "/repo", tabs: [{ id: "tab", active: true }] };
   h.live.spaces = [space];
   h.live.panes = [{ tab: "tab", cwd: "/repo", branch: "main" }];
-  const g = { branch: "main", name: "repo" };
+  h.live.panes[0].branch = "topic";
+  const g = { branch: "topic", name: "repo" };
   h.mod.git['[null,"/repo"]'] = g;
   h.observer.entries.set('[null,"/repo"]', {
-    branch: "main",
+    branch: "topic",
     prs: [{ number: 42, repository: "owner/repo", title: "Fix", state: "OPEN" }],
   });
   const row = h.mod.row({ w: space, i: 0, g, tree: null }, h.colors);
-  assert.doesNotMatch(text(row), /main/);
-  assert.match(text(find(row, "space-pr-line-main")), /#42/);
-  assert.doesNotMatch(text(find(row, "space-pr-line-main")), /Open/);
-  assert.ok("justify_end" in h.mod.gitTail(g, false, h.colors).attributes);
+  assert.match(text(row), /repo.*topic.*#42/);
+  assert.doesNotMatch(text(row), /Open/);
+  assert.equal(find(row, "space-pr-line-main"), undefined);
   row.handlers.mouse_down_left();
   row.handlers.mouse_up_left({}, h.cx);
   assert.equal(h.commands[0].name, "space.select");

@@ -23,34 +23,14 @@
         },
         {
           "id": "sidebar-lists",
-          "type": "column",
-          "children": [
-            {
-              "id": "spaces",
-              "type": "block",
-              "content": {
-                "mod": "better-sidebar"
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "content": {
-                "mod": "better-sidebar",
-                "props": {
-                  "view": "agents"
-                }
-              },
-              "size": {
-                "weight": 1
-              },
-              "min": 90
+          "type": "block",
+          "content": {
+            "mod": "better-sidebar",
+            "props": {
+              "view": "lists"
             }
-          ]
+          },
+          "min": 90
         },
         {
           "id": "sidebar-footer",

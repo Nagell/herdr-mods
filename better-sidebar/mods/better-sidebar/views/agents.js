@@ -129,23 +129,6 @@ function agentLabel() {
   };
 }
 
-// A row reads "space · detail": the detail is a tab someone named or the agent's
-// own title, never an automatic tab number unless two rows would read the same.
-function agentDetails(list, label) {
-  const isNumber = (text) => /^\d+$/.test(text);
-  const details = new Map(list.map((a) => [a.address, isNumber(label(a)) ? null : label(a)]));
-  const seen = {};
-  for (const a of list) {
-    const key = `${a.space_name}\u0000${details.get(a.address) ?? ""}`;
-    seen[key] = (seen[key] ?? 0) + 1;
-  }
-  for (const a of list) {
-    if (details.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1)
-      details.set(a.address, label(a));
-  }
-  return details;
-}
-
 // Same group next to each other, so the list reads, and next-agent keys move, in order.
 function gatherGroups(list, groupOf, sortId) {
   const gathered = new Map();
@@ -221,6 +204,11 @@ export class Agents {
     const sawDone =
       a.address === this.held?.address && this.held.rank === RANK.done && a.status === "idle";
     return sawDone ? RANK.done : (RANK[a.status] ?? 0);
+  }
+
+  // Sort menu for the lists view's tab bar.
+  sortMenu() {
+    return this.renderSortMenu(sortOf());
   }
 
   sortOptions() {
@@ -366,9 +354,10 @@ export class Agents {
       .bg(a.status === "done" ? color : t.dim + "00");
   }
 
-  render() {
+  // opts, from the lists view: `view` already read, `heading: false` under its tabs.
+  render(opts = {}) {
     const t = theme();
-    const view = this.readView();
+    const view = opts.view ?? this.readView();
     setAgentOrder(view.list.map((a) => a.address));
     const rows = view.collapsed
       ? view.list.flatMap((a, i) => this.agentWithSubs(a, i, view, t))
@@ -378,10 +367,10 @@ export class Agents {
       .size_full()
       .min_h(0)
       .bg(t.chrome)
-      .border_t(1)
-      .border_color(t.border)
+      // Under the lists view's tabs, the tab bar's space divides it instead.
+      .when(opts.heading !== false, (el) => el.border_t(1).border_color(t.border))
       .text_size(TEXT.body)
-      .when(!view.collapsed, (el) => el.child(this.heading(view.sort, t)))
+      .when(!view.collapsed && opts.heading !== false, (el) => el.child(this.heading(view.sort, t)))
       .when(view.list.length === 0 && !view.collapsed, (el) => el.child(this.emptyMessage(t)))
       .child(
         v_flex()
@@ -421,6 +410,7 @@ export class Agents {
     const list = [...pinned, ...rest];
     return {
       sort,
+      count: unordered.length,
       all,
       now,
       byPriority,
@@ -428,7 +418,6 @@ export class Agents {
       shown: focused()?.agent,
       list,
       label,
-      details: agentDetails(list, label),
       groups: this.makeGroups(pinned, rest, groupOf, byPriority, urgency),
     };
   }
@@ -616,6 +605,44 @@ export class Agents {
       .child(this.status(t, a, view.byPriority && !this.pins.includes(a.address)));
   }
 
+  // A tab with no agent, under its space in the lists view: its program and its name.
+  tabRow(w, tab, lit, t) {
+    const l = lead(tab);
+    // The tab's title, as Herdr's tab bar shows it.
+    const name = tab.name;
+    const prog = l?.program?.name;
+    return h_flex()
+      .id(`tab-${tab.id}`)
+      .px(8)
+      .h(30)
+      .flex_none()
+      .rounded(8)
+      .items_center()
+      .gap(9)
+      .when(lit, (el) => el.bg(t.selected))
+      .cursor_pointer()
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => {
+        run("space.select", { id: w.id });
+        run("tab.select", { id: tab.id });
+      })
+      .child(icon(l?.program, 16, t.dim) ?? div().w(16).flex_none())
+      .child(
+        h_flex()
+          .flex_1()
+          .min_w(0)
+          .gap(5)
+          .items_center()
+          .child(div().min_w(0).truncate().text_color(lit ? t.foreground : t.muted).child(name))
+          .when(Boolean(prog) && prog !== name, (el) => el.child(this.programName(prog, t))),
+      );
+  }
+
+  // The program, quietly after a row's name under its space.
+  programName(prog, t) {
+    return div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(prog);
+  }
+
   // With sub-agents, clicking the icon folds them.
   agentIcon(a, pic, subs) {
     return div()
@@ -629,15 +656,13 @@ export class Agents {
       .child(pic);
   }
 
-  // Under a space header the space goes without saying; an automatic tab number
-  // says nothing. Without one above (priority, pinned) the row names its space.
+  // The tab's title, then quietly its space; nested under its space's row, its program.
   agentName(a, view, t) {
-    const more = view.details.get(a.address);
     const label = view.label(a);
-    const namesSpace = view.sort.id !== "grouped" || this.pins.includes(a.address);
-    const name = namesSpace
-      ? a.space_name || label
-      : (more ?? (/^\d+$/.test(label) ? a.program?.name || label : label));
+    const namesSpace = !view.nested;
+    // A row is its tab's title, as Herdr's tab bar shows it; the icon says which agent.
+    const name = a.tab_name || label;
+    const prog = a.program?.name;
     const idle = a.status === "idle" && !a.focused;
     return h_flex()
       .flex_1()
@@ -647,14 +672,17 @@ export class Agents {
       .child(
         div()
           .min_w(0)
-          .max_w(namesSpace && more ? 120 : 200)
+          .max_w(namesSpace ? 140 : 200)
           .truncate()
           .text_color(idle ? t.muted : t.foreground)
           .child(name),
       )
-      .when(namesSpace && Boolean(more), (el) =>
-        el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`)),
-      );
+      // The space, quietly after the name.
+      .when(namesSpace && Boolean(a.space_name), (el) =>
+        el.child(div().flex_1().min_w(0).truncate().text_size(TEXT.caption).text_color(t.dim).child(a.space_name)),
+      )
+      // Under its space, the program instead.
+      .when(view.nested && Boolean(prog) && prog !== name, (el) => el.child(this.programName(prog, t)));
   }
 
   // The fold chevron; folded, the count too, colored by the most urgent one.

@@ -10,7 +10,7 @@ This file is the brief: enough to build Estro from an empty folder. The files ne
 
 A row filling the window, with no title bar, `canvas` behind and 1px `border` dividers. Terminals have 14px and 12px padding.
 
-**Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, sharing the height equally, the spaces list and the agents list, both from Better Sidebar: branches on the same line as space names, worktrees nested under their repository, and a pull request's state under its space. Better Sidebar's one-line footer closes it at 37px, with Settings, Mod settings (Better Config's dialog) and Add machine.
+**Sidebar, 268px.** Herdr's `workspace-chrome` brand block at 46px. Below, Better Sidebar's spaces and agents in one block (`view: lists`), under Spaces and Agents tabs, each space's tabs and agents beneath it on Spaces: branches beside space names, a pull request's state at the right of the row, and worktrees nested under their repository. Better Sidebar's one-line footer closes it at 37px, with Settings, Mod settings (Better Config's dialog) and Add machine.
 
 **Work area, the rest.** At the top, 42px, Better Tabs with Better Sidebar's 36px panel toggle at the far right. In the middle, the active tab's terminals, with a 368px panel on the right. At the bottom, Herdr's 28px `workspace-status`.
 

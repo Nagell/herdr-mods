@@ -98,6 +98,23 @@ export function GroupHeader({
     .when(Boolean(action), (el) => el.child(action));
 }
 
+// One step of a tree's line, in front of a nested row: "│" carries on past it,
+// "├" branches to it, "└" ends at it, "" leaves the column blank. `mid` is how far
+// down the row its title sits, where the branch turns.
+export function Rail(kind, mid = 15) {
+  const t = theme();
+  const line = () => div().absolute().left(17.5).top(0).border_color(t.input);
+  return div()
+    .relative()
+    .w(24)
+    .flex_none()
+    .self_stretch()
+    .when(kind === "│" || kind === "├", (el) => el.child(line().bottom(0).border_l(1.5)))
+    .when(kind === "├" || kind === "└", (el) =>
+      el.child(line().h(mid).w(7).border_l(1.5).border_b(1.5).rounded_bl(6)),
+    );
+}
+
 // A popup anchored to its trigger.
 export function Menu({ id, open, onOpenChange, focus, trigger, children, width = 220 }) {
   const t = theme();

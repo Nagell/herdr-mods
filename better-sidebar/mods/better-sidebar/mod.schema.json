@@ -78,6 +78,12 @@
             }
           }
         },
+        "combined": {
+          "title": "Spaces and agents in tabs",
+          "description": "In a block showing both lists (view: lists), put them under tabs: Spaces with each space's tabs and agents beneath it, and Agents. Off: spaces above agents.",
+          "type": "boolean",
+          "default": true
+        },
         "pull_request_status": {
           "title": "Pull request status",
           "description": "Colour spaces by their pull request's state, through the GitHub CLI. Turn off if you don't have gh.",

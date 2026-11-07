@@ -20,7 +20,7 @@ import { PRStatusObserver, prPlaceKey, prAppearance } from "../git/pr-status.js"
 import { spaceFolder, checkoutKey, readCheckout } from "../git/checkouts.js";
 import { loadSettings, duration } from "../settings.js";
 import { findNode } from "./find-node.js";
-import { TEXT, Icon, IconButton, Badge } from "./ui.js";
+import { TEXT, Icon, IconButton, Badge, Rail } from "./ui.js";
 
 const USUAL_BRANCHES = new Set(["main", "master"]);
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
@@ -29,7 +29,8 @@ const rowHeight = ({ tree }) => (tree ? 28 : 30);
 // occasionally to catch edits and commits made outside Herdr.
 const GIT_FALLBACK_MS = 15000;
 // Preferences a person may change in the installed mod.json under `settings`.
-const DEFAULT_SETTINGS = { git: { retry_after: "15s" }, pull_request_status: true };
+// `combined` is read by the lists view: tabs, or spaces above agents.
+const DEFAULT_SETTINGS = { git: { retry_after: "15s" }, pull_request_status: true, combined: true };
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -329,10 +330,11 @@ export class Spaces {
     const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
     for (const r of list) {
       if (nested(r)) continue;
-      out.push({ ...r, tree: null });
-      if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
+      const first = r.g && !r.g.linked && !placed.has(r.g.repo);
+      const kids = first ? list.filter((k) => nested(k) && k.g.repo === r.g.repo) : [];
+      out.push({ ...r, tree: null, kids: kids.length });
+      if (!first) continue;
       placed.add(r.g.repo);
-      const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
     }
     return out;
@@ -341,7 +343,8 @@ export class Spaces {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     const rows = this.ordered();
-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
+    // `under`, set by the lists view, adds rows beneath a space: its agents.
+    const draw = (r) => (collapsed ? [this.compact(r, t)] : [this.row(r, t), ...(this.under?.(r) ?? [])]);
     const remote = [
       ...new Set([
         ...rows.map((r) => r.w.machine).filter(Boolean),
@@ -351,13 +354,13 @@ export class Spaces {
     if (!remote.length) {
       return this.machineLoading(null) && !rows.length
         ? [this.loadingRow(null, t, collapsed)]
-        : rows.map(draw);
+        : rows.flatMap(draw);
     }
     return [null, ...remote].flatMap((m) => {
       const head = this.machineHeader(m, t, collapsed);
       if (this.folded.has(m)) return [head];
       const mine = rows.filter((r) => (r.w.machine ?? null) === m);
-      if (mine.length) return [head, ...mine.map(draw)];
+      if (mine.length) return [head, ...mine.flatMap(draw)];
       const placeholder = this.machineLoading(m)
         ? this.loadingRow(m, t, collapsed)
         : this.newSpaceRow(m, t, collapsed);
@@ -466,21 +469,31 @@ export class Spaces {
 
   // The right end of a name row: the branch unless it's the usual one or repeats the
   // name, and on the selected space how far it is from its remote.
-  gitTail(g, active, t, name) {
-    const branch = g.branch === "(detached)" ? "detached" : (g.branch ?? "detached");
-    return h_flex()
+  // The branch, quietly beside the name. main, master and the space's own name go without saying.
+  branchName(g, name, t) {
+    const branch = g?.branch === "(detached)" ? "detached" : (g?.branch ?? "detached");
+    const shown = g && !USUAL_BRANCHES.has(branch) && branch !== name;
+    return div()
       .flex_1()
       .min_w(0)
+      .truncate()
+      .text_size(TEXT.caption)
+      .text_color(t.dim)
+      .when(shown, (el) => el.tooltip(branch).child(branch));
+  }
+
+  // At the right: the checkout's pull request, and ahead/behind on the selected space.
+  gitTail(g, active, t, w) {
+    const pr = w ? this.prBadge(w, t) : null;
+    return h_flex()
+      .flex_none()
       .gap(5)
-      .justify_end()
       .items_center()
       .text_size(TEXT.label)
       .text_color(t.dim)
-      .when(!USUAL_BRANCHES.has(branch) && branch !== name, (el) =>
-        el.child(div().min_w(0).truncate().tooltip(branch).child(branch)),
-      )
-      .when(active && g.ahead > 0, (el) => el.child(Badge(`\u2191${g.ahead}`)))
-      .when(active && g.behind > 0, (el) => el.child(Badge(`\u2193${g.behind}`)));
+      .when(Boolean(pr), (el) => el.child(pr))
+      .when(active && g?.ahead > 0, (el) => el.child(Badge(`\u2191${g.ahead}`)))
+      .when(active && g?.behind > 0, (el) => el.child(Badge(`\u2193${g.behind}`)));
   }
 
   // The branch and PR must describe the same checkout: the space's first
@@ -569,32 +582,29 @@ export class Spaces {
     return badge;
   }
 
+  // Under the row only when the PR lookup failed; the PR itself sits at the row's right.
   prLine(w, t, tree) {
     const status = this.checkoutStatus(w);
     return h_flex()
       .id(`space-pr-line-${w.id}`)
       .h(20)
       .pl(tree ? 44 : 27)
-      .gap(6)
       .items_center()
-      .tooltip(
-        status?.error ? `PR refresh failed: ${status.error}` : "Pull requests for this checkout",
-      )
-      .when(Boolean(status?.prs.length), (el) => el.child(this.prBadge(w, t)))
-      .when(Boolean(status?.error), (el) =>
-        el.child(
-          div()
-            .text_size(TEXT.caption)
-            .text_color(t.dim)
-            .child(status.prs.length ? "· stale" : "PR unavailable"),
-        ),
+      .tooltip(`PR refresh failed: ${status.error}`)
+      .child(
+        div()
+          .text_size(TEXT.caption)
+          .text_color(t.dim)
+          .child(status.prs.length ? "PR may be stale" : "PR unavailable"),
       );
   }
   // ── Expanded/compact rows and sidebar rendering ──────────────────────────
 
   row({ w, i, g, tree }, t) {
     const status = this.checkoutStatus(w);
-    const hasPRLine = Boolean(status?.prs.length || status?.error);
+    const hasPRLine = Boolean(status?.error);
+    // One row is lit: under the lists view, the focused agent beneath takes it.
+    const lit = w.active && !this.quiet?.(w);
     const row = v_flex()
       .relative()
       .id(`space-${w.id}`)
@@ -603,15 +613,18 @@ export class Spaces {
       .flex_none()
       .justify_center()
       .rounded(8)
-      .when(w.active, (el) => el.bg(t.selected))
-      .when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(lit, (el) => el.bg(t.selected))
+      .when(!lit, (el) => el.hover((s) => s.bg(t.hover)))
       .when(this.pressed === i && this.over !== i, (el) => el.opacity(0.5))
       .on_mouse_down("right", () => this.menu(w))
       .child(this.rowTitle(w, g, tree, t))
       .when(hasPRLine, (el) => el.child(this.prLine(w, t, Boolean(tree))));
     if (this.pressed !== null && this.over === i && this.pressed !== i)
       row.child(this.dropLine(i, t));
-    return this.withDragging(row, w, i);
+    const dragged = this.withDragging(row, w, i);
+    // Nested under the lists view, a worktree hangs from its main space's line.
+    if (!(tree && this.under)) return dragged;
+    return h_flex().child(Rail(tree.startsWith("└") ? "└" : "├", 14)).child(dragged.flex_1().min_w(0));
   }
 
   // Where the dragged space would land.
@@ -657,12 +670,13 @@ export class Spaces {
     return h_flex()
       .gap(9)
       .items_center()
-      .when(Boolean(tree), (el) => el.pl(22).child(Icon("branch", 13).text_color(t.dim)))
+      .when(Boolean(tree), (el) => el.when(!this.under, (e) => e.pl(22)).child(Icon("branch", 13).text_color(t.dim)))
       .when(!tree, (el) => el.child(this.avatar(w, t)))
       .child(
         div().min_w(0).max_w(150).truncate().tooltip(w.name).text_color(t.foreground).child(w.name),
       )
-      .child(g ? this.gitTail(g, w.active, t, w.name) : div().flex_1());
+      .child(this.branchName(g, w.name, t))
+      .child(this.gitTail(g, w.active, t, w));
   }
 
   avatar(w, t) {
@@ -719,54 +733,68 @@ export class Spaces {
     if (changed) setShared("space.colors", kept);
   }
 
+  collapsed() {
+    return (this.width ?? findNode(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+  }
+
   render() {
     const t = theme();
-    const collapsed = (this.width ?? findNode(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+    const collapsed = this.collapsed();
     return v_flex()
       .id("better-sidebar-root")
       .size_full()
       .min_h(0)
       .bg(t.chrome)
       .text_size(TEXT.body)
-      .on_size_change((size, cx) => {
-        const wasCollapsed = (this.width ?? Infinity) < 160;
-        this.width = size.width;
-        if (wasCollapsed !== this.width < 160) cx.notify();
+      .on_size_change((size, cx) => this.resized(size, cx))
+      .child(this.header(t, collapsed))
+      .child(this.body(t, collapsed));
+  }
+
+  resized(size, cx) {
+    const wasCollapsed = (this.width ?? Infinity) < 160;
+    this.width = size.width;
+    if (wasCollapsed !== this.width < 160) cx.notify();
+  }
+
+  newSpaceButton() {
+    return IconButton({
+      id: "space-new",
+      icon: "plus",
+      label: "New space",
+      iconSize: 14,
+      muted: true,
+      onClick: () => run("space.new"),
+    });
+  }
+
+  header(t, collapsed) {
+    return h_flex()
+      .h(31)
+      .pl(16)
+      .pr(10)
+      .items_center()
+      .justify_between()
+      .text_size(TEXT.label)
+      .text_color(t.dim)
+      .when(!collapsed, (el) => el.child("Spaces"))
+      .child(this.newSpaceButton());
+  }
+
+  body(t, collapsed) {
+    return v_flex()
+      .id("spaces-list")
+      .flex_1()
+      .min_h(0)
+      .px(8)
+      .pb(14)
+      .overflow_y_scrollbar()
+      .mode("always")
+      .on_mouse_up("left", (_e, cx) => {
+        this.pressed = null;
+        cx.notify();
       })
-      .child(
-        h_flex()
-          .h(31)
-          .pl(16)
-          .pr(10)
-          .items_center()
-          .justify_between()
-          .text_size(TEXT.label)
-          .text_color(t.dim)
-          .when(!collapsed, (el) => el.child("Spaces"))
-          .child(
-            IconButton({
-              id: "space-new",
-              icon: "plus",
-              label: "New space",
-              iconSize: 14,
-              muted: true,
-              onClick: () => run("space.new"),
-            }),
-          ),
-      )
-      .child(
-        v_flex()
-          .flex_1()
-          .min_h(0)
-          .px(8)
-          .pb(14)
-          .overflow_y_scrollbar()
-          .mode("always")
-          .on_mouse_up("left", (_e, cx) => {
-            this.pressed = null;
-            cx.notify();
-          })
-          .children(this.grouped(t, collapsed)),
-      );
+      .children(this.above?.() ?? [])
+      .children(this.grouped(t, collapsed));
   }
 }
