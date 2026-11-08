@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory · Herdr Mods Docs</title>
+<meta name="description" content="Staged agent runs. A Claude Code session orchestrates a named workflow, such as developer then reviewer, and a sidebar shows the run with every stage session nested under it. For people who direct agents and want to see where a run stands and redirect it.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html" class="on" aria-current="page">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="factory">
+  <h2>Factory</h2>
+  <p class="lead">Staged agent runs. A Claude Code session orchestrates a named workflow, such as developer then reviewer, and a sidebar shows the run with every stage session nested under it. For people who direct agents and want to see where a run stands and redirect it.</p>
+  <p class="meta-line"><span>Version 1.2.0</span><span>Needs: Go 1.23+, Claude Code</span><a href="https://github.com/munza/herdr-mods/tree/main/factory">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/factory/preview.png" alt="Factory in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="factory-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below. It also installs the <code>/factory</code> skill for Claude Code.</li>
+    <li>Ask a Claude Code agent: <code>/factory implement &lt;task&gt;</code>, or press <b>Run</b> in the Workflows tab.</li>
+    <li>Watch the <b>Runs</b> tab: a developer stage, then a reviewer that loops back with findings. Write a follow-up on any finished stage.</li>
+  </ol>
+
+  <h3 id="factory-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/factory</code></div>
+  <p>Requirements: Herdr, Go 1.23+ to run the installer and build the helper, herdr-core (<code>hc</code>), and Claude Code. Another agent can orchestrate by following the installed skill file. Stages can also run the Codex CLI.</p>
+  <p>Before installing, the agent explains that Factory starts and ends agent sessions and sends them messages, on a <code>/factory</code> command or a click on a stage. The default <code>dev</code> stage uses <code>--permission-mode acceptEdits</code>, so it edits files in the repo without asking; remove that from <code>args</code> to be asked. Every Claude stage may run <code>hc send</code> and write under <code>.herdr-factory/</code> without asking, so it can report.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand, from the <code>factory</code> folder:</p>
+  <pre>go -C helper run ./install          # first install
+go -C helper run ./install --update # later</pre>
+  <p>The installer builds the helper, copies <code>mods/factory/</code> to <code>~/.config/herdr-app/mods/factory/</code>, runs <code>herdr-app check</code>, writes the default workflows and templates if missing, and installs the <code>/factory</code> skill to <code>~/.claude/skills/factory/</code> unless a different skill is there. It doesn't edit layouts or keys.</p>
+  </details>
+  <p>The manifest has <code>place: none</code>, so add the sidebar to a layout you own:</p>
+  <pre>{ "id": "factory", "type": "block", "content": { "mod": "factory" } }</pre>
+  <p>With <a href="better-tabs.html">Better Tabs</a>, a button can open it (<code>target</code> is that block's layout ID):</p>
+  <pre>{
+  "id": "factory",
+  "label": "Factory",
+  "icon": "mods/factory/icons/factory.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "factory" }
+}</pre>
+  <p>No key binding ships with it.</p>
+
+  <h3 id="factory-use">Use</h3>
+  <ul>
+    <li><b>Start a run:</b> press <b>Run</b> in the Workflows tab, enter the task, and pick a new Claude session in its own tab or one already running in this folder. Or ask an agent: <code>/factory implement &lt;task&gt;</code>. With no task, it takes the task from the agent's own conversation and asks if there's no clear one. The orchestrator never blocks, so you can keep talking to it.</li>
+    <li><b>Runs tab:</b> a working or paused run is pinned at the top with its controls; finished runs are listed below, newest first. Each shows a strip with stages done, findings open and the loop's round, then a tree: Factory (the orchestrator) at the root, each stage under it, and any helper a stage started with <code>hc run</code> under that stage. Click any of them to open its session.</li>
+    <li><b>Each stage:</b> shows its state (working, needs you, session ended, done, failed, stopped, queued), its result, and its model, effort and role. A chevron opens a done stage's result, with findings grouped by severity and the replies.</li>
+    <li><b>Follow up:</b> from a done stage's result, write what you want next. It goes to that stage's live session, which keeps its context, and the stages after it run again.</li>
+    <li><b>Pause / Resume:</b> Pause interrupts working stages and starts nothing new. Resume tells them to carry on. Resume needs a live orchestrator.</li>
+    <li><b>Stop all (■) and Close (×) on the Factory row:</b> after you confirm, Stop all interrupts working stages and keeps their sessions; Close ends every stage session. Factory's own session stays. <code>/factory continue</code> picks a stopped run back up.</li>
+    <li><b>Run again (↻) and Close (×) on a stage:</b> Run again resends the stage its message, in the same session if it's alive, and queues the stages after it. Close ends that session, asking first if it's working.</li>
+    <li><b>Workflows tab:</b> everything this repo can run, in <b>Repo</b> and <b>Base</b> groups, each with a folder icon that opens where its <code>workflow.json</code> lives. Hover a stage for its model, effort and role.</li>
+    <li><b>Events tab:</b> the run's log, newest first, grouped by day, filterable by stage.</li>
+    <li><b>Privacy:</b> the sidebar never shows a task or follow-up. To read what a stage was told, open its session.</li>
+    <li><b>Limits:</b> a space on another machine shows a notice instead of the run. Closing a stage doesn't start the next one: use <code>/factory continue</code> or Run again.</li>
+  </ul>
+
+  <h3 id="factory-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/factory/mod.json</code> under <code>"settings"</code>. Workflows are configured separately; see For developers.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>refresh.run</code></td><td><code>1500ms</code></td><td>How often a visible sidebar rereads the run file, never closer than 500ms. A hidden sidebar reads nothing.</td></tr>
+  </tbody></table>
+
+  <h3 id="factory-update">Update</h3>
+  <p>Run <code>go -C helper run ./install --update</code> from the <code>factory</code> folder. Your <code>settings</code> block is kept, and your workflows and templates in <code>~/.config/herdr-mods/factory/</code> are never overwritten.</p>
+
+  <h3 id="factory-developers">For developers</h3>
+
+  <h4>Workflow config</h4>
+  <p>Everything lives in <code>~/.config/herdr-mods/factory/</code>, created on first use and never overwritten:</p>
+  <pre>~/.config/herdr-mods/factory/
+  workflow.json
+  templates/developer.md, reviewer.md, pr-analyst.md, pr-responder.md</pre>
+  <p>The defaults are <code>implement</code> (dev, then review in a loop), <code>review</code> (review the uncommitted changes) and <code>review-comments</code> (analyze PR review feedback, then draft a fix and reply for you to review). <code>workflow.json</code> names your workflows:</p>
+  <pre>{
+  "workflows": {
+    "implement": {
+      "description": "Implement a task, then review it.",
+      "stages": [
+        { "id": "dev", "role": "developer", "agent": "claude", "model": "claude-opus-5-5", "effort": "medium", "args": ["--permission-mode", "acceptEdits"] },
+        { "id": "review", "role": "reviewer", "agent": "claude", "model": "claude-opus-5-5", "effort": "medium", "after": ["dev"], "loop": { "with": "dev", "max": 3 } }
+      ]
+    }
+  }
+}</pre>
+  <table class="keys"><thead><tr><th>Stage key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>id</code></td><td></td><td>The name shown in the sidebar: 1–24 of <code>a-z 0-9 - _</code>. Stages run in file order.</td></tr>
+    <tr><td><code>role</code></td><td></td><td>A template in <code>templates/</code>, without <code>.md</code>.</td></tr>
+    <tr><td><code>agent</code></td><td><code>claude</code></td><td><code>claude</code> or <code>codex</code>.</td></tr>
+    <tr><td><code>model</code>, <code>effort</code></td><td><code>claude-opus-5-5</code></td><td>Launch settings; the sidebar shows the model. Effort is <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code> or <code>max</code>, and the model must support it.</td></tr>
+    <tr><td><code>args</code></td><td></td><td>Extra arguments for the agent's command line.</td></tr>
+    <tr><td><code>message</code></td><td></td><td>First message, with <code>{task}</code> replaced by the task. Without it a <code>reviewer</code> is told to review the uncommitted changes for the task, and any other role gets the task itself.</td></tr>
+    <tr><td><code>after</code></td><td></td><td>Shown in the sidebar while the stage waits.</td></tr>
+    <tr><td><code>loop</code></td><td></td><td><code>{"with": "&lt;earlier stage&gt;", "max": &lt;rounds&gt;}</code>; see Loops.</td></tr>
+    <tr><td><code>session</code></td><td><code>new</code></td><td><code>new</code> starts a fresh session each run. <code>reuse</code> keeps the last run's live session for the same stage id if its <code>agent</code>, <code>role</code>, <code>model</code>, <code>effort</code> and <code>args</code> are unchanged.</td></tr>
+  </tbody></table>
+  <p>A workflow in your home file can also set <code>extra_args</code>, for a new Claude session the <b>Run</b> button starts. A session already running, or one you start yourself with <code>/factory</code>, keeps the flags it has.</p>
+  <pre>"implement": { "extra_args": ["--permission-mode", "auto"], "stages": [ ... ] }</pre>
+  <p>A repo can add workflows in <code>.herdr-factory/workflow.json</code>, in the same format. If it uses a name your home config also has, the plain name runs the repo's and <code>base:&lt;name&gt;</code> runs yours. A git worktree with no such file reads the main checkout's. A repo file can't set <code>args</code> or <code>extra_args</code>, so a cloned repo can't choose flags such as one that skips permission prompts: a repo stage takes the <code>args</code> of your stage with the same id in your workflow of the same name, and a repo workflow takes that workflow's <code>extra_args</code>.</p>
+
+  <h4>Loops</h4>
+  <pre>{ "id": "review", "role": "reviewer", "loop": { "with": "dev", "max": 3 } }</pre>
+  <p>When <code>review</code> reports findings, the live <code>dev</code> session gets them, pointing at the result file, then the live <code>review</code> session checks again. This stops when there are no findings or after <code>max</code> rounds, and only then does the run move on. A follow-up or rerun gives a loop its rounds back. <code>with</code> must name an earlier stage.</p>
+
+  <h4>Follow-ups</h4>
+  <p>Use <b>Follow up</b> on a done stage, or ask the orchestrator, such as <code>/factory fix the review findings</code>. It runs <code>factory followup &lt;stage&gt; "&lt;task&gt;"</code>, which reopens the run, even a finished one, and queues the stages after it. A new session starts only if the stage's is gone. A follow-up waits until no stage is running.</p>
+
+  <h4>Stage permissions</h4>
+  <p><b>Needs you</b> on a Claude stage usually means a permission prompt, which only you can answer. <code>args</code> in your <code>workflow.json</code> sets what a stage may do without asking:</p>
+  <pre>"args": ["--permission-mode", "acceptEdits", "--allowedTools=Bash(go test:*) Bash(git diff:*) Bash(git status)"]</pre>
+  <p>Keep the <code>=</code> form for <code>--allowedTools</code>. A list you allow runs unattended, so keep it to what the stage needs. The first message goes on the agent's command line, so a trust dialog also shows as <b>Needs you</b> until you answer it.</p>
+
+  <h4>Add a role</h4>
+  <p>A role is a Markdown file in <code>templates/</code>, whose body becomes the agent's standing instructions:</p>
+  <pre>---
+name: scholar
+description: Answers a question and writes the answer as a cited note.
+---
+You are the scholar in a workflow. ...</pre>
+  <p>Each role follows the result contract, which is how the orchestrator and the sidebar learn what happened:</p>
+  <ul>
+    <li>When its message says so, write <code>.herdr-factory/&lt;stage&gt;-&lt;attempt&gt;.json</code> with <code>{"summary": "&lt;at most ten words&gt;"}</code>.</li>
+    <li>A reviewer adds <code>"findings": [{"id", "severity": "critical|high|medium|low", "file", "line", "title", "detail"}]</code>. An empty list means approved.</li>
+    <li>A developer answering findings adds <code>"replies": {"&lt;finding id&gt;": "&lt;what it did&gt;"}</code>.</li>
+    <li>Then report as the message asks, with one <code>hc send</code> line, and stop.</li>
+  </ul>
+
+  <h4>The <code>factory</code> command</h4>
+  <p>The orchestrator and the sidebar both call it, and it's the only writer of <code>.herdr-factory/run.json</code>. Run it from the repo root as <code>~/.config/herdr-app/mods/factory/bin/factory</code>; <code>factory help</code> lists:</p>
+  <pre>factory list [--json]                 workflows available here
+factory status [--json]               the run
+factory history                       past runs, newest first, as JSON
+factory run &lt;workflow&gt; "&lt;task&gt;"       begin a run; this terminal is the orchestrator
+factory continue                      pick a stopped or abandoned run back up, as orchestrator
+factory start &lt;stage&gt;                 send a stage its message (attempt +1), reusing a live session
+factory next                          start the next unfinished stage, or finish the run
+factory stage &lt;stage&gt; done            read the stage's result file and record it
+factory stage &lt;stage&gt; failed|working|stopped
+factory rerun &lt;stage&gt;                 start it again and queue the stages after it
+factory followup &lt;stage&gt; "&lt;task&gt;"     give it new work in its live session, reopening the run
+factory close &lt;stage&gt;                 end its session
+factory pause                         interrupt working stages and start nothing new
+factory resume                        carry on a paused run
+factory stop [--keep] [--orchestrator]
+                                      stop the run and end every stage session; --keep interrupts them instead
+factory done|stopped|failed           the run ended
+factory event "&lt;text&gt;"                a free note in the log
+factory tools [--json]                programs this needs that are not on PATH
+factory init                          write the default config and templates if missing</pre>
+  <p>The orchestrator's tab is named <b>Factory</b> and each stage session takes its stage's name, such as <code>dev</code>; if another repo has a live <code>dev</code>, this one becomes <code>dev-2</code>, since <code>hc</code> names must be unique. One run goes at a time per repo, and a new run ends the last run's sessions, apart from <code>reuse</code> stages. <code>.herdr-factory/</code> ignores itself in git, and a new run moves the last run and its result files to <code>.herdr-factory/runs/</code>. Past runs aren't pruned; deleting that folder only loses the history.</p>
+
+  <h4>The /factory skill</h4>
+  <p><code>factory/skills/factory/SKILL.md</code>, installed to <code>~/.claude/skills/factory/</code>, turns a Claude Code session into the orchestrator. It starts each stage with <code>factory run</code> and <code>factory next</code>, then ends its turn instead of waiting; each stage reports back with <code>hc send</code>, and the orchestrator records it with <code>factory stage &lt;id&gt; done</code> and moves on. It never implements or reviews anything itself. What you can say to it:</p>
+  <ul>
+    <li><code>/factory &lt;name&gt; [task]</code>, or <code>/factory base:&lt;name&gt; &lt;task&gt;</code> for your home version of a workflow the repo also defines.</li>
+    <li><code>/factory help</code>: lists the workflows here and what it can do.</li>
+    <li><code>/factory continue</code>: picks up a run that stopped, failed or lost its orchestrator, keeping stages already done.</li>
+    <li>"pause", "resume", "stop" (interrupt, keep sessions), "close all", "rerun &lt;id&gt;", "close &lt;id&gt;", "status", or "&lt;work&gt; in &lt;id&gt;" for a follow-up.</li>
+    <li>"add a docs stage to implement": changes this project's <code>.herdr-factory/workflow.json</code> (the main checkout's from a worktree) unless you say it's for every project, leaves out <code>args</code> and <code>extra_args</code>, writes a template for a new role, and checks the file with <code>factory list</code>. The change applies from the next run.</li>
+  </ul>
+  <p>The sidebar also has a <code>factory.refresh</code> command that rereads the run.</p>
+
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/factory/main.js</code>: the sidebar, and a map of what's where.</li>
+    <li><code>run/</code>: <code>model.js</code> (what a run's record means) and <code>reads.js</code>.</li>
+    <li><code>actions/</code>: starts and changes things through the helper (<code>commands.js</code>, <code>menus.js</code>).</li>
+    <li><code>views/</code>: drawing, with the shared look in <code>views/ui.js</code>; <code>icons/</code>.</li>
+    <li><code>mod.schema.json</code>: settings and defaults, which must match <code>DEFAULT_SETTINGS</code> in the code.</li>
+    <li><code>helper/</code>: the <code>factory</code> command (<code>main.go</code>, <code>run.go</code>, <code>config.go</code>, <code>session.go</code>), with <code>install/</code> for the installer and <code>defaults/</code> for the workflows and templates it writes.</li>
+    <li><code>skills/factory/SKILL.md</code>: the orchestrator skill.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+herdr-app check "$HOME/.config/herdr-app/mods/factory"</pre>
+  <p>Tests use stand-ins for Herdr and <code>hc</code>, and <code>herdr-app check</code> draws only the empty state, so also look at the running app.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="hands.html"><span>Previous</span>Hands</a><a class="next" href="estro.html"><span>Next</span>Estro</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#factory-start">Quick start</a>
+      <a href="#factory-install">Install</a>
+      <a href="#factory-use">Use</a>
+      <a href="#factory-settings">Settings</a>
+      <a href="#factory-update">Update</a>
+      <a href="#factory-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

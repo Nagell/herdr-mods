@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estro · Herdr Mods Docs</title>
+<meta name="description" content="A layout built from these mods, for directing agents: every space and agent on the left, the session you're with in the middle, and a panel on the right for checking their work. ">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html" class="on" aria-current="page">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="estro">
+  <h2>Estro</h2>
+  <p class="lead">A layout built from these mods, for directing agents: every space and agent on the left, the session you're with in the middle, and a panel on the right for checking their work. <i>Estro</i> is Esperanto for the one in charge.</p>
+  <p class="meta-line"><span>Needs: What its mods need</span><a href="https://github.com/munza/herdr-mods/tree/main/estro">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="../img/estro.png" alt="The Estro layout" width="2400" height="1500"></figure>
+
+  <h3 id="estro-start">Quick start</h3>
+  <ol>
+    <li>Paste the prompt below into your Herdr agent. It installs the layout and every mod, and switches to it.</li>
+    <li>Pick a panel from the toolbar at the top right: Files, Changes, PRs, Issues, Hands or Factory.</li>
+    <li>Open <b>Mod settings</b> in the sidebar footer to change any mod's settings.</li>
+  </ol>
+
+  <h3 id="estro-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro</code></div>
+  <p>The agent copies <code>layouts/estro.json</code>, then adds all nine mods with each mod's own prompt, telling you what each can do as it goes. It skips each mod's layout step, because Estro already places it, and updates any mod you already have. It never overwrites a mod or a layout already there under the same name. Last, it runs <code>herdr-app check</code> on each mod and switches to the layout.</p>
+  <p>Branch PR needs <code>gh</code>, Branch Issue a Linear API key, Hands macOS, and Factory Claude Code; all four need Go 1.23+ to build their helper. Tell the agent to leave out any of them, and it drops that mod's button and block.</p>
+
+  <h3 id="estro-use">Use</h3>
+  <ul>
+    <li><b>Sidebar, 268px:</b> Herdr's brand block, then Better Sidebar's spaces and agents in one block under Spaces and Agents tabs, with each space's tabs beneath it, and its one-line footer with Settings, Mod settings (<a href="better-config.html">Better Config</a>) and Add machine.</li>
+    <li><b>Work area:</b> <a href="better-tabs.html">Better Tabs</a> at the top with Better Sidebar's panel toggle at the far right, the active tab's terminals in the middle, and Herdr's status bar at the bottom.</li>
+    <li><b>The panel, 368px:</b> one view at a time, picked from the Better Tabs toolbar: Files, Changes, PRs, Issues, Hands and Factory. Each space remembers which panel it had open.</li>
+  </ul>
+
+  <h3 id="estro-update">Update</h3>
+  <p>Run the same prompt again: mods you already have are updated instead of installed again, and your existing <code>estro</code> layout is left alone.</p>
+
+  <h3 id="estro-developers">For developers</h3>
+  <p><code>estro/mods/</code> holds a one-line pointer per mod, not copies, so there is one copy of each mod in the repo. <a href="https://github.com/munza/herdr-mods/blob/main/estro/RECIPE.md">RECIPE.md</a> is the brief: enough to build Estro from an empty folder. The toolbar buttons are <code>panel</code> actions with <code>container: "panel"</code> and <code>stack: "panel-body"</code>.</p>
+<pre>node --test estro/tests/*.test.cjs</pre>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="factory.html"><span>Previous</span>Factory</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#estro-start">Quick start</a>
+      <a href="#estro-install">Install</a>
+      <a href="#estro-use">Use</a>
+      <a href="#estro-update">Update</a>
+      <a href="#estro-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

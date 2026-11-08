@@ -1,129 +1,103 @@
 # Herdr Mods
 
-Independent mods for [Herdr Desktop](https://herdr.dev/).
+Mods for [Herdr Desktop](https://herdr.dev/) built on Herdr's own mod API: a Git panel, a file browser, a sidebar, a tab bar, a settings dialog, PR and Linear panels, Mac automation for agents, and staged agent runs. Install one, or all of them as the [Estro](#estro-all-of-them-in-one-layout) layout.
 
-![Herdr Mods](preview.png)
+![Better Sidebar, Better Tabs, Better Files, Better Changes and Better Config together in Herdr](docs/gifs/better-mods.gif)
 
-A collection of standalone mods. Choose a mod below and install only that package, or use the [Estro layout](#estro-a-layout) to get them all at once.
+Site: [munza.github.io/herdr-mods](https://munza.github.io/herdr-mods/)
 
-## Available mods
+## Why they're built this way
 
-| Mod | What it does |
-| --- | --- |
-| [Better Changes](better-changes/README.md) | Git panel in Herdr's own style: staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and a reusable inline or side-by-side diff tab. |
-| [Better Sidebar](better-sidebar/README.md) | Spaces and nested worktrees with their Git branches and color-coded pull-request status from `gh`, agents grouped by main space or name prefix, both under Spaces and Agents tabs, and a one-line footer. |
-| [Better Files](better-files/README.md) | Read-only file browser that opens files in the centre pane: a shared tab on click, kept on double-click, with Git marks, Open in your code editor, and a right-click menu that hands a file to an agent. |
-| [Better Config](better-config/README.md) | Every installed mod's settings in one dialog, like Herdr's own Settings: described, checked before saving, reset in a click, and restored after an update wipes them. |
-| [Better Tabs](better-tabs/README.md) | Tab bar with draggable tabs that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them. |
-| [Branch PR](branch-pr/README.md) | GitHub PR sidebar that shows what stands between a PR and a merge, hands failures and comments to agents, and merges when ready. |
-| [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, with an All tab, state, priority and assignee edits, comments, and worktrees that open with an agent holding the issue, waiting for your go-ahead. |
-| [Hands](hands/README.md) | A `hands` CLI that gives agents hands on the Mac: read any app's accessibility tree, click, type, set values, scroll, screenshot a window, record the screen. Plus a panel with its captures, a filterable action history and its permissions. |
-| [Factory](factory/README.md) | Staged agent runs: a named workflow of agents, such as developer then reviewer, shown as a tree of live sessions, with findings by severity, review loops and follow-ups. |
+- **On Herdr, not around it.** Each mod is a separate mod loaded through Herdr's mod API: it reads its block's `props()`, is placed by a layout, and calls Herdr's commands. None patches Herdr's shipped mods, so a Herdr update doesn't overwrite them, and they leave Herdr's own UI alone.
+- **They look like Herdr.** Each mod draws with the same design kit, `views/ui.js`: Herdr's sizes, radii, type and spacing measured from its shipped mods, as tokens and small components. A Better mod sits next to Herdr's own panels without looking added on.
+- **One folder per mod.** Every mod folder holds `mods/<name>/` (the code, `mod.json`, and `mod.schema.json`), `tests/`, a `README.md` for people and a `RECIPE.md` for the agent that installs it. Nothing reaches into another mod's folder.
+- **Settings described once.** `mod.schema.json` describes every setting: title, description, type, default and limits. The code keeps its defaults in one `DEFAULT_SETTINGS`, and a test checks that each mod's schema, its `mod.json` and its code's defaults agree. Your installed `mod.json` holds only what you changed.
+- **Layout-driven.** A block's `props` choose what a mod draws, so one mod can fill several blocks. Better Sidebar draws the spaces list, the agents list, both under tabs, a footer or a panel toggle depending on `props.view`; Better Changes draws its sidebar, a diff tab or a pane header. You place the pieces where you want them in your own layout.
+- **Plain tooling.** Tests are `node --test`, with no packages to install. The four mods that need native work (Branch PR, Branch Issue, Hands, Factory) have a small Go helper with its own tests, built on your machine at install. No Python, no global installs.
 
-### Better Changes
+## Install
 
-![Better Changes](better-changes/preview.png)
-
-### Better Files
-
-![Better Files](better-files/preview.png)
-
-### Better Config
-
-![Better Config](better-config/preview.png)
-
-### Better Sidebar
-
-![Better Sidebar](better-sidebar/preview.png)
-
-### Better Tabs
-
-![Better Tabs](better-tabs/preview.png)
-
-### Branch PR
-
-![Branch PR](branch-pr/preview.png)
-
-### Branch Issue
-
-![Branch Issue](branch-issue/preview.png)
-
-### Hands
-
-![Hands](hands/preview.png)
-
-### Factory
-
-![Factory](factory/preview.png)
-
-## Estro, a layout
-
-[Estro](estro/RECIPE.md) puts these mods together in one window for directing agents: every space and agent on the left, the session in the middle, and Changes, PRs, Issues, Hands and Factory on the right. *Estro* is Esperanto for the one in charge.
-
-![Estro](estro/preview.png)
-
-### Install Estro
-
-Copy this prompt into your Herdr agent:
-
-```text
-Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro
-```
-
-**This installs all nine mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Better Files, Better Config, Branch PR, Branch Issue, Hands and Factory. You don't need to add them separately. A mod you already have is updated instead of installed again, and Factory also installs its `/factory` skill.
-
-The agent then copies the layout, checks each mod and switches your window to Estro. It tells you what each mod can do as it goes, and if you already have a layout called `estro`, it won't overwrite it.
-
-Four of the mods need extra tools:
-
-| Mod | Needs |
-| --- | --- |
-| Branch PR | Go 1.23+ and `gh` |
-| Branch Issue | Go 1.23+ and a Linear API key |
-| Hands | Go 1.23+ and macOS |
-| Factory | Go 1.23+ and Claude Code |
-
-If you don't want one of them, tell the agent, and it can leave out that mod's button and block. [estro/RECIPE.md](estro/RECIPE.md) has the full steps.
-
-## Quick install
-
-Copy this template into your Herdr agent, replacing `<mod-folder>` with the folder name of the mod you want:
+Copy this into your Herdr agent, with the mod's folder name:
 
 ```text
 Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/<mod-folder>
 ```
 
-For example, to install Better Sidebar:
+The agent follows the mod's `RECIPE.md`. Installing one mod doesn't install the others.
 
-> Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-sidebar
+## The mods
 
-Each mod's README covers its features and requirements; its `RECIPE.md` guides installation. Installing one mod does not install the others; to get them all, [install Estro](#install-estro).
+Full docs for each (install, use, settings, update, developer use) are on the [site](https://munza.github.io/herdr-mods/docs/better-changes.html).
 
-## Versions and settings
+### The Better mods
 
-Every mod carries a `version` in its `mods/<name>/mod.json`, and a `mod.schema.json` beside it that describes every setting with its default. The installed `mod.json` holds a `settings` block only for what you changed, so `cat ~/.config/herdr-app/mods/<name>/mod.json` shows what a Herdr has and how it differs from the defaults. Change settings in [Better Config](better-config/README.md), or edit the installed file, which an editor checks against its schema; Herdr reloads the mod at once. Mods with a Go helper have an installer that keeps your settings and prints the new and previous version on `--update`; the others are updated by copying their `mods/<name>/` folder again, after which Better Config offers to restore your settings, or you re-apply your edits. Each README lists its keys. Bump the version with any change that is worth updating for.
+Git, files, spaces, tabs and settings.
+
+- [Better Changes](better-changes/README.md) (`better-changes`): Git panel with staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and an inline or side-by-side diff tab.
+- [Better Files](better-files/README.md) (`better-files`): read-only file browser that opens files in the centre pane, with Markdown rendered, Git marks, Open in your editor, and a menu that hands a file to an agent.
+- [Better Sidebar](better-sidebar/README.md) (`better-sidebar`): spaces with nested worktrees, Git branches and pull-request status, agents grouped by space or name prefix, both under Spaces and Agents tabs, and a one-line footer.
+- [Better Tabs](better-tabs/README.md) (`better-tabs`): tabs you drag that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them.
+- [Better Config](better-config/README.md) (`better-config`): every installed mod's settings in one dialog drawn like Herdr's Settings; it writes only what you changed and offers to restore your changes after an update resets them.
+
+### Branch panels
+
+Your PR and your Linear issue, next to the branch.
+
+- [Branch PR](branch-pr/README.md) (`branch-pr`): GitHub PR panel that shows what stands between a PR and a merge, lists its files with diffs, hands failures and comments to agents, and merges when ready. Needs Go 1.23+ and `gh`.
+- [Branch Issue](branch-issue/README.md) (`branch-issue`): Linear panel that follows the branch, edits state, priority and assignee, and opens a worktree with an agent holding the issue. Needs Go 1.23+ and a Linear API key.
+
+### Automation
+
+Agent tools beyond the window: Mac automation and staged runs.
+
+- [Hands](hands/README.md) (`hands`): a `hands` CLI that lets agents read and drive any Mac app through its accessibility tree, take screenshots and record the screen, plus a panel of its captures and actions. Needs Go 1.23+ and macOS.
+- [Factory](factory/README.md) (`factory`): staged agent runs, such as developer then reviewer, shown as a tree of live sessions with findings by severity and review loops. Needs Go 1.23+ and Claude Code.
+
+## Estro: all of them in one layout
+
+[Estro](estro/RECIPE.md) puts every mod in one window for directing agents: spaces and agents on the left, the session in the middle, and Files, Changes, PRs, Issues, Hands and Factory in a panel on the right. One prompt installs the layout and all nine mods:
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro
+```
+
+A mod you already have is updated, not installed twice, and an existing layout called `estro` is left alone. Tell the agent to skip any mod you don't want, and it leaves out that mod's button and block. *Estro* is Esperanto for the one in charge.
+
+## Settings and updates
+
+Every mod has a `version` in `mods/<name>/mod.json`. Change settings in Better Config, or edit the installed `~/.config/herdr-app/mods/<name>/mod.json`, which your editor checks against its schema; Herdr reloads the mod at once. Mods with a Go helper update with their installer's `--update`, which keeps your settings. The others update by copying their `mods/<name>/` folder again, after which Better Config offers to restore your settings. Each README lists its keys.
+
+## Build your own on the same structure
+
+Copy any mod folder as a starting point and keep its shape:
+
+```text
+my-mod/
+  mods/my-mod/
+    main.js            the View; reads props() to pick what to draw
+    mod.json           { "$schema": "./mod.schema.json", "version", "place", "title" }
+    mod.schema.json    Herdr's fields, and every setting with title, description, type, default
+    settings.js        merges the installed settings over DEFAULT_SETTINGS
+    views/ui.js        the design kit
+  tests/my-mod.test.cjs
+  README.md            what it does, for people
+  RECIPE.md            how to install it, for an agent
+  sync.sh              copies mods/my-mod/ into Herdr while you work
+```
+
+- Put Herdr's `herdr.d.ts` and `gpui-kit.d.ts` beside your code for editor types; they're gitignored and `sync.sh` skips them.
+- Run `./sync.sh` after a change; Herdr reloads the mod.
+- In this repo, `better-config/tests/config.test.cjs` picks up every folder with a `mods/<name>/mod.json` and checks its `mod.json`, `mod.schema.json` and `DEFAULT_SETTINGS` against each other, so a new mod is covered without registering it.
+- Give the block a `props` value for each thing it can draw, and let layouts choose.
 
 ## Test
 
-Requires Node.js and Go for development tests:
-
 ```sh
-(cd better-changes && node --test tests/*.test.cjs)
-(cd better-files && node --test tests/*.test.cjs)
-(cd better-sidebar && node --test tests/*.test.cjs)
-(cd better-tabs && node --test tests/*.test.cjs)
-(cd branch-pr && node --test tests/*.test.cjs)
-(cd branch-pr/helper && go test ./... && go vet ./...)
-(cd branch-issue && node --test tests/*.test.cjs)
-(cd branch-issue/helper && go test ./... && go vet ./...)
-(cd hands && node --test tests/*.test.cjs)
-(cd hands/helper && go test ./... && go vet ./...)
-(cd factory && node --test tests/*.test.cjs)
-(cd factory/helper && go test ./... && go vet ./...)
-(cd estro && node --test tests/*.test.cjs)
+node --test */tests/*.test.cjs
+for d in */helper; do (cd "$d" && go test ./... && go vet ./...); done
 ```
 
-The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes and Better Files use Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a local Go helper built during installation with Go 1.23+; see its README for access and explicit write actions. Branch Issue uses Git, `hc`, and a local Go helper, built the same way, that reaches Linear with your `LINEAR_API_KEY`; see its README too. Hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a Go helper built on your machine, and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing. Factory uses `hc`, Claude Code, optionally the Codex CLI, and a local Go helper; it starts agent sessions, so see its README first.
+The mods run on Herdr's JavaScript runtime; Node.js is only for the tests. Each README lists what its mod calls at runtime (Git, `gh`, `hc`, Claude Code, macOS permissions).
 
 ## License
 

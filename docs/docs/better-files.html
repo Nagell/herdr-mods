@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Files · Herdr Mods Docs</title>
+<meta name="description" content="A read-only file browser for Herdr Desktop that opens files in the centre pane, beside your agents. For people directing agents: see where an agent has been, read what it wrote, and hand a file to one.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html" class="on" aria-current="page">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-files">
+  <h2>Better Files</h2>
+  <p class="lead">A read-only file browser for Herdr Desktop that opens files in the centre pane, beside your agents. For people directing agents: see where an agent has been, read what it wrote, and hand a file to one.</p>
+  <p class="meta-line"><span>Version 1.3.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="../gifs/better-files.gif" alt="Better Files in Herdr" width="1440" height="802"></figure>
+
+  <h3 id="better-files-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below, then open the Files panel.</li>
+    <li>Click a file to read it in the shared centre tab; double-click to keep the tab. Coloured files and lines are what changed since the last commit.</li>
+    <li>Right-click a file and choose an agent to send it to, with a prompt of your own.</li>
+  </ol>
+
+  <h3 id="better-files-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-files</code></div>
+  <p>Requires <code>sh</code>, and Git for the change marks. Finding editors uses macOS Spotlight. The agent follows RECIPE.md. Herdr's shipped layouts are read-only, so the sidebar only shows in a layout you own, and the agent never overwrites an unrelated mod with the same name.</p>
+  <p>The manifest has <code>place: none</code>, so add it to a layout you own, or point a block that uses Herdr's <code>files</code> at it:</p>
+  <pre>{ "id": "files", "type": "block", "content": { "mod": "better-files" } }</pre>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand from a clone of the repository, <code>sync.sh</code> copies <code>mods/better-files/</code> into Herdr's mods folder. A symlink loads the code but not the icons.</p>
+  <pre>./better-files/sync.sh</pre>
+  </details>
+
+  <h3 id="better-files-use">Use</h3>
+  <ul>
+    <li><b>Tree:</b> shows the focused pane's folder, named in the panel's title. Changed files are coloured and lettered (green new, yellow edited, red gone or in conflict), and folders holding changes are yellow with a dot. It refreshes as files change. Focusing a file or diff tab leaves the tree where it was.</li>
+    <li><b>Click</b> a file to show it in one shared centre tab, so browsing doesn't pile up tabs.</li>
+    <li><b>Double-click</b>, or <b>Keep tab</b>, to keep that tab. The next click starts a new shared tab.</li>
+    <li><b>File view:</b> read-only, at your terminal's font size, and follows the file as it changes on disk. Binary and unreadable files say so, and very long files are cut at 400,000 characters.</li>
+    <li><b>Changed lines:</b> lines that differ from the last commit are tinted with a bar at their edge: green added, yellow changed, and a thin red line where lines were removed. Click a yellow line or the red line to show the old lines in place; click again to close. <b>Expand all</b>, beside Open in, opens or closes them all. Text can't be selected and there's no folding in this view; use <b>Open in</b>, or turn <code>gutter</code> off.</li>
+    <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>mods/better-files/cache/</code>, removed when its tab closes.</li>
+    <li><b>Markdown:</b> a <code>.md</code> or <code>.markdown</code> file opens rendered in Herdr's own Markdown view, with text you can select. <b>Preview</b> and <b>Code</b>, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice. A web link opens in your browser, and a link to another file here opens it in the viewer. A picture on a line of its own, from this computer, shows inline. The preview follows the file as it changes.</li>
+    <li><b>Open in</b> your editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with <code>editors</code>. The folder icon beside refresh opens the whole folder in an editor or Finder.</li>
+    <li><b>Right-click</b> a file or folder for: <b>Open</b> and <b>Open in new tab</b>; <b>Open in</b> each editor; <b>Open in default app</b>; <b>Show in Finder</b>; <b>Show diff</b> (opens a changed file's diff in <a href="better-changes.html">Better Changes</a>, if you have it); <b>Copy relative path</b> and <b>Copy full path</b>.</li>
+    <li><b>Send to an agent:</b> from the right-click menu, pick an agent that's running, <b>(spawn)</b> to start a sub-agent under it, or a new one in its own tab. A box asks what it should do; only <b>Send</b> delivers. The agent gets your prompt and the path, not the file's text.</li>
+    <li><b>One title:</b> the tab's title row shows the file, its folder, and Preview while it's the shared tab.</li>
+    <li><b>Remote spaces:</b> a space on another machine has no editor, default app or Finder items, and can't show images.</li>
+  </ul>
+  <p>Editing, creating, renaming and deleting files are left out on purpose. Limits: a folder lists its first 500 entries and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, so editors open at the top. Listing a folder needs <code>sh</code>, so a Windows machine shows an error.</p>
+
+  <h3 id="better-files-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-files/mod.json</code> under <code>"settings"</code>, with only what you change. Saving applies at once.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>refresh.tree</code></td><td><code>"10s"</code></td><td>How often the tree rereads, on top of watching the folder. Never closer than 1 second.</td></tr>
+    <tr><td><code>refresh.file</code></td><td><code>"2s"</code></td><td>How often an open file is checked for changes. Never closer than 500ms.</td></tr>
+    <tr><td><code>editors</code></td><td><code>[]</code></td><td>More editors for Open in, each <code>{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }</code> by macOS app ID. Shown only if installed.</td></tr>
+    <tr><td><code>gutter</code></td><td><code>true</code></td><td>Tint changed lines. Off uses Herdr's own editor: fuller highlighting, selection and folding, but no line colours.</td></tr>
+    <tr><td><code>markdown</code></td><td><code>"preview"</code></td><td>How a Markdown file first opens: <code>"preview"</code> or <code>"code"</code>. The toggle in a tab overrides it for that tab.</td></tr>
+  </tbody></table>
+
+  <h3 id="better-files-update">Update</h3>
+  <p>Copy <code>mods/better-files/</code> into Herdr again. The copy replaces the installed <code>mod.json</code>, so the settings you changed go back to their defaults; <a href="better-config.html">Better Config</a> notices and offers to restore them.</p>
+
+  <h3 id="better-files-developers">For developers</h3>
+  <p>One class plays three roles, each its own copy: sidebar, viewer and menu, connected by <code>shared("better-files.*")</code>. Viewers register in <code>better-files.viewers</code>, and the menu leaves its question in <code>better-files.compose</code> for the sidebar to ask.</p>
+  <p>The viewer publishes its title to <code>shared("pane-heads")</code>, which <a href="better-changes.html">Better Changes</a>' pane header shows. Show diff hands over through <code>better-changes.selection</code> and <code>better-changes.diff-tabs</code>, keyed to the Git root.</p>
+  <p>Sending to agents: a running agent gets <code>hc send</code>; <b>(spawn)</b> runs <code>hc run --bg --parent &lt;agent&gt; --cwd &lt;folder&gt; &lt;program&gt; &lt;message&gt;</code> directly, so no shell sees the message; a new agent gets <code>tab.new</code> with the message as its first prompt. Editors are found with <code>mdfind</code> by macOS app ID and opened with <code>open -b</code>. Changed lines come from <code>git diff -U0 HEAD</code>.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>main.js</code> lists what's where. <code>settings.js</code>: shared between the mods.</li>
+    <li><code>files/</code>: <code>model.js</code>, <code>reads.js</code>.</li>
+    <li><code>actions/</code>: <code>open.js</code>, <code>outside.js</code>, <code>agents.js</code>, <code>menus.js</code>.</li>
+    <li><code>views/</code>: <code>ui.js</code>, <code>tree.js</code>, <code>viewer.js</code>, <code>context-menu.js</code>. <code>icons/</code>.</li>
+    <li><code>mod.schema.json</code>: every setting with its default, which must match the code's <code>DEFAULT_SETTINGS</code>.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+./sync.sh
+herdr-app check "$HOME/.config/herdr-app/mods/better-files"</pre>
+  <p>Tests use stand-ins for Herdr, and <code>herdr-app check</code> draws only the sidebar's first frame, so also look at the running app.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-changes.html"><span>Previous</span>Better Changes</a><a class="next" href="better-sidebar.html"><span>Next</span>Better Sidebar</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-files-start">Quick start</a>
+      <a href="#better-files-install">Install</a>
+      <a href="#better-files-use">Use</a>
+      <a href="#better-files-settings">Settings</a>
+      <a href="#better-files-update">Update</a>
+      <a href="#better-files-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

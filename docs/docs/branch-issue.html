@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branch Issue · Herdr Mods Docs</title>
+<meta name="description" content="A Linear panel for the Herdr sidebar, for people who hand issues to agents: see where an issue stands, give it its own worktree, send it to an agent, and keep it up to date. A sibling of ">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html" class="on" aria-current="page">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="branch-issue">
+  <h2>Branch Issue</h2>
+  <p class="lead">A Linear panel for the Herdr sidebar, for people who hand issues to agents: see where an issue stands, give it its own worktree, send it to an agent, and keep it up to date. A sibling of <a href="branch-pr.html">Branch PR</a>.</p>
+  <p class="meta-line"><span>Version 2.2.0</span><span>Needs: Go 1.23+, Git, a Linear API key</span><a href="https://github.com/munza/herdr-mods/tree/main/branch-issue">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/branch-issue/preview.png" alt="Branch Issue in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="branch-issue-start">Quick start</h3>
+  <ol>
+    <li>Create a Linear personal API key, export it as <code>LINEAR_API_KEY</code> in your shell, then install with the prompt below.</li>
+    <li>Open the Issues panel: on a branch named like <code>ENG-123-…</code> it shows that issue; otherwise use the <b>All</b> tab.</li>
+    <li>From <b>Actions</b>, choose <b>Create worktree</b> to start a new space with an agent that already has the issue.</li>
+  </ol>
+
+  <h3 id="branch-issue-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-issue</code></div>
+  <p>Requirements: Go 1.23+ to run the installer and build the helper, Git on the machines your spaces run on, and a Linear personal API key. Agent actions use <code>hc</code> and a running agent.</p>
+  <p>The helper reads the key from the <code>LINEAR_API_KEY</code> environment variable and nothing else: there is no key field, keychain entry or token file. Create a personal key at https://linear.app/settings/api and export it in your shell. The helper checks its own environment, then asks your login shell, so a key exported in <code>.zshrc</code> or by home-manager is found even when Herdr was launched from the Dock. The key goes to api.linear.app only and is never stored. If it is missing or rejected, the panel says what to run and offers Try again.</p>
+  <p>Before installing, the agent explains what the panel can write, and only on an explicit click: post comments and replies, change an issue's state, priority and assignee, fetch a base branch, create Git worktrees and branches, write the branch-to-issue link to Git config, open spaces, and send messages to agents. Nothing writes on its own.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand, from the <code>branch-issue</code> folder:</p>
+  <pre>go -C helper run ./install          # first install
+go -C helper run ./install --update # later</pre>
+  <p>The installer builds the helper, copies only <code>mods/branch-issue/</code> to <code>~/.config/herdr-app/mods/branch-issue/</code>, and runs <code>herdr-app check</code>. It doesn't edit layouts or keys.</p>
+  </details>
+  <p>The manifest has <code>place: none</code>, so add the panel to a layout you own, about 368px wide:</p>
+  <pre>{ "id": "linear-issues", "type": "block", "content": { "mod": "branch-issue" } }</pre>
+  <p>With <a href="better-tabs.html">Better Tabs</a>, a button can open it (<code>target</code> is that block's layout ID):</p>
+  <pre>{
+  "id": "issues",
+  "label": "Issues",
+  "icon": "mods/branch-issue/icons/issue.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "linear-issues" }
+}</pre>
+  <p>No key binding ships with it.</p>
+
+  <h3 id="branch-issue-use">Use</h3>
+  <ul>
+    <li><b>Branch tab:</b> the issues on the active terminal's branch. With exactly one, it opens straight to its details. The panel joins identifiers stored in <code>git config branch.&lt;branch&gt;.herdr-issue</code> with any <code>TEAM-123</code> in the branch name, and drops those Linear doesn't know.</li>
+    <li><b>Link issue:</b> with nothing found, enter an identifier; Linear confirms it and the link is written to Git config. A hand-made link can be removed with Unlink in the Actions menu.</li>
+    <li><b>All tab:</b> search, My issues / Active cycle / All issues, state and team filters, with issues grouped by workflow state in collapsible groups. Search starts at three characters, or at any length for a number. <code>+ more</code> loads the next batch.</li>
+    <li><b>At a glance:</b> state, priority and assignee sit on one line under the title; click one to change it. Sub-issues done and pull request status appear below when the issue has them.</li>
+    <li><b>Create worktree:</b> from the Actions menu or the Worktrees group. It uses Linear's branch name, starts from a branch you pick (the remote's default branch, or another to stack one PR on another), opens a new space with a terminal or an agent, and can move the issue to Started. An agent gets the issue's link and details and waits for your next message.</li>
+    <li><b>Agents:</b> agents working on the issue are listed with their state; click one to go to it.</li>
+    <li><b>Send to agent:</b> hand over the issue or a comment thread with a prompt you can edit, to an agent from the dropdown, a sub-agent under it with <b>(spawn)</b>, or a new agent in its own tab. New agents work in the issue's worktree if it has one. Only Send delivers it.</li>
+    <li><b>Overview:</b> collapsible groups for Agents, Worktrees, Properties (labels, project, cycle, estimate), Links with pull request status, Sub-issues and Parent, and the Description.</li>
+    <li><b>Comments:</b> threads with Reply, a copy icon for each comment's link, and a box for a new comment after the last thread. Drafts are kept per issue.</li>
+    <li><b>Remote spaces:</b> Git runs on the space's machine; the Linear helper runs on this computer.</li>
+    <li><b>Refresh:</b> a visible panel rereads Linear on a timer; a hidden one doesn't, and catches up when shown.</li>
+  </ul>
+
+  <h3 id="branch-issue-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/branch-issue/mod.json</code> under <code>"settings"</code>. Unknown keys and wrong types are reported at the top of the panel and ignored.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>refresh.every</code></td><td><code>60s</code></td><td>How often a visible panel rereads Linear.</td></tr>
+    <tr><td><code>refresh.search_debounce</code></td><td><code>450ms</code></td><td>How long typing pauses before a search runs.</td></tr>
+    <tr><td><code>branch.max_identifiers</code></td><td><code>4</code></td><td>The most issue identifiers one branch may carry (at least 1).</td></tr>
+    <tr><td><code>list.default.scope</code></td><td><code>mine</code></td><td>The list's first scope until a saved view exists: <code>mine</code>, <code>cycle</code> or <code>all</code>.</td></tr>
+    <tr><td><code>list.default.state</code></td><td><code>active</code></td><td>The first state filter: <code>active</code>, <code>backlog</code>, <code>started</code>, <code>done</code>, <code>cancelled</code> or <code>all</code>.</td></tr>
+    <tr><td><code>list.default.team</code></td><td><code>""</code></td><td>A team key to filter by at first, such as DEM. Empty shows every team.</td></tr>
+    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where new worktrees are put.</td></tr>
+    <tr><td><code>worktrees.open_with</code></td><td><code>terminal</code></td><td>What a new worktree opens: <code>terminal</code>, or an installed agent's key such as <code>claude</code>.</td></tr>
+    <tr><td><code>worktrees.move_to_started</code></td><td><code>false</code></td><td>Preselect moving the issue to its started state when you create a worktree.</td></tr>
+  </tbody></table>
+
+  <h3 id="branch-issue-update">Update</h3>
+  <p>Run <code>go -C helper run ./install --update</code> from the <code>branch-issue</code> folder. Your <code>settings</code> block is kept.</p>
+  <details>
+  <summary>Upgrading from 1.x</summary>
+  <p>2.0 is a rebuild around agents. The All issues center tab is gone (use the All sidebar tab, and remove any <code>props: { "mode": "browser" }</code> tab or command). Every command except <code>refresh</code> is gone. Editing comments, Markdown preview and editing labels are gone. The <code>tracker</code> setting is gone. Icons moved to <code>icons/</code>, so a Better Tabs button's <code>mods/branch-issue/issue.svg</code> becomes <code>mods/branch-issue/icons/issue.svg</code>.</p>
+  </details>
+
+  <h3 id="branch-issue-developers">For developers</h3>
+  <p><code>branch-issue.refresh</code> reloads the panel. Commands reach copies that are showing.</p>
+  <p>The helper, <code>mods/branch-issue/bin/herdr-linear</code>, is a JSON bridge to Linear's GraphQL API with validated requests and a 26-second timeout. The branch-to-issue link is plain Git config, comma separated, so you can set it yourself:</p>
+  <pre>git config branch.&lt;branch&gt;.herdr-issue ENG-123</pre>
+  <p>Messages the panel sends to agents tell them to treat Linear's text as data and not to post unless asked.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/branch-issue/main.js</code>: the panel, and a map of what's where.</li>
+    <li><code>linear/</code>: <code>model.js</code> (what Linear's answers mean), <code>discovery.js</code>, <code>reads.js</code>.</li>
+    <li><code>actions/</code>: writes and handoffs (<code>changes.js</code>, <code>agents.js</code>, <code>worktrees.js</code>, <code>menus.js</code>).</li>
+    <li><code>views/</code>: drawing, with the shared look in <code>views/ui.js</code>; <code>state/saved.js</code>; <code>icons/</code>.</li>
+    <li><code>mod.schema.json</code>: settings and defaults, which must match <code>DEFAULT_SETTINGS</code> in the code.</li>
+    <li><code>helper/main.go</code>: the Linear bridge; <code>helper/install/</code>: the installer.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+herdr-app check "$HOME/.config/herdr-app/mods/branch-issue"</pre>
+  <p>Tests use stand-ins for Linear, and <code>herdr-app check</code> draws only the empty state, so also look at the running app. Never test writes against someone's workspace without their say-so.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="branch-pr.html"><span>Previous</span>Branch PR</a><a class="next" href="hands.html"><span>Next</span>Hands</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#branch-issue-start">Quick start</a>
+      <a href="#branch-issue-install">Install</a>
+      <a href="#branch-issue-use">Use</a>
+      <a href="#branch-issue-settings">Settings</a>
+      <a href="#branch-issue-update">Update</a>
+      <a href="#branch-issue-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

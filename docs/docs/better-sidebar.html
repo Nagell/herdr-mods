@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Sidebar · Herdr Mods Docs</title>
+<meta name="description" content="A spaces sidebar that shows each space's Git branch on the same row, nests worktrees under their main checkout, and colours each space by its pull request's state. The same mod also draws an agents list, a one-line footer and a right panel toggle.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html" class="on" aria-current="page">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-sidebar">
+  <h2>Better Sidebar</h2>
+  <p class="lead">A spaces sidebar that shows each space's Git branch on the same row, nests worktrees under their main checkout, and colours each space by its pull request's state. The same mod also draws an agents list, a one-line footer and a right panel toggle.</p>
+  <p class="meta-line"><span>Version 3.2.0</span><span>Needs: Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/better-sidebar">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="../gifs/better-sidebar.gif" alt="Better Sidebar in Herdr" width="1100" height="1192"></figure>
+
+  <h3 id="better-sidebar-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below. It takes the place of your spaces list.</li>
+    <li>Each space shows its branch on the right and its PR state below the name. Cmd-click the PR number to open it on GitHub.</li>
+    <li>Click the icon beside <b>Agents</b> to group agents by space, main space or name prefix.</li>
+  </ol>
+
+  <h3 id="better-sidebar-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-sidebar</code></div>
+  <p>Requirements: Git on every machine whose spaces you use, and the <a href="https://cli.github.com/">GitHub CLI</a> logged in with <code>gh auth login</code>, with access to the repositories you want to show. There is no Node.js dependency.</p>
+  <p>The agent reads the package, tells you that it runs Git and <code>gh</code> and reaches GitHub with your local login, and copies only <code>mods/better-sidebar/</code> into the app configuration. The manifest uses <code>"place": "none"</code>, so the agent replaces your existing spaces block's mod reference instead of adding a second sidebar, keeping its ID, size, the agents list, other panels and key bindings. Herdr's shipped layouts (<code>main</code>, <code>terminals</code>, <code>win98</code>) are read-only, so if you are on one the agent clones it and edits the clone; if you already have your own layout, it asks whether to add the mod there or make a new one.</p>
+  <p>Each block is optional. The spaces block references <code>"mod": "better-sidebar"</code>, the agents block <code>{ "mod": "better-sidebar", "props": { "view": "agents" } }</code>, and the footer block <code>{ "mod": "better-sidebar", "props": { "view": "footer" } }</code> at 37px high. The right panel toggle sits in a row beside the tab bar:</p>
+  <pre>{ "id": "tabs-row", "type": "row", "size": { "px": 42 }, "children": [
+  { "id": "tabs", "type": "block", "window_drag": true, "content": { "mod": "better-tabs" } },
+  { "id": "panel-toggle", "type": "block", "size": { "px": 36 }, "content": { "mod": "better-sidebar", "props": { "view": "panel-toggle" } } }
+] }</pre>
+  <p>The included <code>keys.json</code> binds <b>Cmd+Shift+B</b> on macOS to <code>better-sidebar.toggle-panel</code>. Merge it into <code>~/.config/herdr-app/keys.json</code>. The command only works while the panel toggle block is in the layout.</p>
+  <p>To roll back, point the spaces block back at the previous mod. Leave that mod installed if other layouts still use it.</p>
+
+  <h3 id="better-sidebar-use">Use</h3>
+  <ul>
+    <li><b>Branches:</b> the current branch sits beside the space name, small and dim. <code>main</code>, <code>master</code> and a branch that repeats the space name are hidden. The selected space also shows how far it is ahead of or behind its remote.</li>
+    <li><b>Worktrees:</b> worktree spaces nest under an open space for the same repository, each with its own branch and PR. A worktree whose main space isn't open stays a top-level row.</li>
+    <li><b>PR:</b> at the right of the space's row, an icon and number coloured green Open, gray Draft, purple Merged, red Closed or red Checks failed. Hover for repository, title and status. Several open PRs show the newest with a <code>+N</code> summary; hover it for the others.</li>
+    <li><b>Spaces and Agents tabs:</b> the <code>lists</code> view puts both lists in one block. <b>Spaces</b> shows each space's tabs beneath it, joined by tree lines, as the tab's title with its program beside it (<code>1 Claude Code</code>, <code>2 zsh</code>); click one to open it. Pinned agents sit in a Pinned group above every space. <b>Agents</b> shows the agents list with its grouping menu at the right of the tabs, and a count on the tab. The tab you pick is remembered. On the narrow rail the two lists sit one above the other.</li>
+    <li><b>Open a PR:</b> Cmd-click the number (Ctrl-click on Linux and Windows) to open it on GitHub. A plain click selects the space.</li>
+    <li><b>Spaces as before:</b> click to select, right-click for the space menu, drag to reorder within a machine, plus to create a space, machine groups with fold, and a compact rail when the sidebar is narrower than 160px.</li>
+    <li><b>Agents grouping:</b> the icon beside <b>Agents</b> picks Priority, Grouped by space, Grouped by main space (a worktree's agents go with its main checkout; needs this mod's spaces block in the same layout) or Grouped by prefix (names like <code>PR-12</code>, <code>INS-4</code>, <code>feature/INS-4</code>; the rest go under <b>No prefix</b>, last).</li>
+    <li><b>Footer:</b> Settings and Add machine as icons on one line, with names in tooltips. Settings shows a dot when an update is ready. With <a href="better-config.html">Better Config</a> installed, a Mod settings icon opens it.</li>
+    <li><b>Right panel toggle:</b> the panel icon at the far right of the tab bar hides or shows the right panel without changing its selected view. It is dim while the panel is hidden.</li>
+    <li><b>Errors:</b> if <code>gh</code> fails, the last good PR stays for the same branch, marked stale, with the error on hover. With no earlier result it reads <code>PR unavailable</code>.</li>
+  </ul>
+  <p>A space's branch and PR come from its first terminal's live folder, falling back to the space's folder. Only GitHub.com HTTPS and SSH remotes are supported. PRs refresh at most once a minute per checkout, and straight away when the branch changes. The mod only reads: it never stages, commits, checks out, creates PRs or changes Git configuration.</p>
+
+  <h3 id="better-sidebar-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-sidebar/mod.json</code> under <code>"settings"</code>.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>git.retry_after</code></td><td><code>15s</code></td><td>How long a failed Git read waits before it's tried again.</td></tr>
+    <tr><td><code>combined</code></td><td><code>true</code></td><td>Show the <code>lists</code> view as Spaces and Agents tabs. Off stacks spaces above agents in the same block.</td></tr>
+    <tr><td><code>pull_request_status</code></td><td><code>true</code></td><td>Colour spaces by their PR's state through the GitHub CLI. Set <code>false</code> if you don't have <code>gh</code>.</td></tr>
+  </tbody></table>
+
+  <h3 id="better-sidebar-update">Update</h3>
+  <p>Copy <code>mods/better-sidebar/</code> into <code>~/.config/herdr-app/mods/</code> again (or ask your agent to). This replaces <code>mod.json</code>, so copy your <code>settings</code> block forward, or let <a href="better-config.html">Better Config</a> notice the reset and offer to restore each value.</p>
+
+  <h3 id="better-sidebar-developers">For developers</h3>
+  <p>One mod draws five blocks. <code>props.view</code> picks which:</p>
+  <table class="keys"><thead><tr><th><code>props.view</code></th><th>Other props</th><th>What it draws</th></tr></thead><tbody>
+    <tr><td>(none)</td><td>None</td><td>The spaces list. This is the default.</td></tr>
+    <tr><td><code>lists</code></td><td>None</td><td>Spaces and agents in one block, under Spaces and Agents tabs (or stacked with <code>combined</code> off). Estro uses this.</td></tr>
+    <tr><td><code>agents</code></td><td>None</td><td>The agents list with its grouping choices.</td></tr>
+    <tr><td><code>footer</code></td><td>None</td><td>The one-line footer. Give its block a 37px height.</td></tr>
+    <tr><td><code>panel-toggle</code></td><td><code>target</code>: the layout node to toggle, default <code>panel</code></td><td>A 36px button that runs <code>layout.toggle</code> on the target.</td></tr>
+  </tbody></table>
+  <p>Command: <code>better-sidebar.toggle-panel</code> toggles the target, only while a <code>panel-toggle</code> block is in the layout.</p>
+  <p>The spaces view publishes <code>better-sidebar.space-parents</code> in shared state from its Git data; the agents view reads it for Grouped by main space.</p>
+  <p>A <code>branch.&lt;branch&gt;.herdr-pr</code> Git setting such as <code>owner/repo#42</code> overrides automatic PR discovery. The mod only reads that setting.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/better-sidebar/main.js</code>: picks the part from <code>props.view</code>. <code>settings.js</code>: shared with the other mods.</li>
+    <li><code>git/checkouts.js</code>: reading a space's checkout. <code>git/pr-status.js</code>: GitHub discovery, PR appearance, caching and stale results.</li>
+    <li><code>views/spaces.js</code>, <code>views/agents.js</code>, <code>views/footer.js</code>, <code>views/panel-toggle.js</code>: the parts. <code>views/ui.js</code>: the design kit.</li>
+    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons).</li>
+    <li><code>tests/spaces.test.cjs</code>, <code>tests/agents.test.cjs</code>: tests with Herdr stand-ins.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+herdr-app check "$PWD/mods/better-sidebar"</pre>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-files.html"><span>Previous</span>Better Files</a><a class="next" href="better-tabs.html"><span>Next</span>Better Tabs</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-sidebar-start">Quick start</a>
+      <a href="#better-sidebar-install">Install</a>
+      <a href="#better-sidebar-use">Use</a>
+      <a href="#better-sidebar-settings">Settings</a>
+      <a href="#better-sidebar-update">Update</a>
+      <a href="#better-sidebar-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Branch PR · Herdr Mods Docs</title>
+<meta name="description" content="A pull-request panel for working with agents: see what's in the way of a PR, hand it to an agent, check the result, and merge. It works with GitHub through the ">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html" class="on" aria-current="page">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="branch-pr">
+  <h2>Branch PR</h2>
+  <p class="lead">A pull-request panel for working with agents: see what's in the way of a PR, hand it to an agent, check the result, and merge. It works with GitHub through the <code>gh</code> CLI.</p>
+  <p class="meta-line"><span>Version 2.3.0</span><span>Needs: Go 1.23+, Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/branch-pr">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/branch-pr/preview.png" alt="Branch PR in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="branch-pr-start">Quick start</h3>
+  <ol>
+    <li>Run <code>gh auth login</code> once, then install with the prompt below.</li>
+    <li>Open the PRs panel on a branch with a pull request: one line shows checks, reviews and unresolved threads.</li>
+    <li>Press <b>Fix with agent</b> on a failed check, or <b>Send N to agent</b> for open threads, then merge from <b>Actions</b> when it's ready.</li>
+  </ol>
+
+  <h3 id="branch-pr-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/branch-pr</code></div>
+  <p>Requirements: <b>Go 1.23+</b> to run the installer and build the helper, Git on the machines your spaces run on, and the <b>GitHub CLI</b> logged in with <code>gh auth login</code> on this computer. Agent actions use <code>hc</code> and a running agent. Every read and write goes through <code>gh</code> with its login; there is no token setting.</p>
+  <p>Before installing, the agent explains what the panel runs and can write. On an explicit click it can post comments and replies, resolve and reopen threads, merge, close and reopen PRs, request reviews, fetch PR heads, create Git worktrees and branches, write the branch-to-PR link to Git config, open terminals and send messages to agents. Nothing writes on its own.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>By hand, from the <code>branch-pr</code> folder:</p>
+  <pre>go -C helper run ./install          # first install</pre>
+  <p>The installer builds the helper, copies only <code>mods/branch-pr/</code> to <code>~/.config/herdr-app/mods/branch-pr/</code>, and runs <code>herdr-app check</code>. It doesn't edit layouts or keys.</p>
+  </details>
+  <p>The manifest has <code>place: none</code>, so add it to a layout you own, about 368px wide:</p>
+  <pre>{ "id": "pull-requests", "type": "block", "content": { "mod": "branch-pr" } }</pre>
+  <p>With <a href="better-tabs.html">Better Tabs</a>, a button can open it (<code>target</code> is the block's layout ID):</p>
+  <pre>{
+  "id": "prs",
+  "label": "PRs",
+  "icon": "mods/branch-pr/icons/pull-request.svg",
+  "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "pull-requests" }
+}</pre>
+
+  <h3 id="branch-pr-use">Use</h3>
+  <ul>
+    <li><b>Two lists:</b> <b>Branch</b> shows the PRs from your checkout's branch and goes straight to the details when there's only one. <b>Repo</b> has search (including by number), All PRs / Created / Involved, and Open / Draft / Merged / Closed / All. Opening a PR stays in the sidebar with a back button.</li>
+    <li><b>Stats:</b> one line on every open PR gives Checks passed, Reviews approved and Unresolved threads, plus Ready, Conflicts or Behind when that's the news. Click one to go to where it's explained.</li>
+    <li><b>Hand off to agents:</b> <b>Fix with agent</b> on a failed check and <b>Send N to agent</b> for all unresolved threads open a dropdown: an agent already running (those on the PR first), a sub-agent under it with <b>(spawn)</b>, or a new one in its own tab. New agents work in the PR's worktree if it has one.</li>
+    <li><b>Agents on the PR:</b> listed with their state; click one to go to it.</li>
+    <li><b>Actions:</b> the PR header's menu holds Merge, Close and Reopen, which ask first. A merged PR shows a <b>Merged</b> badge there instead. A merge names the commit you saw, so a newer push is refused. <b>Merge when ready</b> turns on GitHub's auto-merge, offered only when GitHub has something required to wait for. GitHub merges whatever the branch holds once checks pass, so a push after you turn it on goes in too.</li>
+    <li><b>Comments:</b> threads, reviews and comments with their code, unread markers, author and Unresolved filters, reply, resolve and reopen, a box for a new comment, and Send to agent on one comment with a prompt you can edit.</li>
+    <li><b>Checks:</b> workflows, jobs, steps and failed output, with links to GitHub.</li>
+    <li><b>Files:</b> what the PR changes, with lines added and removed. A click shows the file's diff in <a href="better-changes.html">Better Changes</a>' centre tab, read from GitHub so it works for a PR you haven't checked out; without Better Changes, the files open on GitHub.</li>
+    <li><b>Reviewers:</b> who approved, who asked for changes, who is still to review, and asking someone again.</li>
+    <li><b>Worktrees:</b> a PR's checkouts, and <b>New worktree</b> to make another as its own space, with a terminal or an agent in its first tab.</li>
+    <li><b>Remote spaces:</b> Git runs on the space's machine and <code>gh</code> on this computer.</li>
+    <li><b>No <code>gh</code>:</b> if it's missing or logged out, the panel says so, shows what to run, and offers Try again.</li>
+  </ul>
+  <p>The sidebar follows the active terminal's folder and branch. It uses a branch's saved link (<code>branch.&lt;name&gt;.herdr-pr</code>, written by New worktree) if there is one, otherwise it looks across your GitHub remotes, including forks, and prefers open PRs. Repo prefers <code>upstream</code>, then the branch's tracking remote, then <code>origin</code>, and remembers a remote you pick. Search starts at three characters, or at any length for a PR number; GitHub does the rest of the matching, including <code>author:</code> and <code>label:</code>. GitHub Enterprise and GitLab aren't supported.</p>
+
+  <h3 id="branch-pr-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/branch-pr/mod.json</code> under <code>"settings"</code>. Unknown keys and wrong types are reported at the top of the panel and ignored.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>refresh.every</code></td><td><code>60s</code></td><td>How often a visible panel rereads GitHub.</td></tr>
+    <tr><td><code>refresh.search_debounce</code></td><td><code>450ms</code></td><td>How long typing pauses before a search runs.</td></tr>
+    <tr><td><code>list.page_size</code></td><td><code>25</code></td><td>How many PRs load at a time (1–100).</td></tr>
+    <tr><td><code>list.default.tab</code></td><td><code>all</code></td><td>Repo's first list until a saved view exists: <code>all</code>, <code>mine</code> (Created) or <code>involved</code>.</td></tr>
+    <tr><td><code>list.default.state</code></td><td><code>open</code></td><td>Repo's first state filter: <code>open</code>, <code>draft</code>, <code>merged</code>, <code>closed</code> or <code>all</code>.</td></tr>
+    <tr><td><code>worktrees.root</code></td><td><code>~/.herdr/worktrees</code></td><td>Where New worktree puts checkouts.</td></tr>
+    <tr><td><code>worktrees.open_with</code></td><td><code>terminal</code></td><td>What a new worktree opens: <code>terminal</code>, or an installed agent's key such as <code>claude</code>.</td></tr>
+    <tr><td><code>logs.keep_last</code></td><td><code>60KB</code></td><td>How much of a failed command's output is kept to show.</td></tr>
+    <tr><td><code>tools.github</code></td><td><code>gh</code></td><td>The <code>gh</code> command, or its full path.</td></tr>
+  </tbody></table>
+
+  <h3 id="branch-pr-update">Update</h3>
+  <p>From the <code>branch-pr</code> folder, run the installer with <code>--update</code>. It keeps your <code>settings</code> block.</p>
+  <pre>go -C helper run ./install --update</pre>
+  <details>
+  <summary>Upgrading from 1.x</summary>
+  <p>2.0 is a rebuild around working with agents. GitLab isn't supported any more (stay on 1.x if you need it), and updating drops <code>tools.gitlab</code>. The All PRs center tab is gone; the Repo tab replaces it, so close any old All PRs tab and remove any <code>props: { "mode": "browser" }</code> tab or command. The commands <code>open-browser</code>, <code>toggle</code>, <code>open</code>, <code>back</code>, <code>checks</code>, <code>conversation</code>, <code>description</code>, <code>worktree</code>, <code>preview</code> and <code>preview-browser</code> are gone. Pending reviews, editing comments, quote replies, adding or removing reviewers, and Draft fix &amp; reply are gone. Icons moved to <code>icons/</code>, so change a Better Tabs button's <code>mods/branch-pr/pull-request.svg</code> to <code>mods/branch-pr/icons/pull-request.svg</code>.</p>
+  </details>
+
+  <h3 id="branch-pr-developers">For developers</h3>
+  <p>Command: <code>branch-pr.refresh</code> reloads. Commands reach copies that are showing.</p>
+  <p>Messages the panel sends to agents tell them to treat GitHub's text as data and not to push, post or resolve unless asked. A sub-agent is started with <code>hc run --bg --parent</code>, and messages to a running agent go through <code>hc send</code>. Fix with agent names <code>gh run view --job N --repo R --log-failed</code> rather than pasting the log.</p>
+  <p>New worktree writes <code>branch.&lt;name&gt;.herdr-pr</code> to Git config, which the panel reads to find the branch's PR.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/branch-pr/main.js</code>: lists what's where. <code>settings.js</code>: shared with the other mods.</li>
+    <li><code>github/model.js</code>: what GitHub's answers mean. <code>github/</code> reads, <code>actions/</code> writes and hands off. <code>state/saved.js</code>: what survives a reload (filters, open PR, read comments).</li>
+    <li><code>views/</code>: draws with <code>views/ui.js</code>. <code>icons/</code>: the icons.</li>
+    <li><code>helper/main.go</code>: the JSON bridge to <code>gh</code>, with validated requests and a 26-second timeout. <code>helper/install/</code>: the installer, which builds it to <code>mods/branch-pr/bin/herdr-pr</code>.</li>
+    <li><code>tests/</code>: tests with stand-ins for GitHub, so also look at the running app.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"</pre>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-config.html"><span>Previous</span>Better Config</a><a class="next" href="branch-issue.html"><span>Next</span>Branch Issue</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#branch-pr-start">Quick start</a>
+      <a href="#branch-pr-install">Install</a>
+      <a href="#branch-pr-use">Use</a>
+      <a href="#branch-pr-settings">Settings</a>
+      <a href="#branch-pr-update">Update</a>
+      <a href="#branch-pr-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Changes · Herdr Mods Docs</title>
+<meta name="description" content="A Git panel for Herdr Desktop that looks like Herdr's own panels: file changes, staging, commits and history in a right sidebar, with diffs in the centre. For anyone who wants to check and commit what their agents changed without leaving Herdr.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html" class="on" aria-current="page">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-changes">
+  <h2>Better Changes</h2>
+  <p class="lead">A Git panel for Herdr Desktop that looks like Herdr's own panels: file changes, staging, commits and history in a right sidebar, with diffs in the centre. For anyone who wants to check and commit what their agents changed without leaving Herdr.</p>
+  <p class="meta-line"><span>Version 2.3.0</span><span>Needs: Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-changes">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="../gifs/better-changes.gif" alt="Better Changes in Herdr" width="1280" height="870"></figure>
+
+  <h3 id="better-changes-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below, then open the Changes panel.</li>
+    <li>Click a changed file: its diff opens in a centre tab. Use the ⋮ menu for <b>Side by side</b>.</li>
+    <li>Press <b>+</b> on the files you want, type a message in the box at the bottom, and press <b>Commit</b>. Nothing is pushed.</li>
+  </ol>
+
+  <h3 id="better-changes-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-changes</code></div>
+  <p>Requires Git on each machine you use. The agent follows RECIPE.md. Herdr's shipped layouts are read-only and restored on start, so the panel only shows in a layout you own: on a shipped layout, the agent clones it and points its <code>changes</code> node's <code>content.mod</code> at <code>better-changes</code>. In your own layout, it asks where the panel goes. The manifest docks it on the right at 368px.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand, copy <code>mods/better-changes/</code> into Herdr's mods folder. A symlink loads the code but not the icons. From a clone of the repository, <code>sync.sh</code> does the copy:</p>
+  <pre>./better-changes/sync.sh</pre>
+  </details>
+  <p>To open the panel from a key, bind any key to <code>mod.open:better-changes</code> in <code>~/.config/herdr-app/keys.json</code>:</p>
+  <pre>"global": { "cmd-alt-g": "mod.open:better-changes" }</pre>
+  <p>It opens the panel and selects it if it shares a stack, such as Herdr's Files and Changes. On an open panel it does nothing, unless <code>panel.toggle</code> is on: then it closes it. A layout without the panel shows a notification.</p>
+
+  <h3 id="better-changes-use">Use</h3>
+  <ul>
+    <li><b>Changes tab:</b> lists <b>Conflicts</b>, <b>Staged</b>, <b>Unstaged</b> and <b>Committed</b> (not pushed yet) files in collapsible groups. Empty groups are hidden. The tab's badge counts changed files.</li>
+    <li><b>Staging:</b> <b>+</b> and <b>−</b> on a row stage or unstage that file. <b>Stage all</b> and <b>Unstage all</b> act on the whole repository except conflicts. Working files on disk are never changed.</li>
+    <li><b>View menu (⋮):</b> picks <b>Flat</b> or <b>Tree</b> for file lists, and <b>Inline</b> or <b>Side by side</b> for diffs.</li>
+    <li><b>Diffs:</b> clicking a file opens its diff in one reusable centre tab per space, named after the file. It comes back to that file after a restart.</li>
+    <li><b>Full file:</b> hover the diff's header row and choose <b>Full file</b> to see the whole file with its changes marked. It stays on for every diff until you turn it off, and still stops at <code>limits.diff_lines</code>.</li>
+    <li><b>Commit and Amend:</b> type a message in the box at the bottom; <b>Enter</b> makes a new line and only the button commits. The chevron switches between <b>Commit</b> and <b>Amend</b> without running either. Commit takes only what is staged. Amend rewrites the latest commit and can change just its message; it loads the latest message into an empty box, never over your text, and stops if the latest commit moved meanwhile. A failure keeps your message. The mod never pushes.</li>
+    <li><b>Conflicts:</b> conflicted files get their own group at the top, each saying what kind it is, such as "both edited". Opening one shows only the conflict blocks with Git's <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers and the file's real line numbers. Side by side puts yours on the left and incoming on the right. Resolving is left to an agent or your editor, and Commit and Amend stay off until no conflicts remain.</li>
+    <li><b>Commits tab:</b> your branch first with its unpushed commits, then its remote branch, and on a feature branch <code>origin/HEAD</code> from where your branch left it. A group says <b>N not pulled</b> when the remote has commits you lack. The tab's badge counts unpushed commits. It reads the last fetch and never fetches.</li>
+    <li><b>Commit details:</b> opening a commit shows its description and changed files, with a link to GitHub for commits already pushed to an <code>origin</code> on GitHub.</li>
+    <li><b>Refresh:</b> the refresh button rereads Git at once. Git is also read every <code>refresh.status</code>, and local repositories are watched.</li>
+    <li><b>Remote spaces:</b> Git and file reads run on the space's own machine.</li>
+  </ul>
+  <p>Limits: Stage all and Unstage all apply past the file limit. Side by side pairs removed and added lines by position, not by similarity. A rename shows as a deletion and an addition.</p>
+
+  <h3 id="better-changes-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-changes/mod.json</code> under <code>"settings"</code>, with only what you change. Saving applies at once.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>refresh.status</code></td><td><code>"10s"</code></td><td>How often Git is read for changes.</td></tr>
+    <tr><td><code>limits.files</code></td><td><code>1000</code></td><td>The most files a list shows.</td></tr>
+    <tr><td><code>limits.diff_lines</code></td><td><code>1500</code></td><td>The most lines a diff shows, Full file included.</td></tr>
+    <tr><td><code>limits.line_length</code></td><td><code>4000</code></td><td>Longer lines in a diff are cut here.</td></tr>
+    <tr><td><code>limits.commits_per_page</code></td><td><code>50</code></td><td>How many commits load at a time.</td></tr>
+    <tr><td><code>default.view</code></td><td><code>"tree"</code></td><td>How file lists start (<code>tree</code> or <code>flat</code>), until you choose in the ⋮ menu.</td></tr>
+    <tr><td><code>default.diff</code></td><td><code>"inline"</code></td><td>How diffs start (<code>inline</code> or <code>split</code>), until you choose in the ⋮ menu.</td></tr>
+    <tr><td><code>panel.toggle</code></td><td><code>false</code></td><td>Lets the panel key close an open panel, instead of leaving it alone.</td></tr>
+  </tbody></table>
+
+  <h3 id="better-changes-update">Update</h3>
+  <p>Copy <code>mods/better-changes/</code> into Herdr again. The copy replaces the installed <code>mod.json</code>, so the settings you changed go back to their defaults; <a href="better-config.html">Better Config</a> notices and offers to restore them.</p>
+
+  <h3 id="better-changes-developers">For developers</h3>
+  <p>Mod commands, for keys and shown copies: <code>better-changes.refresh</code>, <code>better-changes.changes</code> and <code>better-changes.commit</code> (switch tab), <code>better-changes.flat</code>, <code>better-changes.tree</code>, <code>better-changes.inline</code>, <code>better-changes.split</code>, and <code>better-changes.open:&lt;path&gt;</code>.</p>
+  <p>Props <code>{ "mode": "diff", "space", "source", "selection" }</code> make a diff tab; with no props it's the sidebar.</p>
+  <p>One header row: Herdr's pane header names a diff tab <code>better-changes</code>, so a diff tab has two rows. To get one, use this mod as the pane header in a layout you own. It draws Herdr's header with the file added, and looks the same as Herdr's on terminals. It's a copy of Herdr's <code>pane</code> mod, so it won't pick up later changes to it.</p>
+  <pre>"pane": { "header": { "content": { "mod": "better-changes" } } }</pre>
+  <p>Shared state: the diff publishes <code>shared("pane-heads")[pane]</code> = <code>{ title, detail, icon, add, del }</code>, which the header shows, and the mod publishes <code>shared("mod-icons")["better-changes"]</code> for a tab bar that draws mod icons. <a href="better-files.html">Better Files</a> uses <code>better-changes.selection</code> and <code>better-changes.diff-tabs</code> to open a diff here.</p>
+  <h4>Work on the mod</h4>
+  <p>In <code>mods/better-changes/</code>:</p>
+  <ul>
+    <li><code>main.js</code>: setup, settings and commands. <code>settings.js</code>: shared with the other mods. <code>panel.js</code>: what the panel key does, with no Herdr calls.</li>
+    <li><code>git/repository.js</code>: following the repository, the index, history, commit and amend. <code>git/reads.js</code>: plain functions that read from Git. <code>git/model.js</code>: parsing with no Herdr calls.</li>
+    <li><code>views/sidebar.js</code>, <code>views/diff.js</code>, <code>views/pane-header.js</code>: the three things it draws. <code>views/ui.js</code>: the design kit.</li>
+    <li><code>icons/</code>: Lucide icons and Herdr's pane header icons. <code>mod.schema.json</code>: every setting with its default, which must match the code's <code>DEFAULT_SETTINGS</code>.</li>
+    <li><code>sync.sh</code>, beside <code>mods/</code>: copies the mod into Herdr, which reloads it.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+herdr-app check "$PWD/mods/better-changes"</pre>
+  <p><code>herdr-app check</code> only draws the empty state, so a mistake in a list or the commit box shows up only in the running panel.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><span></span><a class="next" href="better-files.html"><span>Next</span>Better Files</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-changes-start">Quick start</a>
+      <a href="#better-changes-install">Install</a>
+      <a href="#better-changes-use">Use</a>
+      <a href="#better-changes-settings">Settings</a>
+      <a href="#better-changes-update">Update</a>
+      <a href="#better-changes-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

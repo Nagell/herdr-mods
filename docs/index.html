@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herdr Mods</title>
+<meta name="description" content="Mods for Herdr Desktop built on Herdr's own mod API: Git, files, sidebar, tabs, settings, PRs, Linear, Mac automation and staged agent runs.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="./">Herdr Mods</a>
+    <div class="links">
+      <a href="#why">Why</a>
+      <a href="#mods">Mods</a>
+      <a href="#estro">Layout</a>
+      <a href="#build">Build your own</a>
+      <a href="docs/better-changes.html">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <header class="hero">
+    <div class="tag"><span>●</span> Mods for <a href="https://herdr.dev/">Herdr Desktop</a></div>
+    <h1>Mods built on Herdr. <span>In Herdr's own style.</span></h1>
+    <p>Nine mods that use Herdr's own mod API and draw in Herdr's own style: a Git panel, a file browser, a sidebar, a tab bar, one settings dialog for every mod, PR and Linear panels, Mac automation for agents, and staged agent runs. Install one, or all of them as a layout.</p>
+    <div class="prompt">
+      <code id="p-mod">Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/<span>&lt;mod-folder&gt;</span></code>
+      <button class="copy" data-copy="p-mod" type="button">Copy</button>
+    </div>
+  </header>
+
+  <!-- The hero recording: the five Better mods working together. Drop the file at docs/gifs/better-mods.gif. -->
+  <div class="shot-hero gif">
+    <img src="gifs/better-mods.gif" alt="Better Sidebar, Better Tabs, Better Files, Better Changes and Better Config working together in Herdr" width="1440" height="802" onerror="this.parentNode.classList.add('pending'); this.remove()">
+    <p class="pending-note">Recording coming: Better Sidebar, Better Tabs, Better Files, Better Changes and Better Config in one window.</p>
+  </div>
+
+  <section id="why">
+    <h2><i>01</i>Why they're built this way</h2>
+    <p class="lead">Each mod runs through the same API Herdr's own mods use, so a Herdr update doesn't overwrite them, and each is a folder you can read in one sitting.</p>
+    <div class="why">
+      <div><h3>On Herdr, not around it</h3><p>Separate mods loaded through Herdr's mod API: they read their block's <code>props()</code>, are placed by a layout, and call Herdr's commands. None patches Herdr's shipped mods or fights its UI.</p></div>
+      <div><h3>They look like Herdr</h3><p>Every mod draws with one design kit, <code>views/ui.js</code>: Herdr's sizes, radii, type and spacing, measured from its shipped mods, as tokens and small components.</p></div>
+      <div><h3>One folder per mod</h3><p><code>mod.json</code>, a <code>mod.schema.json</code>, the code, <code>tests/</code>, a README for people and a <code>RECIPE.md</code> for the agent that installs it.</p></div>
+      <div><h3>Settings described once</h3><p>The schema gives every setting a title, description, type, default and limits. Defaults live in one place in the code, and a test checks schema, <code>mod.json</code> and code agree.</p></div>
+      <div><h3>Layout-driven</h3><p>A block's <code>props</code> choose what a mod draws. Better Sidebar is the spaces list, the agents list, both under tabs, a footer or a panel toggle by <code>props.view</code>, so you compose your own layout.</p></div>
+      <div><h3>Plain tooling</h3><p>Tests are <code>node --test</code> with no packages. The four mods that need native work have a small Go helper with its own tests, built on your machine. No Python, no global installs.</p></div>
+    </div>
+  </section>
+
+  <section id="mods">
+    <h2><i>02</i>The mods</h2>
+    <p class="lead">Each card opens the mod's docs. Replace <code>&lt;mod-folder&gt;</code> in the prompt above with the name under the title.</p>
+    <div class="filters" role="group" aria-label="Filter mods">
+      <button type="button" class="on" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" data-filter="better" aria-pressed="false">Better mods</button>
+      <button type="button" data-filter="branch" aria-pressed="false">Branch panels</button>
+      <button type="button" data-filter="automation" aria-pressed="false">Automation</button>
+    </div>
+    <div class="grid">
+      <a class="card" data-group="better" href="docs/better-changes.html">
+        <div class="shot"><img src="gifs/better-changes.gif" alt="Better Changes in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Better Changes</b><span class="folder mono">better-changes</span></div>
+        <p>A Git panel: staged, unstaged and unpushed files, stage and unstage, commit and amend, history, and an inline or side-by-side diff tab in the centre.</p>
+        <div class="needs">Needs Git</div>
+      </a>
+      <a class="card" data-group="better" href="docs/better-files.html">
+        <div class="shot"><img src="gifs/better-files.gif" alt="Better Files in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Better Files</b><span class="folder mono">better-files</span></div>
+        <p>A read-only file browser that opens files in the centre pane beside your agents, with Markdown rendered, Git marks, Open in your editor, and a menu that hands a file to an agent.</p>
+        <div class="needs">Needs Git</div>
+      </a>
+      <a class="card" data-group="better" href="docs/better-sidebar.html">
+        <div class="shot"><img src="gifs/better-sidebar.gif" alt="Better Sidebar in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Better Sidebar</b><span class="folder mono">better-sidebar</span></div>
+        <p>Spaces with nested worktrees, Git branches and pull-request status, agents grouped by space or name prefix, both under Spaces and Agents tabs, and a one-line footer. One mod, five blocks.</p>
+        <div class="needs">Needs Git and <code>gh</code></div>
+      </a>
+      <a class="card" data-group="better" href="docs/better-tabs.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-tabs/preview.png" alt="Better Tabs in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Better Tabs</b><span class="folder mono">better-tabs</span></div>
+        <p>Tabs you drag that wrap onto more lines when they don't fit, a toolbar for your panels, and a ⋮ menu to hide and pin them.</p>
+        <div class="needs">Nothing extra</div>
+      </a>
+      <a class="card" data-group="better" href="docs/better-config.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-config/preview.png" alt="Better Config in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Better Config</b><span class="folder mono">better-config</span></div>
+        <p>Every installed mod's settings in one dialog, drawn like Herdr's Settings. Checks values before saving, writes only what you changed, and offers to restore your changes after an update.</p>
+        <div class="needs">Nothing extra</div>
+      </a>
+      <a class="card" data-group="branch" href="docs/branch-pr.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/branch-pr/preview.png" alt="Branch PR in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Branch PR</b><span class="folder mono">branch-pr</span></div>
+        <p>What stands between a pull request and a merge: checks, reviews, threads, conflicts, and the files it changes. Hands failures and comments to an agent, and merges when ready.</p>
+        <div class="needs">Needs Go 1.23+ and <code>gh</code></div>
+      </a>
+      <a class="card" data-group="branch" href="docs/branch-issue.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/branch-issue/preview.png" alt="Branch Issue in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Branch Issue</b><span class="folder mono">branch-issue</span></div>
+        <p>Linear issues for the branch you're on, with state, priority and assignee edits, comments, and a worktree that opens with an agent holding the issue.</p>
+        <div class="needs">Needs Go 1.23+ and a Linear API key</div>
+      </a>
+      <a class="card" data-group="automation" href="docs/hands.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/hands/preview.png" alt="Hands in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Hands</b><span class="folder mono">hands</span></div>
+        <p>A <code>hands</code> CLI that lets an agent read and drive any Mac app through its accessibility tree, screenshot a window and record the screen, with a panel of what it did.</p>
+        <div class="needs">Needs Go 1.23+ and macOS</div>
+      </a>
+      <a class="card" data-group="automation" href="docs/factory.html">
+        <div class="shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/factory/preview.png" alt="Factory in Herdr" loading="lazy" width="960" height="540"></div>
+        <div class="meta"><b>Factory</b><span class="folder mono">factory</span></div>
+        <p>Staged agent runs, such as developer then reviewer, shown as a tree of live sessions with findings by severity, review loops and follow-ups.</p>
+        <div class="needs">Needs Go 1.23+ and Claude Code</div>
+      </a>
+    </div>
+  </section>
+
+  <section id="estro">
+    <h2><i>03</i>Estro: all of them in one layout</h2>
+    <p class="lead">A window for directing agents: every space and agent on the left, the session in the middle, and Files, Changes, PRs, Issues, Hands and Factory in a panel on the right. One prompt installs the layout and all nine mods. A mod you already have is updated, not installed twice, and a layout already called <code>estro</code> is left alone.</p>
+    <div class="prompt">
+      <code id="p-estro">Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro</code>
+      <button class="copy" data-copy="p-estro" type="button">Copy</button>
+    </div>
+    <div class="shot-hero" style="margin-top:32px"><img src="img/estro.png" alt="The Estro layout" loading="lazy" width="2400" height="1500"></div>
+  </section>
+
+  <section id="build">
+    <h2><i>04</i>Build your own on the same structure</h2>
+    <p class="lead">Copy any mod folder and keep its shape. Put Herdr's <code>herdr.d.ts</code> and <code>gpui-kit.d.ts</code> beside the code for editor types; they're gitignored, and <code>sync.sh</code> copies the mod into Herdr, which reloads it.</p>
+<pre>my-mod/
+  mods/my-mod/
+    main.js            <span class="d"># the View; reads props() to pick what to draw</span>
+    mod.json           <span class="d"># $schema, version, place, title</span>
+    mod.schema.json    <span class="d"># every setting: title, description, type, default</span>
+    settings.js        <span class="d"># installed settings merged over DEFAULT_SETTINGS</span>
+    views/ui.js        <span class="d"># the design kit</span>
+  tests/my-mod.test.cjs
+  README.md            <span class="d"># for people</span>
+  RECIPE.md            <span class="d"># for the agent that installs it</span>
+  sync.sh</pre>
+<pre>node --test */tests/*.test.cjs
+for d in */helper; do (cd "$d" &amp;&amp; go test ./... &amp;&amp; go vet ./...); done</pre>
+  </section>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://herdr.dev/">herdr.dev</a> · <a href="https://github.com/munza/herdr-mods">GitHub</a></span>
+  </footer>
+</div>
+<script>
+  // Filter the mods grid by group.
+  const chips = document.querySelectorAll("[data-filter]");
+  for (const chip of chips) {
+    chip.addEventListener("click", () => {
+      for (const c of chips) { c.classList.toggle("on", c === chip); c.setAttribute("aria-pressed", c === chip); }
+      for (const card of document.querySelectorAll(".card")) card.hidden = chip.dataset.filter !== "all" && card.dataset.group !== chip.dataset.filter;
+    });
+  }
+  for (const b of document.querySelectorAll("[data-copy]")) {
+    b.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
+        b.textContent = "Copied";
+      } catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+  }
+</script>
+</body>
+</html>

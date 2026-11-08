@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hands · Herdr Mods Docs</title>
+<meta name="description" content="A ">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html" class="on" aria-current="page">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="hands">
+  <h2>Hands</h2>
+  <p class="lead">A <code>hands</code> command that lets a coding agent operate other Mac apps: list apps and windows, read an app's accessibility tree as numbered lines, click, type, press keys, set values, scroll, screenshot a window and record the screen. A pane shows its screenshots and recordings, what it did, and whether Herdr has the permissions it needs.</p>
+  <p class="meta-line"><span>Version 0.5.2</span><span>Needs: macOS 14+, Go 1.23+, Xcode command line tools</span><a href="https://github.com/munza/herdr-mods/tree/main/hands">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/hands/preview.png" alt="Hands in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="hands-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below, open the Hands pane, and press <b>Grant access</b> for Accessibility and Screen Recording.</li>
+    <li>In a Herdr terminal, try <code>hands see --app Finder</code> to print Finder's elements as numbered lines.</li>
+    <li>Ask an agent to do something in another app. The <b>Actions</b> tab lists what it did, and <b>Captures</b> holds its screenshots and recordings.</li>
+  </ol>
+
+  <h3 id="hands-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/hands</code></div>
+  <p>Requirements: macOS 14 or later, Herdr, Go 1.23+ to run the installer, and the Xcode command line tools (<code>clang</code>) to build the helper. No runtime dependencies, no daemon, no MCP server.</p>
+  <p><b>Permissions.</b> macOS attributes a command-line tool to the app that launched it. Run from a Herdr terminal, <code>hands</code> is attributed to Herdr, so you grant Accessibility and Screen Recording to Herdr once and every agent in a Herdr terminal has them. Run <code>hands permissions --ask</code> from a Herdr terminal, allow Herdr in System Settings › Privacy &amp; Security, and restart the terminal. With Accessibility, anything in a Herdr terminal can read and operate every app's UI; with Screen Recording it can capture any window. The agent says this before installing. Treat agents that use <code>hands</code> like a person at your keyboard.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand, from the <code>hands</code> folder:</p>
+  <pre>go -C helper run ./install
+# Later, update an existing installation owned by this package:
+go -C helper run ./install --update</pre>
+  <p>The installer builds the helper, copies only <code>mods/hands/</code> and the binary to <code>~/.config/herdr-app/mods/hands/</code>, runs <code>herdr-app check</code>, and symlinks the binary to <code>~/.local/bin/hands</code> so agents find it on PATH (<code>--link-dir</code> changes that; a real file there is left alone). It doesn't edit layouts or keys.</p>
+  </details>
+  <p>The manifest has <code>place: none</code>. To show the pane, add a block to a layout you own, for example in the panel stack. The CLI works without it.</p>
+  <pre>{ "id": "hands", "type": "block", "content": { "mod": "hands" } }</pre>
+  <p>No key binding ships with it.</p>
+
+  <h3 id="hands-use">Use</h3>
+  <ul>
+    <li><b>Permissions block:</b> while a permission is missing, the pane lists Accessibility and Screen Recording, each with a <b>Grant access</b> button that prompts for it and, if macOS shows no prompt, opens its place in System Settings. It goes away once both are granted.</li>
+    <li><b>Captures tab:</b> screenshots and recordings together, newest first, in collapsible days. Cmd-click a screenshot to open it, or press the folder button to show it in Finder.</li>
+    <li><b>Recordings:</b> rows show their length. Select one to see its note, what it recorded and when, the movie with its size (Cmd-click opens it), and the actions taken during it.</li>
+    <li><b>Actions tab:</b> what <code>hands</code> did or failed to do: the action and what it touched, any output file or the error in red, the app, the Herdr terminal that asked, and when. A menu filters by kind of action, or to failures.</li>
+    <li><b>Footer:</b> shows whether a recording is running.</li>
+    <li><b>Your cursor stays yours:</b> events go to the target process, not the system, so your cursor and keyboard focus are never taken.</li>
+    <li><b>Privacy of the log:</b> the action history records what was touched, never the text typed or set. Reading commands such as <code>see</code> aren't listed.</li>
+  </ul>
+
+  <h3 id="hands-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/hands/mod.json</code> under <code>"settings"</code>. Both the CLI and the pane read them. The CLI finds the file beside its own binary, so a copy of the binary elsewhere uses built-in defaults.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>pause.after_action</code></td><td><code>500ms</code></td><td>The wait before an action command returns. <code>--delay</code> overrides it for one call.</td></tr>
+    <tr><td><code>pause.between_keys</code></td><td><code>100ms</code></td><td>The pause between typed characters. <code>--key-delay</code> overrides it for one call.</td></tr>
+    <tr><td><code>see.max_lines</code></td><td><code>300</code></td><td>The most elements a listing shows. <code>--max</code> overrides it.</td></tr>
+    <tr><td><code>see.max_depth</code></td><td><code>60</code></td><td>How deep a listing goes. <code>--depth</code> overrides it.</td></tr>
+    <tr><td><code>record.frames_per_second</code></td><td><code>30</code></td><td>Frames per second for window recordings (1–60).</td></tr>
+    <tr><td><code>pane.refresh</code></td><td><code>5s</code></td><td>How often the pane checks for new captures and actions (never closer than 1s).</td></tr>
+    <tr><td><code>state_dir</code></td><td><code>~/Library/Caches/hands</code></td><td>Where snapshots and recordings are kept. The <code>HANDS_STATE_DIR</code> environment variable wins over it.</td></tr>
+  </tbody></table>
+
+  <h3 id="hands-update">Update</h3>
+  <p>Run <code>go -C helper run ./install --update</code> from the <code>hands</code> folder. Your <code>settings</code> block is kept.</p>
+
+  <h3 id="hands-developers">For developers</h3>
+  <p><b>The <code>hands</code> CLI.</b> <code>hands --help</code> is the source of truth. The commands:</p>
+  <pre>hands apps                                   running apps: pid, name, bundle id, frontmost
+hands windows [--app Safari]                 on-screen windows with frames
+hands see --app Safari [--window "Docs"] [--find Search] [--max 300] [--depth 60] [--menus]
+hands click 12 | hands click 12 --right | hands click 12 --double | hands click --at X,Y
+hands set 7 "text" | hands focus 7
+hands type "text" [--app Safari] | hands key cmd+l [--app Safari]
+hands scroll 3 --dy -5 | hands scroll --at X,Y --dy 10 --dx 0
+hands shot --app Safari [--window "Docs"] out.png
+hands record start demo.mov [--seconds 30] [--clicks] [--note "what this shows"] | hands record start demo.mov --app Safari [--window "Docs"]
+hands record stop | hands record status | hands record list
+hands actions
+hands permissions [--ask[=accessibility|screen]]</pre>
+  <ul>
+    <li><code>--app</code> takes a name, bundle id or pid, matched exactly first and by prefix second. Every command takes <code>--json</code>.</li>
+    <li><code>see</code> prints one numbered element per line with role, title, value and frame, and saves a snapshot. Element numbers refer to the last <code>see</code> in that terminal; other terminals keep their own. If an element changed since the listing, the action does nothing and says so: run <code>see</code> again.</li>
+    <li>Actions use the Accessibility API and fall back to synthetic mouse or keyboard events when an element has no action. <code>click</code>, <code>set</code>, <code>focus</code>, <code>key</code>, <code>scroll</code> and <code>type</code> wait 500 ms before returning; <code>--delay 100</code> shortens that, <code>--delay 0</code> removes it.</li>
+    <li>Prefer <code>hands set N "text"</code> for text fields: it writes the value in one step. <code>hands type</code> sends keystrokes to whatever is focused, using the active keyboard layout.</li>
+    <li><code>hands key</code> understands <code>cmd</code>, <code>shift</code>, <code>ctrl</code>, <code>alt</code>/<code>option</code>, <code>fn</code>, letters, digits, punctuation, <code>enter</code>, <code>tab</code>, <code>space</code>, <code>esc</code>, <code>backspace</code>, arrows, <code>home</code>, <code>end</code>, <code>pageup</code>, <code>pagedown</code> and <code>f1</code>–<code>f15</code>.</li>
+    <li>Frames are global screen points with the origin at the top left of the main display. The menu bar is skipped unless <code>--menus</code> is given; use <code>hands key</code> for menu shortcuts.</li>
+    <li>Recording without <code>--app</code> captures the whole screen through <code>screencapture</code> (<code>--clicks</code> highlights clicks). With <code>--app</code> it records one window as H.264 at up to 30 fps, even when the window moves or is covered. One recording at a time; <code>--seconds</code> is a safety limit.</li>
+    <li><code>hands actions</code> prints the last 200 actions and the last 200 screenshots, from <code>actions.jsonl</code> in the state folder. <code>hands record list</code> prints the last 50 recordings, from <code>recordings.json</code>.</li>
+  </ul>
+  <p><b>The agent skill.</b> <code>hands/SKILL.md</code> tells an agent when to reach for <code>hands</code> (only when a visible app must be driven and no shell command, file, API or CLI can do it) and how to work in the see → act → see loop: list, act on a number, list again, since numbers go stale as soon as the UI changes. It also tells the agent to give recordings a <code>--note</code>, to say what it's about to do in another app, and to stop at dialogs asking for passwords, payments or deletions. Install it with your usual skills tool:</p>
+  <pre>skills add munza/herdr-mods hands</pre>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>helper/bridge.m</code>: the Accessibility, CGEvent and ScreenCaptureKit calls, returning JSON.</li>
+    <li><code>helper/main.go</code>: the command line; <code>tree.go</code> the numbered listing and snapshot; <code>keys.go</code> the chord table; <code>record.go</code> the recorder; <code>actions.go</code> the action log.</li>
+    <li><code>helper/install/</code>: the installer.</li>
+    <li><code>mods/hands/main.js</code>: the pane, which reads the CLI and holds its state; <code>views/</code> draws the permissions block, captures and actions, with the shared look in <code>views/ui.js</code>.</li>
+    <li><code>mod.schema.json</code>: settings and defaults, which must match <code>DEFAULT_SETTINGS</code> in the code.</li>
+  </ul>
+  <pre>(cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
+node --test tests/*.test.cjs
+herdr-app check "$HOME/.config/herdr-app/mods/hands"</pre>
+  <p>Tests cover the Go logic and the pane; the Objective-C is exercised by hand from a Herdr terminal.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="branch-issue.html"><span>Previous</span>Branch Issue</a><a class="next" href="factory.html"><span>Next</span>Factory</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#hands-start">Quick start</a>
+      <a href="#hands-install">Install</a>
+      <a href="#hands-use">Use</a>
+      <a href="#hands-settings">Settings</a>
+      <a href="#hands-update">Update</a>
+      <a href="#hands-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

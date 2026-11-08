@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Config · Herdr Mods Docs</title>
+<meta name="description" content="Every installed mod's settings in one dialog, drawn like Herdr's own Settings. For anyone who would rather not hand-edit each mod's ">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html" class="on" aria-current="page">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-config">
+  <h2>Better Config</h2>
+  <p class="lead">Every installed mod's settings in one dialog, drawn like Herdr's own Settings. For anyone who would rather not hand-edit each mod's <code>mod.json</code> or read its README to learn what a key does.</p>
+  <p class="meta-line"><span>Version 0.1.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-config">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-config/preview.png" alt="Better Config in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="better-config-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below and say yes to the suggested key, <b>⌘⌥,</b>.</li>
+    <li>Press the key and pick a mod from the list. Change a setting: it's checked, saved and applied at once.</li>
+    <li>A dot marks what you changed. After a mod updates, a box at the top offers to restore your values.</li>
+  </ol>
+
+  <h3 id="better-config-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-config</code></div>
+  <p>The agent follows RECIPE.md. It's a dialog, so it needs no place in a layout. The agent never overwrites an unrelated mod with the same name, and merges the suggested key into your <code>keys.json</code> only if you agree.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>To install by hand from a clone of the repository, <code>sync.sh</code> copies <code>mods/better-config/</code> into Herdr's mods folder:</p>
+  <pre>./better-config/sync.sh</pre>
+  </details>
+  <p>Herdr's command palette doesn't list mods, so give it a key. <code>keys.json</code> suggests <b>⌘⌥,</b>, next to Herdr's own <b>⌘,</b> for Settings. Merge it into <code>~/.config/herdr-app/keys.json</code>:</p>
+  <pre>{ "global": { "cmd-alt-,": "mod.open:better-config" } }</pre>
+  <p>Herdr stops adding new default shortcuts to a <code>keys.json</code> you've edited, so if you've never changed yours, this edit makes it yours. Without a key, this opens it too:</p>
+  <pre>herdr-app do mod.open '{"name":"better-config"}'</pre>
+
+  <h3 id="better-config-use">Use</h3>
+  <ul>
+    <li><b>Open and close:</b> the key opens the dialog; the same key, or Esc, closes it.</li>
+    <li><b>One page per mod:</b> the list on the left has each installed mod with settings; a red dot marks one that needs attention. Each page shows every setting's name, what it does and its key, grouped by the first part of the key.</li>
+    <li><b>The right control:</b> on/off switches; buttons for up to four choices, else a dropdown (↑, ↓, Enter, Esc); − and + for numbers; text boxes for times (<code>450ms</code>, <code>10s</code>), sizes (<code>60KB</code>), text and comma-separated lists. A text box saves on Enter or when it loses focus.</li>
+    <li><b>Checked before saving:</b> a value that doesn't fit is explained in red under its field and never written. A bad value typed into <code>mod.json</code> by hand shows there too.</li>
+    <li><b>Applies at once:</b> a change is saved to the mod's own <code>mod.json</code>, and Herdr reloads the mod straight away.</li>
+    <li><b>See what you changed:</b> a dot marks every setting that differs from its default. <b>Reset</b> puts one back, and <b>Reset all</b> puts a whole mod back.</li>
+    <li><b>Survives updates:</b> when an update puts defaults back over your values, a box at the top lists each one, yours beside the current value, ticked to start. One button restores the ticked ones and keeps the rest.</li>
+    <li><b>Works with any mod:</b> a mod that ships a schema of its settings gets names, descriptions and checks. Any other mod with a <code>settings</code> block still shows, with its types guessed.</li>
+    <li><b>Herdr settings:</b> at the bottom of the list, opens Herdr's own Settings.</li>
+  </ul>
+  <p>Where values live: in the <code>settings</code> block of each mod's installed <code>mod.json</code>, holding only what you changed; a change back to the default removes the key. Better Config also keeps a copy of what you changed in <code>~/.config/herdr-mods/better-config/&lt;mod&gt;.json</code>. A value you changed by hand is taken as yours, and the copy follows it. A write only goes through if the file hasn't changed since it was read.</p>
+  <p>Limits: a mod with no <code>settings</code> in its <code>mod.json</code> and none described in a <code>mod.schema.json</code> doesn't appear. Values that are objects show as their separate keys, and a list holds words only. For settings without a described default, only a version change shows an update took them.</p>
+
+  <h3 id="better-config-settings">Settings</h3>
+  <p>Better Config has no settings of its own.</p>
+
+  <h3 id="better-config-update">Update</h3>
+  <p>Copy <code>mods/better-config/</code> into Herdr again. The copy of your changes for other mods lives outside every mod's folder, in <code>~/.config/herdr-mods/better-config/</code>, so updating keeps it.</p>
+
+  <h3 id="better-config-developers">For developers</h3>
+  <p>To have Better Config show your mod's settings, describe its <code>mod.json</code> in a JSON Schema beside it, <code>mods/&lt;name&gt;/mod.schema.json</code>, and point <code>mod.json</code> at it, so editors check the file too:</p>
+  <pre>{ "$schema": "./mod.schema.json", "version": "1.0.0", "place": "none", "title": "My Mod" }</pre>
+  <p>The schema describes Herdr's own fields and, under <code>properties.settings</code>, each setting, nested the way <code>settings</code> is. Each leaf is a setting at its dotted key, such as <code>refresh.every</code>:</p>
+  <pre>"settings": {
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "refresh": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "every": { "title": "Refresh", "description": "How often the panel rereads.", "type": ["string", "integer"], "format": "duration", "default": "60s" }
+      }
+    },
+    "page_size": { "title": "Page size", "description": "How many load at a time.", "type": "integer", "minimum": 1, "maximum": 100, "x-step": 5, "default": 25 },
+    "view": { "title": "View", "description": "How the list starts.", "type": "string", "enum": ["tree", "flat"], "x-labels": { "tree": "Tree", "flat": "Flat" }, "default": "tree" }
+  }
+}</pre>
+  <table class="keys"><thead><tr><th>Keyword</th><th>Meaning</th></tr></thead><tbody>
+    <tr><td><code>title</code>, <code>description</code></td><td>What the dialog shows. The title defaults to the key's last part.</td></tr>
+    <tr><td><code>default</code></td><td>What the mod uses when nothing is set. Keep it equal to the default in the mod's code. <b>Reset</b> removes the key so the mod uses it.</td></tr>
+    <tr><td><code>type</code></td><td><code>boolean</code>; <code>integer</code> or <code>number</code>; <code>string</code>; <code>array</code> of strings for a list.</td></tr>
+    <tr><td><code>enum</code></td><td>A fixed set of choices. Up to four show as buttons, more as a dropdown. <code>x-labels</code> names them: <code>{ "value": "Label" }</code>.</td></tr>
+    <tr><td><code>format</code></td><td><code>duration</code> (<code>450ms</code>, <code>10s</code>) or <code>size</code> (<code>60KB</code>), with <code>type: ["string", "integer"]</code> since a bare number is also accepted. Add a <code>pattern</code> so editors check it.</td></tr>
+    <tr><td><code>minimum</code>, <code>maximum</code></td><td>A number's limits. <code>x-step</code> is how far − and + move it, <code>x-unit</code> a unit shown beside it, such as <code>px</code>.</td></tr>
+  </tbody></table>
+  <p>Only these keywords are read; <code>oneOf</code>, <code>$ref</code> and the like are ignored. Ship <code>mod.json</code> without a <code>settings</code> block: it holds only what a person changes, and the mod uses its own defaults for the rest. Every mod in this repository ships a schema, and a test checks that each <code>mod.json</code> passes it and its defaults equal the mod's code.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/better-config/main.js</code>: the dialog.</li>
+    <li><code>mods/better-config/model.js</code>: fields, checks, typed input, what changed and what was lost. No Herdr calls, and the tests run it as it is.</li>
+    <li><code>mods/better-config/mod.json</code>, <code>mod.schema.json</code>, <code>icons/</code>.</li>
+    <li><code>keys.json</code>: the suggested key.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+./sync.sh
+herdr-app check "$HOME/.config/herdr-app/mods/better-config"</pre>
+  <p>Tests can't draw the dialog, so also look at the running app.</p>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-tabs.html"><span>Previous</span>Better Tabs</a><a class="next" href="branch-pr.html"><span>Next</span>Branch PR</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-config-start">Quick start</a>
+      <a href="#better-config-install">Install</a>
+      <a href="#better-config-use">Use</a>
+      <a href="#better-config-settings">Settings</a>
+      <a href="#better-config-update">Update</a>
+      <a href="#better-config-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

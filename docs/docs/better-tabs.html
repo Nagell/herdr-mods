@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Tabs · Herdr Mods Docs</title>
+<meta name="description" content="A tab bar with tabs you can drag, that wrap onto more lines when they don't fit, and a toolbar of panel buttons with a ⋮ menu for the ones you rarely use.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html" class="on" aria-current="page">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Automation</h4>
+        <a href="hands.html">Hands</a>
+        <a href="factory.html">Factory</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-tabs">
+  <h2>Better Tabs</h2>
+  <p class="lead">A tab bar with tabs you can drag, that wrap onto more lines when they don't fit, and a toolbar of panel buttons with a ⋮ menu for the ones you rarely use.</p>
+  <p class="meta-line"><span>Version 3.0.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-tabs/preview.png" alt="Better Tabs in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="better-tabs-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below. It takes the place of your tab bar.</li>
+    <li>Press and hold a tab, then drag it to reorder. Open enough tabs and they wrap onto a second line.</li>
+    <li>Drag a panel button onto ⋮ to hide it; click ⋮ and the pin to bring it back.</li>
+  </ol>
+
+  <h3 id="better-tabs-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-tabs</code></div>
+  <p>No requirements. The mod runs no programs and reaches no network; it runs Herdr commands and keeps its preferences in Herdr's shared state.</p>
+  <p>The agent copies <code>mods/better-tabs/</code> into the app configuration. The manifest uses <code>"place": "none"</code> and Herdr's shipped layouts are read-only, so the agent points the tabs block in a layout you own at <code>better-tabs</code>, keeping its size and <code>window_drag</code>. The mod installs no key bindings.</p>
+
+  <h3 id="better-tabs-use">Use</h3>
+  <ul>
+    <li><b>Drag tabs:</b> reorder them. A line in the gap between tabs shows where the tab will land. Dropping on <b>+</b> puts it last; leaving the bar cancels.</li>
+    <li><b>Quick clicks never drag:</b> a drag starts only once a press has lasted 400ms and the pointer has moved 12px.</li>
+    <li><b>Wrapping:</b> tabs wrap onto more lines and the bar grows to hold them, then shrinks back as tabs close.</li>
+    <li><b>New tab:</b> the <b>+</b> sits right after the last tab.</li>
+    <li><b>Tabs:</b> double-click to rename, right-click for the tab menu, close the active tab with its ×.</li>
+    <li><b>Status:</b> program icons, a spinner while working, and a dot when blocked or done.</li>
+    <li><b>Panel buttons:</b> Files, Changes and any you add. Drag them to reorder, the same way as tabs.</li>
+    <li><b>The ⋮ menu:</b> drop a button on it to hide it. Click ⋮ to see hidden buttons, then click one to use it, drag it back out, or click its pin to return it to the toolbar. Buttons with no room also go there.</li>
+    <li><b>Panel memory:</b> each space remembers which panel it had open.</li>
+    <li><b>Window controls</b> where the system needs them.</li>
+  </ul>
+
+  <h3 id="better-tabs-settings">Settings</h3>
+  <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-tabs/mod.json</code> under <code>"settings"</code>.</p>
+  <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>tabs.max_width</code></td><td><code>170</code></td><td>The widest a tab gets, in px. At least 60.</td></tr>
+    <tr><td><code>tabs.drag_delay</code></td><td><code>400ms</code></td><td>How long a press must last before a tab can be dragged.</td></tr>
+    <tr><td><code>menu.width</code></td><td><code>240</code></td><td>The width of the ⋮ menu, in px. At least 120.</td></tr>
+  </tbody></table>
+
+  <h3 id="better-tabs-update">Update</h3>
+  <p>Copy <code>mods/better-tabs/</code> into <code>~/.config/herdr-app/mods/</code> again (or ask your agent to). This replaces <code>mod.json</code>; <a href="better-config.html">Better Config</a> notices settings it reset and offers to restore them. Your toolbar arrangement lives in shared state, not the mod folder.</p>
+  <details>
+  <summary>Upgrading from 2.x</summary>
+  <p>3.0 removes options nothing used, including <code>hooks.js</code>, buttons from other mods (<code>contributions</code>), the <code>mod-tab</code>, <code>overlay</code>, <code>toggle-stack</code>, <code>sequence</code>, <code>shared</code> and <code>hook</code> actions, badges, the <code>enabledWhen</code>, <code>activeWhen</code> and <code>disabled</code> conditions, and props such as <code>tabMaxWidth</code>, <code>maxButtons</code> and <code>commands</code>. Mouse-wheel tab switching is gone, and tabs wrap instead of scrolling.</p>
+  </details>
+
+  <h3 id="better-tabs-developers">For developers</h3>
+  <p>Without configuration, the toolbar offers Files and Changes when those layout nodes exist. To choose the buttons, set <code>props</code> on the tabs block. Your list replaces the defaults.</p>
+  <pre>{
+  "mod": "better-tabs",
+  "props": {
+    "rememberPanels": { "container": "panel", "stack": "panel-body" },
+    "buttons": [
+      {
+        "id": "changes",
+        "label": "Changes",
+        "icon": "changes",
+        "group": "panels",
+        "action": { "type": "panel", "container": "panel", "stack": "panel-body", "target": "changes" }
+      },
+      {
+        "id": "palette",
+        "label": "Commands",
+        "group": "tools",
+        "action": { "type": "command", "name": "app.palette" }
+      }
+    ]
+  }
+}</pre>
+  <table class="keys"><thead><tr><th>Button field</th><th>Required</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>id</code></td><td>Yes</td><td>Unique. The arrangement is saved by it.</td></tr>
+    <tr><td><code>action</code></td><td>Yes</td><td><code>panel</code> shows or hides a panel by layout node ID (<code>container</code>, <code>stack</code>, <code>target</code>), or <code>command</code> runs an app or mod command (<code>name</code>, optional <code>args</code>).</td></tr>
+    <tr><td><code>label</code></td><td>No</td><td>Defaults to the ID.</td></tr>
+    <tr><td><code>icon</code></td><td>No</td><td>A bundled name (<code>file</code>, <code>changes</code>) or an SVG path from the Herdr home, like <code>mods/my-panel/icon.svg</code>.</td></tr>
+    <tr><td><code>tooltip</code></td><td>No</td><td>Hover text.</td></tr>
+    <tr><td><code>group</code></td><td>No</td><td>A separator appears where the group changes.</td></tr>
+    <tr><td><code>when</code></td><td>No</td><td><code>{ "node": "changes" }</code> shows the button only while that layout node exists and isn't hidden.</td></tr>
+  </tbody></table>
+  <p><code>rememberPanels</code> names the panel container and stack for per-space panel memory; <code>false</code> turns it off. The arrangement is saved per layout, by button ID, in shared state, and doesn't edit the layout file.</p>
+  <p>Commands, to bind in <code>keys.json</code> if you like:</p>
+  <pre>herdr-app do better-tabs.button:changes   # run a button by ID
+herdr-app do better-tabs.overflow         # open the ⋮ menu</pre>
+  <p>A mod's tab shows the icon it publishes in the <code>mod-icons</code> shared map. <a href="better-changes.html">Better Changes</a> does this.</p>
+  <h4>Work on the mod</h4>
+  <ul>
+    <li><code>mods/better-tabs/main.js</code>: setup, settings and commands. <code>settings.js</code>: shared with the other mods.</li>
+    <li><code>actions/engine.js</code>: what a button does. <code>actions/toolbar.js</code>: arrangement and tab-move logic with no drawing.</li>
+    <li><code>views/tab-bar.js</code>: the bar. <code>views/menu.js</code>: buttons and the ⋮ menu. <code>views/drags.js</code>: dragging. <code>views/arrangement.js</code>: saved order. <code>views/panel-memory.js</code>: panels per space. <code>views/ui.js</code>: the design kit.</li>
+    <li><code>icons/</code>: the mod's icons. <code>sync.sh</code>: copies the mod into Herdr, which reloads it (a symlink loads the code but not the icons).</li>
+    <li><code>tests/tabs.test.cjs</code>: the tests.</li>
+  </ul>
+  <pre>node --test tests/*.test.cjs
+herdr-app check "$PWD/mods/better-tabs"</pre>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-sidebar.html"><span>Previous</span>Better Sidebar</a><a class="next" href="better-config.html"><span>Next</span>Better Config</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-tabs-start">Quick start</a>
+      <a href="#better-tabs-install">Install</a>
+      <a href="#better-tabs-use">Use</a>
+      <a href="#better-tabs-settings">Settings</a>
+      <a href="#better-tabs-update">Update</a>
+      <a href="#better-tabs-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>
