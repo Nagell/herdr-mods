@@ -7,12 +7,15 @@ const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
 const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
-const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
-  .join('\n')
-  .replace(/^import\s+[\s\S]*?;$/gm, '')
-  .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
-  .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
+// syntax.js keeps a scope of its own, as a module does: its languageOf isn't model.js's.
+const lexer = fs.readFileSync(path.join(root, 'syntax.js'), 'utf8').replace(/^export /gm, '');
+const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf };\n})();\n`
+  + FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
+    .join('\n')
+    .replace(/^import\s+[\s\S]*?;$/gm, '')
+    .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
+    .replace(/^export /gm, '')
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
@@ -266,13 +269,60 @@ test('clicking a change opens the old lines in place, and clicking again closes 
 
 test('a line is coloured by what its words are', async () => {
   const { context: m } = await ready();
-  const runs = (line, lang) => JSON.parse(JSON.stringify(m.tokenize(line, lang)));
+  const runs = (line, lang) => JSON.parse(JSON.stringify(m.tokenizeLine(line, lang).runs));
+  const tokens = (line, lang, state) => m.tokenizeLine(line, lang, state).runs.filter((r) => r.kind).map((r) => [r.text, r.kind]);
   assert.deepEqual(runs('const a = "b"; // "c"', 'js'), [{ text: 'const', kind: 'keyword' }, { text: ' a = ', kind: null }, { text: '"b"', kind: 'string' }, { text: '; ', kind: null }, { text: '// "c"', kind: 'comment' }]);
   assert.deepEqual(runs('x = 12 # note', 'py'), [{ text: 'x = ', kind: null }, { text: '12', kind: 'number' }, { text: ' ', kind: null }, { text: '# note', kind: 'comment' }]);
   assert.deepEqual(runs('"http://x" y', 'js'), [{ text: '"http://x"', kind: 'string' }, { text: ' y', kind: null }], 'no comment inside a string');
   assert.deepEqual(runs("don't return", 'md'), [{ text: "don't return", kind: null }], 'prose is left alone');
-  assert.equal(m.tokenize('  indented', 'go').map((r) => r.text).join(''), '  indented', 'no text is lost');
-  assert.equal(m.tokenize('', 'go').length, 1);
+  assert.equal(m.tokenizeLine('', 'go').runs.length, 1);
+  assert.deepEqual(tokens('export function load(id: string): Promise<User> {', 'ts'), [['export', 'keyword'], ['function', 'keyword'], ['load', 'function'], ['string', 'type'], ['Promise', 'type'], ['User', 'type']]);
+  assert.deepEqual(tokens('  const user = await api.fetchUser(id) ?? null; // MAX_SIZE', 'ts'), [['const', 'keyword'], ['await', 'keyword'], ['fetchUser', 'function'], ['null', 'constant'], ['// MAX_SIZE', 'comment']]);
+  assert.deepEqual(tokens('@Component({ max: MAX_SIZE, at: new Date(0) })', 'ts'), [['@Component', 'function'], ['MAX_SIZE', 'constant'], ['new', 'keyword'], ['Date', 'type'], ['0', 'number']]);
+  assert.deepEqual(tokens('<MyButton :label="title" @click="go(1)" disabled />', 'vue'), [['<MyButton', 'tag'], [':label', 'attribute'], ['"title"', 'string'], ['@click', 'attribute'], ['"go(1)"', 'string'], ['disabled', 'attribute']]);
+  const tag = m.tokenizeLine('<input', 'vue');
+  assert.deepEqual(tokens('  v-model="x">', 'vue', tag.state), [['v-model', 'attribute'], ['"x"', 'string']], 'a tag carries to the next line');
+  assert.deepEqual(tokens('  "name": "herdr",', 'json'), [['"name"', 'property'], ['"herdr"', 'string']]);
+  assert.deepEqual(tokens('  "private": true, "n": 1', 'json'), [['"private"', 'property'], ['true', 'constant'], ['"n"', 'property'], ['1', 'number']]);
+  assert.deepEqual(tokens('- name: herdr # app', 'yaml'), [['name', 'property'], ['# app', 'comment']]);
+});
+
+test('comments, template strings and tags carry from one line to the next', async () => {
+  const { context: m } = await ready();
+  const tokens = (lines, lang) => m.highlightLines(lines, lang).map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]));
+  assert.deepEqual(tokens(['/* one', 'two */ let s = `a', '${b}` + C'], 'ts'), [
+    [['/* one', 'comment']],
+    [['two */', 'comment'], ['let', 'keyword'], ['`a', 'string']],
+    [['${b}`', 'string']],
+  ]);
+  assert.deepEqual(tokens(['<!-- a', 'b --> <div>'], 'vue'), [[['<!-- a', 'comment']], [['b -->', 'comment'], ['<div', 'tag']]]);
+  assert.deepEqual(tokens(['"""Doc', 'more"""', 'x = 1'], 'py'), [[['"""Doc', 'string']], [['more"""', 'string']], [['1', 'number']]]);
+});
+
+test('colouring never changes a line\'s text', async () => {
+  const { context: m } = await ready();
+  const repo = path.join(__dirname, '../..');
+  const files = ['better-files', 'better-changes'].flatMap((mod) => [
+    ...fs.readdirSync(path.join(repo, mod), { recursive: true }).filter((f) => /\.(js|cjs|md|json|sh)$/.test(f)).map((f) => path.join(repo, mod, f)),
+  ]);
+  assert.ok(files.length > 20, 'the mods\' own files are read');
+  const samples = { 'a.vue': '<template>\n  <a :href="x"\n     @click.prevent="go">{{ y }}</a>\n</template>\n<script setup lang="ts">\nconst y = `${1}\n`\n</script>', 'a.go': 'x := `raw\nstring`\nfmt.Println("a\\"b")', 'a.rs': "let c = 'x'; // it's", 'a.sql': 'SELECT * FROM t -- c\n/* a\n b */', 'a.toml': 'key = "v"\n[table]' };
+  const texts = [...files.map((f) => [f, fs.readFileSync(f, 'utf8')]), ...Object.entries(samples)];
+  for (const [name, text] of texts) {
+    const lines = text.split('\n');
+    const joined = m.highlightLines(lines, m.lexerLanguage(name)).map((runs) => runs.map((r) => r.text).join(''));
+    assert.deepEqual(joined, lines, name);
+  }
+});
+
+test('the row view colours a file from the top, so a comment carries to the next row', async () => {
+  const file = { path: '/repo/x.ts', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/x.ts': '/* note\nstill note */ const A = 1' } });
+  const colorOf = (node, text) => (node?.nodes?.includes(text) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, text)).find(Boolean));
+  const row = find(h.mod.render(), 'viewer-line-1');
+  assert.ok(row, 'the second row is drawn');
+  assert.equal(colorOf(row, 'still note */'), '#dim', 'still a comment');
+  assert.equal(colorOf(row, 'const'), '#ansi5');
 });
 
 test('binary, large and unreadable files say what is going on', async () => {
@@ -384,6 +434,7 @@ test('the setting can use Herdr\'s own editor instead', async () => {
   await h.flush();
   assert.equal(h.context.lastCode.opts.readonly, true);
   assert.equal(h.context.lastCode.opts.language, 'txt');
+  assert.deepEqual(Object.keys(h.context.lastCode.opts.syntax).sort(), ['boolean', 'comment', 'constant', 'function', 'keyword', 'number', 'operator', 'string', 'string.escape', 'type']);
   assert.equal(find(h.mod.render(), 'viewer-lines'), undefined);
   assert.equal(markBars(h).length, 0);
 });
@@ -572,7 +623,7 @@ test('the status parser and helpers', async () => {
 });
 
 test('every icon is used, every used icon exists, and nothing here can write a file', () => {
-  const code = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  const code = [...FILES, 'syntax.js'].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   const icons = fs.readdirSync(path.join(root, 'icons')).map((f) => f.replace('.svg', ''));
   for (const icon of icons) assert.ok(code.includes(`"${icon}"`), `unused icon ${icon}`);
   for (const [, name] of code.matchAll(/(?:icon: |Icon\()"([a-z-]+)"/g)) assert.ok(icons.includes(name), `missing icon ${name}`);

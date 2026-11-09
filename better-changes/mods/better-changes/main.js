@@ -6,6 +6,7 @@
 //   views/diff.js       opening a file in the centre tab, reading it, and drawing it
 //   views/pane-header.js  the header row above a pane
 // git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look.
+// syntax.js colours a diff's code; Better Files has the same file.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";

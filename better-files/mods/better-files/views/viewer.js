@@ -15,9 +15,9 @@ import {
   parentOf,
   parseHunks,
   resolvePath,
-  tokenize,
   viewable,
 } from "../files/model.js";
+import { highlightLines, languageOf as lexerLanguage, syntaxColors } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
@@ -149,6 +149,9 @@ export const viewerMethods = {
         type: t.ansi3,
         number: t.ansi1,
         constant: t.ansi6,
+        boolean: t.ansi6,
+        operator: t.ansi6,
+        "string.escape": t.ansi6,
       },
     });
   },
@@ -191,7 +194,7 @@ export const viewerMethods = {
   // and marks laid over it slid as it scrolled, but here a line's colour is part of its row.
   linesView() {
     const lines = this.fileLines();
-    const language = languageOf(this.file.path);
+    const runs = this.lineRuns(lines);
     const rows = buildRows(lines, this.hunks ?? [], this.openHunks);
     const height = rowHeight();
     const sized = rows.some((row) => row.type === "removed")
@@ -203,7 +206,7 @@ export const viewerMethods = {
       rows.length,
       sized,
       (i) => rows[i].key,
-      (range) => rows.slice(range.start, range.end).map((row) => this.fileRow(row, language)),
+      (range) => rows.slice(range.start, range.end).map((row) => this.fileRow(row, runs)),
     )
       // A handler per list, not per row: Herdr's virtual lists allow no handlers in a row.
       .on_item_click((key, cx) => this.toggleChange(rows.find((row) => row.key === key), cx))
@@ -250,7 +253,17 @@ export const viewerMethods = {
     return this.lines;
   },
 
-  fileRow(row, language) {
+  // Coloured once per version too, top to bottom, so a comment or string opened on one
+  // line is still one on the next.
+  lineRuns(lines) {
+    if (this.runsFor !== lines) {
+      this.runsFor = lines;
+      this.runs = highlightLines(lines, lexerLanguage(this.file.path));
+    }
+    return this.runs;
+  },
+
+  fileRow(row, lineRuns) {
     const t = theme();
     if (row.type === "removed")
       return h_flex()
@@ -268,8 +281,8 @@ export const viewerMethods = {
       : row.hunk
         ? { added: t.ansi2, changed: open ? t.ansi2 : t.ansi3 }[row.hunk.kind]
         : null;
-    const SYNTAX = { keyword: t.ansi5, string: t.ansi2, comment: t.dim, number: t.ansi1 };
-    const runs = old ? [{ text: row.text, kind: "old" }] : tokenize(row.text, language);
+    const SYNTAX = syntaxColors(t);
+    const runs = old ? [{ text: row.text, kind: "old" }] : (lineRuns[row.number - 1] ?? [{ text: row.text, kind: null }]);
     return h_flex()
       .id(`viewer-${row.key}`)
       .h(rowHeight())

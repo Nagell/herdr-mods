@@ -191,45 +191,6 @@ export function buildRows(lines, hunks, open) {
 
 export const hunkKey = (hunk) => `${hunk.kind}-${hunk.oldStart}`;
 
-const LINE_COMMENT = { py: "#", rb: "#", sh: "#", bash: "#", zsh: "#", yaml: "#", yml: "#", nix: "#", lua: "--", sql: "--" };
-const UNCOLOURED = new Set(["txt", "md", "markdown", "log", "csv"]);
-const KEYWORDS = new Set(
-  "as async await break case catch class const continue def default defer do elif else enum export extends false fn for from func function go if impl import in interface let match mod new nil none not null package pub return self struct switch this throw true try type undefined use var while with yield".split(" "),
-);
-const TOKEN = /"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|`(?:[^`\\]|\\.)*`?|\b\d[\d_.xa-fA-F]*\b|[A-Za-z_][A-Za-z0-9_]*/g;
-const HIGHLIGHT_CHARS = 2000;
-
-// A line as coloured runs, for the view that draws rows.
-// shortcut: one line at a time, so a block comment or multi-line string is only coloured where a
-// line alone shows it; carry state between lines if that gets in the way.
-export function tokenize(line, language) {
-  if (UNCOLOURED.has(language) || line.length > HIGHLIGHT_CHARS) return [{ text: line, kind: null }];
-  const marker = LINE_COMMENT[language] ?? "//";
-  const runs = [];
-  let at = 0;
-  const plain = (end) => {
-    if (end > at) runs.push({ text: line.slice(at, end), kind: null });
-  };
-  for (const match of line.matchAll(TOKEN)) {
-    const before = line.slice(at, match.index);
-    const comment = before.indexOf(marker);
-    if (comment >= 0) break;
-    const word = match[0];
-    const first = word[0];
-    const kind = first === '"' || first === "'" || first === "`" ? "string" : /\d/.test(first) ? "number" : KEYWORDS.has(word) ? "keyword" : null;
-    if (!kind) continue;
-    plain(match.index);
-    runs.push({ text: word, kind });
-    at = match.index + word.length;
-  }
-  const comment = line.indexOf(marker, at);
-  if (comment >= 0) {
-    plain(comment);
-    runs.push({ text: line.slice(comment), kind: "comment" });
-  } else plain(line.length);
-  return runs.length ? runs : [{ text: "", kind: null }];
-}
-
 // A folder holds a change if any changed file is inside it.
 export const holdsChange = (marks, folder) =>
   Object.keys(marks).some((path) => path.startsWith(`${folder}/`));
