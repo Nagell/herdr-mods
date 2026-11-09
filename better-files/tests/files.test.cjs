@@ -270,7 +270,7 @@ test('clicking a change opens the old lines in place, and clicking again closes 
 test('a line is coloured by what its words are', async () => {
   const { context: m } = await ready();
   const runs = (line, lang) => JSON.parse(JSON.stringify(m.tokenizeLine(line, lang).runs));
-  const tokens = (line, lang, state) => m.tokenizeLine(line, lang, state).runs.filter((r) => r.kind).map((r) => [r.text, r.kind]);
+  const tokens = (line, lang, state) => JSON.parse(JSON.stringify(m.tokenizeLine(line, lang, state).runs.filter((r) => r.kind).map((r) => [r.text, r.kind])));
   assert.deepEqual(runs('const a = "b"; // "c"', 'js'), [{ text: 'const', kind: 'keyword' }, { text: ' a = ', kind: null }, { text: '"b"', kind: 'string' }, { text: '; ', kind: null }, { text: '// "c"', kind: 'comment' }]);
   assert.deepEqual(runs('x = 12 # note', 'py'), [{ text: 'x = ', kind: null }, { text: '12', kind: 'number' }, { text: ' ', kind: null }, { text: '# note', kind: 'comment' }]);
   assert.deepEqual(runs('"http://x" y', 'js'), [{ text: '"http://x"', kind: 'string' }, { text: ' y', kind: null }], 'no comment inside a string');
@@ -289,7 +289,7 @@ test('a line is coloured by what its words are', async () => {
 
 test('comments, template strings and tags carry from one line to the next', async () => {
   const { context: m } = await ready();
-  const tokens = (lines, lang) => m.highlightLines(lines, lang).map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]));
+  const tokens = (lines, lang) => JSON.parse(JSON.stringify(m.highlightLines(lines, lang).map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]))));
   assert.deepEqual(tokens(['/* one', 'two */ let s = `a', '${b}` + C'], 'ts'), [
     [['/* one', 'comment']],
     [['two */', 'comment'], ['let', 'keyword'], ['`a', 'string']],
@@ -310,7 +310,7 @@ test('colouring never changes a line\'s text', async () => {
   const texts = [...files.map((f) => [f, fs.readFileSync(f, 'utf8')]), ...Object.entries(samples)];
   for (const [name, text] of texts) {
     const lines = text.split('\n');
-    const joined = m.highlightLines(lines, m.lexerLanguage(name)).map((runs) => runs.map((r) => r.text).join(''));
+    const joined = JSON.parse(JSON.stringify(m.highlightLines(lines, m.lexerLanguage(name)).map((runs) => runs.map((r) => r.text).join(''))));
     assert.deepEqual(joined, lines, name);
   }
 });
