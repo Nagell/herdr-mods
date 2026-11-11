@@ -58,6 +58,7 @@ export const detailMethods = {
       .overflow_y_scrollbar()
       .p(6);
     if (this.section === "checks") body.child(this.checksView(pr));
+    else if (this.section === "files") this.filesView(body);
     else if (this.section === "conversation") this.conversationView(body, pr);
     else this.overview(body, pr);
     root.child(body);
@@ -108,7 +109,8 @@ export const detailMethods = {
       .role("tab_list")
       .child(tab("overview", "Overview"))
       .child(tab("conversation", "Comments", conversationEntries(pr).length))
-      .child(tab("checks", "Checks", summary ? null : 0, summary && this.checkIcon(summary, t)));
+      .child(tab("checks", "Checks", summary ? null : 0, summary && this.checkIcon(summary, t)))
+      .child(tab("files", "Files", pr.changedFiles ?? 0));
   },
 
   // Fixed above the tabs, so what to do next stays in sight.
@@ -165,9 +167,29 @@ export const detailMethods = {
               .tooltip(`${pr.headRefName} → ${pr.baseRefName}`)
               .child(`${who(pr)} · ${pr.headRefName} → ${pr.baseRefName}`),
           )
-          .when(Boolean(actions), (el) => el.child(actions)),
+          .when(Boolean(actions), (el) => el.child(actions))
+          .when(pr.state === "MERGED", (el) => el.child(this.mergedBadge(t))),
       )
       .when(pr.state === "OPEN", (el) => el.child(this.blockedBy(pr)));
+  },
+
+  // Where Actions would be: a merged PR has nothing left to do.
+  mergedBadge(t) {
+    return h_flex()
+      .id("pr-merged")
+      .flex_none()
+      .h(26)
+      .px(8)
+      .gap(5)
+      .items_center()
+      .rounded(6)
+      .border_1()
+      .border_color(t.ansi5)
+      .text_color(t.ansi5)
+      .text_size(TEXT.small)
+      .font_medium()
+      .child(Icon("merged", 12))
+      .child("Merged");
   },
 
   goToBlocker(blocker, cx) {

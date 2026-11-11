@@ -2,7 +2,7 @@
 // and filters, and which comments have been read.
 import { allComments, searchQuery } from "../github/model.js";
 
-const SECTIONS = ["overview", "conversation", "checks"];
+const SECTIONS = ["overview", "conversation", "checks", "files"];
 
 export const savedMethods = {
   readStored(key, fallback = {}) {
@@ -158,6 +158,7 @@ export const savedMethods = {
     this.section = section;
     this.notice = null;
     if (section === "conversation") this.conversationsVisited = true;
+    if (section === "files") this.loadFiles(cx);
     this.rememberDetail();
     cx.notify();
   },

@@ -9,14 +9,18 @@ import {
   fileLinesOf,
   hunkKey,
   isImage,
+  isMarkdown,
   languageOf,
+  markdownBlocks,
+  parentOf,
   parseHunks,
+  resolvePath,
   tokenize,
   viewable,
 } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
-import { TEXT, Icon, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
+import { TEXT, Icon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
 const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
 const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
@@ -123,6 +127,7 @@ export const viewerMethods = {
           else this.code = this.newCode(file, shown.text);
         }
       }
+      this.readMarkdownImages(cx);
       cx.notify();
     });
   },
@@ -353,17 +358,116 @@ export const viewerMethods = {
       .child(image(this.imageShown).flex_1().min_w(0).h_full());
   },
 
+  // Preview or Code, chosen per tab and kept in the registry, else the setting.
+  markdownView() {
+    return this.viewerEntry()?.markdown ?? this.markdownDefault ?? "preview";
+  },
+
+  showsPreview() {
+    return Boolean(this.file && isMarkdown(this.file.path)) && this.markdownView() === "preview";
+  },
+
+  // Split once per version of the file, like the code view's lines.
+  previewBlocks() {
+    const key = `${this.file.path}\0${this.text}`;
+    if (this.blocksOf !== key) {
+      this.blocksOf = key;
+      this.blocks = markdownBlocks(this.text ?? "", parentOf(this.file.path));
+    }
+    return this.blocks;
+  },
+
+  // A Markdown file's pictures, copied into the cache the way the image viewer does, each
+  // under its own name for as long as the tab is open. Checked whenever the file is.
+  readMarkdownImages(cx) {
+    const file = this.file;
+    if (!file || file.on || !isMarkdown(file.path) || this.text === undefined) return;
+    this.markdownCopies ??= new Map();
+    this.markdownShown ??= new Map();
+    this.markdownCopying ??= new Set();
+    for (const { path } of this.previewBlocks().filter((block) => block.type === "image")) {
+      if (this.markdownCopying.has(path)) continue;
+      if (!this.markdownCopies.has(path))
+        this.markdownCopies.set(path, `mods/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
+      const copy = this.markdownCopies.get(path);
+      this.markdownCopying.add(path);
+      cx.spawn(async (cx) => {
+        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);
+        this.markdownCopying.delete(path);
+        const shown = result?.code === 0;
+        if (this.markdownShown.get(path) !== shown) {
+          this.markdownShown.set(path, shown);
+          cx.notify();
+        }
+      });
+    }
+  },
+
+  // A web link opens in the browser, and a link to a file here opens it like a click in
+  // the tree. Anchors and other schemes do nothing.
+  followLink(url, cx) {
+    if (/^https?:\/\//i.test(url)) return cx.open_url(url);
+    const file = this.file;
+    const path = resolvePath(parentOf(file.path), url);
+    if (!path || path === file.path) return;
+    const root = path.startsWith(`${file.root}/`) ? file.root : parentOf(path);
+    this.openFile({ path, root, on: file.on ?? null }, cx);
+  },
+
+  previewImage(block) {
+    const name = block.alt || baseName(block.path);
+    if (this.file.on) return Message(`${name}: images on another machine can't be shown here.`);
+    const shown = this.markdownShown?.get(block.path);
+    if (shown === false) return Message(`${name} isn't available.`);
+    if (!shown) return Message("Loading…");
+    return image(this.markdownCopies.get(block.path)).max_w_full().flex_none();
+  },
+
+  previewView() {
+    return v_flex()
+      .id("viewer-preview")
+      .flex_1()
+      .min_h(0)
+      .min_w(0)
+      .overflow_y_scrollbar()
+      .px(24)
+      .py(16)
+      .gap(12)
+      .children(
+        this.previewBlocks().map((block, i) =>
+          block.type === "image"
+            ? this.previewImage(block)
+            : Markdown(`viewer-md-${this.viewerId}-${i}`, block.text).on_link_click((url, cx) => this.followLink(url, cx)),
+        ),
+      );
+  },
+
   viewerActions() {
     const file = this.file;
     const preview = this.viewerEntry()?.preview;
     const editors = file?.on ? [] : foundEditors();
+    const markdown = Boolean(file && isMarkdown(file.path));
+    const previewing = this.showsPreview();
+    const showView = (view) => (cx) => {
+      this.setViewer(this.viewerId, { markdown: view });
+      cx.notify();
+    };
     // Only changes that replaced something have old lines to show.
-    const openable = this.gutterOn ? (this.hunks ?? []).filter((hunk) => hunk.old.length).map(hunkKey) : [];
+    const openable = this.gutterOn && !previewing ? (this.hunks ?? []).filter((hunk) => hunk.old.length).map(hunkKey) : [];
     const allOpen = openable.length > 0 && openable.every((key) => this.openHunks.has(key));
     return h_flex()
       .id("viewer-actions")
       .gap(6)
       .items_center()
+      .when(markdown, (el) =>
+        el.child(
+          h_flex()
+            .id("viewer-view")
+            .gap(2)
+            .child(TextButton({ id: "viewer-view-preview", label: "Preview", active: previewing, onClick: showView("preview") }))
+            .child(TextButton({ id: "viewer-view-code", label: "Code", active: !previewing, onClick: showView("code") })),
+        ),
+      )
       .when(openable.length > 0, (el) =>
         el.child(
           TextButton({
@@ -439,10 +543,22 @@ export const viewerMethods = {
     if (this.file && isImage(this.file.path)) root.child(this.imageView());
     else if (this.problem) root.child(Message(this.problem));
     else if (this.text === undefined) root.child(Message(head ? "Loading…" : "This tab has no file."));
+    else if (this.showsPreview()) root.child(this.previewView());
     else if (this.gutterOn) root.child(this.linesView());
     else root.child(v_flex().flex_1().min_h(0).child(Editor.new(this.code).flex_1().min_h(0)));
     // There's no row of its own to sit in, so the actions float over the file's corner.
-    if (inHeader) root.child(div().absolute().top(6).right(18).child(this.viewerActions()));
+    // On the file's own colour, nearly opaque, so the text under it fades out without a box.
+    if (inHeader)
+      root.child(
+        div()
+          .absolute()
+          .top(6)
+          .right(18)
+          .p(3)
+          .rounded(7)
+          .bg(`${t.background.slice(0, 7)}E6`)
+          .child(this.viewerActions()),
+      );
     return root;
   },
 };

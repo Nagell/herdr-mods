@@ -1,14 +1,14 @@
 # Better Sidebar
 
-A standalone sidebar for Herdr Desktop: spaces with right-aligned Git branches, nested worktrees and color-coded pull-request status from the GitHub CLI; agents with more ways to group them; and a one-line footer.
+A standalone sidebar for Herdr Desktop: spaces with their Git branches, nested worktrees and color-coded pull-request status from the GitHub CLI; agents with more ways to group them; and a one-line footer.
 
 ![Better Sidebar](preview.png)
 
 Cmd-click a PR number to open it on GitHub.
 
-- The current branch sits on the **same row as the space name, aligned right**, except `main`, `master` and a branch that repeats the name, which go without saying. The selected space also shows how far it is ahead of or behind its remote.
+- The current branch sits **beside the space name**, small and dim, except `main`, `master` and a branch that repeats the name, which go without saying. The selected space also shows how far it is ahead of or behind its remote.
 - Worktree spaces nest beneath an open space for the same repository. Each worktree keeps its own branch and PR status.
-- A PR line below the space/worktree shows an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. The tooltip says which. Colors follow the current theme.
+- The checkout's PR sits at the **right of the same row**, as an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, or **red Checks failed**. The tooltip says which. Colors follow the current theme.
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, colored avatars, ahead/behind counts, machine groups, and the compact sidebar rail.
 
@@ -19,6 +19,17 @@ The agents block is adapted from Herdr's shipped panel and keeps its pins, sub-a
 - **Priority** and **Grouped by space**, as in Herdr.
 - **Grouped by main space** puts a worktree's agents with its main checkout's, under the main space's name. A worktree whose main space is not open groups under the repository's folder name. It needs the spaces block of this mod in the same layout; without it each space is its own group.
 - **Grouped by prefix** gathers names like `PR-12`, `INS-4` and `PLAT-work`, also after a folder as in `feature/INS-4`. It reads the worktree or space name first, then the tab name. Capitals need only the dash, lower case needs a number after it, so `pr-12` counts and `herdr-mods` does not. Everything else goes under **No prefix**, last.
+
+## Spaces and agents in one block
+
+A block with `"props": { "view": "lists" }` shows both lists, under two tabs:
+
+- **Spaces:** the spaces list, with each space's tabs beneath it in order, joined by tree lines: each row is its tab's title as Herdr's tab bar shows it, then its program quietly beside it, like `1 Claude Code` or `2 zsh`. Clicking one opens it. Pinned agents sit in a Pinned group above every space. Next-agent keys follow the same order.
+- **Agents:** the agents list, with its grouping menu at the right of the tabs. Each row reads its tab's title, then its space quietly beside it, like `1 herdr-mods`; the icon says which agent it is.
+
+The Agents tab shows how many agents there are. For the ones that need you first, sort Agents by priority. The tab you pick is remembered. On the narrow rail, the two lists sit one above the other.
+
+Turn `combined` off in the settings for spaces above agents in the same block, without tabs, as two separate blocks would show them. The `spaces` and `agents` views still work on their own, for a layout that wants them in blocks of their own.
 
 ## Footer
 
@@ -59,7 +70,7 @@ A space's branch and PR describe its **first terminal's live directory**, fallin
 
 ## PR discovery and limits
 
-GitHub.com HTTPS and SSH remotes are supported. GitLab, other hosts, and GitHub Enterprise hosts are not currently supported. Detached HEADs, non-Git folders, and branches with no matching PR have no PR line.
+GitHub.com HTTPS and SSH remotes are supported. GitLab, other hosts, and GitHub Enterprise hosts are not currently supported. Detached HEADs, non-Git folders, and branches with no matching PR show none.
 
 The mod checks the current branch against the checkout's GitHub remotes. It ignores same-named branches from unrelated forks, prefers open PRs, and otherwise shows the most recently updated closed/merged PR. Discovery examines at most 100 PRs per repository and branch.
 
@@ -76,10 +87,10 @@ The PR badge has no merge or review controls. Selecting its row selects the spac
 Add a `settings` block to the installed `mods/better-sidebar/mod.json` with only what you change. Copy your edits forward when you update the mod. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
-"settings": { "git": { "retry_after": "15s" }, "pull_request_status": true }
+"settings": { "git": { "retry_after": "15s" }, "combined": true, "pull_request_status": true }
 ```
 
-`git.retry_after` is how long a failed Git read waits before it is tried again. `pull_request_status` set to `false` turns off the `gh` calls that colour pull-request state, for people without the GitHub CLI. Problems with the block are logged, not shown.
+`git.retry_after` is how long a failed Git read waits before it is tried again. `combined` set to `false` shows the `lists` view as spaces above agents instead of tabs. `pull_request_status` set to `false` turns off the `gh` calls that colour pull-request state, for people without the GitHub CLI. Problems with the block are logged, not shown.
 
 ## Development
 

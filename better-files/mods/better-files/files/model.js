@@ -31,12 +31,68 @@ const LANGUAGES = {
 export const baseName = (path) => path.split("/").pop();
 export const parentOf = (path) => path.slice(0, path.lastIndexOf("/")) || "/";
 
-const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
-export const isImage = (path) => {
+const extOf = (path) => {
   const name = baseName(path);
-  return name.includes(".") && IMAGES.has(name.split(".").pop().toLowerCase());
+  return name.includes(".") ? name.split(".").pop().toLowerCase() : "";
 };
+const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+export const isImage = (path) => IMAGES.has(extOf(path));
+export const isMarkdown = (path) => ["md", "markdown"].includes(extOf(path));
 
+// A link or image source in a Markdown file as an absolute path, from the file's folder.
+// Web addresses and other schemes aren't paths, so they come back null.
+export function resolvePath(folder, link) {
+  let rel = String(link ?? "").replace(/^file:\/\//, "");
+  if (/^[a-z][a-z0-9+.-]*:/i.test(rel)) return null;
+  rel = rel.replace(/[?#].*$/, "");
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {}
+  if (!rel) return null;
+  const parts = rel.startsWith("/") ? [""] : folder.split("/");
+  for (const part of rel.split("/")) {
+    if (part === "..") parts.length > 1 && parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return parts.join("/") || "/";
+}
+
+// A line that is only an image, not indented under a list item: `![alt](src)` or `![alt](<src> "title")`.
+const IMAGE_LINE = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+"[^"]*")?\s*\)\s*$/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+// Markdown as blocks for the preview: Herdr's TextView draws the text, and an image on a
+// line of its own, from this computer, becomes an image block so it can be shown through
+// the cache like the image viewer. Code fences are kept whole, so an image in one stays text.
+// shortcut: an image inside a paragraph, list or table, or from the web, is left to TextView;
+// split those out too if they need to show.
+export function markdownBlocks(text, folder) {
+  const blocks = [];
+  let lines = [];
+  let fence = null;
+  const flush = () => {
+    if (lines.some((line) => line.trim())) blocks.push({ type: "text", text: lines.join("\n") });
+    lines = [];
+  };
+  for (const line of String(text ?? "").split("\n")) {
+    const opens = FENCE.exec(line);
+    if (fence) {
+      if (opens && opens[1][0] === fence[0] && opens[1].length >= fence.length && !line.slice(opens[0].length).trim()) fence = null;
+    } else if (opens) fence = opens[1];
+    else {
+      const image = IMAGE_LINE.exec(line);
+      const path = image && resolvePath(folder, image[2] ?? image[3]);
+      if (path && isImage(path)) {
+        flush();
+        blocks.push({ type: "image", alt: image[1], path });
+        continue;
+      }
+    }
+    lines.push(line);
+  }
+  flush();
+  return blocks;
+}
 
 export function languageOf(path) {
   const name = baseName(path);

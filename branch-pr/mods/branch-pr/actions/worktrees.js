@@ -8,8 +8,8 @@ export const worktreeMethods = {
     return `${this.pr?.repository}#${this.pr?.number}`;
   },
 
-  // Worktrees already checked out for this PR: branches bound through
-  // `branch.<name>.herdr-pr`, joined to the paths in `git worktree list`.
+  // Worktrees already checked out for this PR: those on its head branch, as when the
+  // PR was opened from one, and branches bound through `branch.<name>.herdr-pr`.
   loadWorktrees(cx) {
     const { sp, pr } = this;
     if (!sp || !pr) return;
@@ -27,15 +27,15 @@ export const worktreeMethods = {
         const match = /^branch\.(.+)\.herdr-pr (.+)$/.exec(line.trim());
         if (match && match[2].toLowerCase() === key.toLowerCase()) branches.add(match[1]);
       }
+      // shortcut: matches the head branch by name, so a fork's same-named branch counts too.
+      branches.add(pr.headRefName);
       const list = [];
-      if (branches.size) {
-        const out = await exec("git", ["worktree", "list", "--porcelain"], options);
-        for (const block of (out.stdout ?? "").split("\n\n")) {
-          const path = /^worktree (.+)$/m.exec(block)?.[1];
-          const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1];
-          if (path && branch && branches.has(branch))
-            list.push({ path, branch, name: path.split(/[\\/]/).pop() });
-        }
+      const out = await exec("git", ["worktree", "list", "--porcelain"], options);
+      for (const block of (out.stdout ?? "").split("\n\n")) {
+        const path = /^worktree (.+)$/m.exec(block)?.[1];
+        const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1];
+        if (path && branch && branches.has(branch))
+          list.push({ path, branch, name: path.split(/[\\/]/).pop() });
       }
       if (this.pr?.number === pr.number && this.pr?.repository === repo)
         this.worktrees = { key, list };

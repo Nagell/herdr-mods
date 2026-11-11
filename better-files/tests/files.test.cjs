@@ -12,13 +12,13 @@ const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .replace(/^import\s+[\s\S]*?;$/gm, '')
   .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
   .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, tokenize, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
 function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
-  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [];
+  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
   const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
   const timers = [];
   const pending = [];
@@ -27,6 +27,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
     timer: { every: (_ms, fn) => timers.push(fn), after() {} },
     write_to_clipboard: (text) => clipboard.push(text),
+    open_url: (url) => urls.push(url),
   };
   function el() {
     const data = { nodes: [], handlers: {}, colors: [] };
@@ -41,6 +42,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
           if (k === 'text_color') t.colors.push(a[0]);
           if (k === 'on_click') t.handlers.click = a[0];
           if (k === 'on_item_click') t.handlers.item = a[0];
+          if (k === 'on_link_click') t.handlers.link = a[0];
           if (k === 'on_open_change') t.handlers.open = a[0];
           if (k === 'on_mouse_down') t.handlers[`down-${a[0]}`] = a[1];
           return proxy;
@@ -53,7 +55,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const context = {
     View: class {}, div: el, svg: el, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
-    Scrollbar: { vertical: () => el() }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
+    Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
@@ -86,7 +88,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -222,7 +224,7 @@ test('the viewer follows the file, and keeps the same rows until it really chang
   assert.match(strings(h.mod.render()), /no longer available/);
 });
 
-const CHANGES = { mode: 'viewer', viewer: 'v', file: { path: '/repo/b.md', root: '/repo', on: null }, texts: { '/repo/b.md': 'a\nb\nc' }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n-old a\n+a\n@@ -3,2 +1,0 @@\n-gone 1\n-gone 2\n@@ -9,0 +3 @@\n+c\n' };
+const CHANGES = { mode: 'viewer', viewer: 'v', file: { path: '/repo/b.txt', root: '/repo', on: null }, texts: { '/repo/b.txt': 'a\nb\nc' }, status: ' M b.txt\n', diff: '@@ -1 +1 @@\n-old a\n+a\n@@ -3,2 +1,0 @@\n-gone 1\n-gone 2\n@@ -9,0 +3 @@\n+c\n' };
 const clickRow = (h, key) => find(h.mod.render(), 'viewer-list').handlers.item(key, h.cx);
 
 test('rows put each mark with its own line, and a removal gets a thin row of its own', async () => {
@@ -331,14 +333,14 @@ test('git diff becomes changes by the file\'s lines as they are now, with what t
   ]);
 });
 
-const gutterFile = { path: '/repo/b.md', root: '/repo', on: null };
+const gutterFile = { path: '/repo/b.txt', root: '/repo', on: null };
 const markBars = (h) => { const out = []; const walk = (n) => { if (n?.elementId?.startsWith?.('viewer-mark-')) out.push(n.elementId); (n?.nodes ?? []).forEach(walk); }; walk(h.mod.render()); return out; };
 
 test('a changed file shows marks, an untracked one is all new, and a clean one has none', async () => {
-  const opts = { mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.md': 'one\ntwo\nthree\nfour' } };
-  const changed = await ready({ ...opts, status: ' M b.md\n', diff: '@@ -1 +1 @@\n-x\n+one\n@@ -3,0 +4,1 @@\n+z\n' });
+  const opts = { mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.txt': 'one\ntwo\nthree\nfour' } };
+  const changed = await ready({ ...opts, status: ' M b.txt\n', diff: '@@ -1 +1 @@\n-x\n+one\n@@ -3,0 +4,1 @@\n+z\n' });
   assert.equal(markBars(changed).length, 2);
-  const fresh = await ready({ ...opts, status: '?? b.md\n' });
+  const fresh = await ready({ ...opts, status: '?? b.txt\n' });
   assert.equal(JSON.stringify(fresh.mod.hunks), JSON.stringify([{ line: 0, count: null, kind: 'added', oldStart: 0, old: [] }]));
   assert.equal(markBars(fresh).length, 4, 'every line is new');
   const clean = await ready({ ...opts, status: '' });
@@ -352,14 +354,14 @@ test('a changed file shows marks, an untracked one is all new, and a clean one h
 });
 
 test('the setting can use Herdr\'s own editor instead', async () => {
-  const h = await ready({ mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.md': 'x', '/app/mods/better-files/mod.json': null }, status: ' M b.md\n', diff: '@@ -1 +1 @@\n' });
+  const h = await ready({ mode: 'viewer', viewer: 'v', file: gutterFile, texts: { '/repo/b.txt': 'x', '/app/mods/better-files/mod.json': null }, status: ' M b.txt\n', diff: '@@ -1 +1 @@\n' });
   assert.equal(h.mod.gutterOn, true);
   h.mod.gutterOn = false;
   h.mod.code = null; h.mod.text = undefined; h.mod.hunks = [];
   h.mod.readFile(h.cx);
   await h.flush();
   assert.equal(h.context.lastCode.opts.readonly, true);
-  assert.equal(h.context.lastCode.opts.language, 'md');
+  assert.equal(h.context.lastCode.opts.language, 'txt');
   assert.equal(find(h.mod.render(), 'viewer-lines'), undefined);
   assert.equal(markBars(h).length, 0);
 });
@@ -556,4 +558,98 @@ test('every icon is used, every used icon exists, and nothing here can write a f
   assert.equal((code.match(/\brm\b/g) ?? []).length, 2, 'rm only ever touches the cache');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mod.json'))).title, 'Better Files');
   assert.doesNotMatch(code, /panel-body|better-tabs|estro/i);
+});
+
+test('Markdown blocks keep every element whole for TextView, and pull out pictures on their own line', async () => {
+  const { context: m } = await ready();
+  const blocks = (text, folder = '/repo/docs') => JSON.parse(JSON.stringify(m.markdownBlocks(text, folder)));
+  const elements = [
+    '# Title', '## Sub', 'A paragraph with **bold**, *italic*, `code` and [a link](other.md).',
+    '```js\nconst x = 1;\n```', '- one\n  - nested\n    1. deeper\n- two', '1. first\n2. second',
+    '> quoted\n> more', '| a | b |\n| --- | --- |\n| 1 | 2 |', '---', '<https://example.com>',
+  ];
+  for (const element of elements) assert.deepEqual(blocks(element), [{ type: 'text', text: element }], element);
+  const doc = elements.join('\n\n');
+  assert.deepEqual(blocks(doc), [{ type: 'text', text: doc }], 'one document stays one block');
+  assert.deepEqual(blocks('Intro\n\n![A shot](../pics/My%20Shot.PNG "title")\n\nAfter'), [
+    { type: 'text', text: 'Intro\n' },
+    { type: 'image', alt: 'A shot', path: '/repo/pics/My Shot.PNG' },
+    { type: 'text', text: '\nAfter' },
+  ]);
+  assert.deepEqual(blocks('![x](<my pic.jpeg>)\r'), [{ type: 'image', alt: 'x', path: '/repo/docs/my pic.jpeg' }], 'angle brackets and CRLF');
+  assert.deepEqual(blocks('![abs](/shots/a.gif)'), [{ type: 'image', alt: 'abs', path: '/shots/a.gif' }]);
+  for (const stays of ['```\n![x](a.png)\n```', '~~~~\n```\n![x](a.png)\n~~~~', '    ![x](a.png)', '- item\n  ![x](a.png)', 'see ![x](a.png) inline', '![web](https://x.dev/a.png)', '![doc](a.pdf)', '> ![x](a.png)'])
+    assert.ok(blocks(stays).every((b) => b.type === 'text'), `stays text: ${stays}`);
+  assert.deepEqual(blocks(''), []);
+  assert.deepEqual(blocks('\n\n  \n'), []);
+});
+
+test('malformed Markdown never throws', async () => {
+  const { context: m } = await ready();
+  for (const text of ['```\nnever closed', '![broken](', '![](  )', '[link](', '| a |\n|', '**open', '> > > >', '- \n  -\n    -', '\0\u0001', '%E0%A4%A', '![x](%E0%A4%A.png)', null, undefined, 42, 'a'.repeat(100000)])
+    assert.doesNotThrow(() => m.markdownBlocks(text, '/repo'), String(text).slice(0, 20));
+  assert.equal(m.resolvePath('/repo', '%E0%A4%A.png'), '/repo/%E0%A4%A.png', 'a bad escape is kept as written');
+  assert.equal(m.resolvePath('/repo/docs', '../a.md#part'), '/repo/a.md');
+  assert.equal(m.resolvePath('/repo', './b/./c.md?x=1'), '/repo/b/c.md');
+  assert.equal(m.resolvePath('/', '../../x'), '/x');
+  assert.equal(m.resolvePath('/repo', 'file:///tmp/y.md'), '/tmp/y.md');
+  for (const none of ['https://x.dev', 'mailto:a@b.c', '#top', '', null]) assert.equal(m.resolvePath('/repo', none), null, String(none));
+  assert.ok(m.isMarkdown('/a/README.MD') && m.isMarkdown('/a/b.markdown') && !m.isMarkdown('/a/md') && !m.isMarkdown('/a/b.mdx'));
+});
+
+const MD = { path: '/repo/docs/guide.md', root: '/repo', on: null };
+const mdWorld = (o = {}) => ready({ mode: 'viewer', viewer: 'v', file: MD, texts: { '/repo/docs/guide.md': '# Guide\n\nSee [next](next.md).\n\n![Shot](pics/shot.PNG)\n\nEnd' }, ...o });
+
+test('a Markdown file opens in Preview; the toggle switches to Code and back, remembered per tab', async () => {
+  const h = await mdWorld();
+  const render = () => h.mod.render();
+  assert.ok(find(render(), 'viewer-preview'), 'Preview by default');
+  assert.match(strings(find(render(), 'viewer-preview')), /md:# Guide/);
+  assert.equal(find(render(), 'viewer-lines'), undefined);
+  assert.equal(find(render(), 'viewer-show-old'), undefined, 'no Expand all in Preview');
+  click(h, 'viewer-view-code');
+  assert.equal(h.store.get('better-files.viewers').v.markdown, 'code', 'kept with this tab');
+  assert.ok(find(render(), 'viewer-lines'), 'the code view, with its gutter');
+  assert.equal(find(render(), 'viewer-preview'), undefined);
+  h.mod.markdownDefault = 'preview';
+  assert.ok(find(render(), 'viewer-lines'), 'the tab\'s choice beats the default');
+  click(h, 'viewer-view-preview');
+  assert.ok(find(render(), 'viewer-preview'));
+  const other = await mdWorld({ viewer: 'w' });
+  other.mod.markdownDefault = 'code';
+  assert.ok(find(other.mod.render(), 'viewer-lines'), 'the setting picks the default for a tab with no choice');
+  const text = await ready({ mode: 'viewer', viewer: 'v', file: { path: '/repo/a.txt', root: '/repo', on: null }, texts: { '/repo/a.txt': 'x' } });
+  assert.equal(find(text.mod.render(), 'viewer-view'), undefined, 'only Markdown has the toggle');
+});
+
+test('the preview follows the file on disk, and shows its pictures through the cache', async () => {
+  const h = await mdWorld();
+  const copy = h.execs.find((e) => e[3] === 'copy-image');
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/cache/v-m1.png', '']);
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/cache\/v-m1\.png/);
+  h.live.texts['/repo/docs/guide.md'] = '# Changed';
+  h.tick();
+  await h.flush();
+  assert.match(strings(find(h.mod.render(), 'viewer-preview')), /md:# Changed/);
+  await h.mod.close();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/cache/v-m1.png']);
+  const gone = await mdWorld({ copyImage: { code: 1 } });
+  assert.match(strings(gone.mod.render()), /Shot isn't available/);
+  const far = await mdWorld({ file: { ...MD, on: 'box' } });
+  assert.match(strings(far.mod.render()), /another machine/);
+});
+
+test('links open on the web, or open a file here in the viewer', async () => {
+  const h = await mdWorld();
+  const link = find(h.mod.render(), 'viewer-md-v-0').handlers.link;
+  link('https://example.com/x', h.cx);
+  assert.deepEqual([...h.urls], ['https://example.com/x']);
+  link('#section', h.cx);
+  link('mailto:a@b.c', h.cx);
+  assert.equal(tabs(h).length, 0);
+  link('next.md', h.cx);
+  const [, args] = tabs(h).at(-1);
+  assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
+  link('../../elsewhere/x.md', h.cx);
+  assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
 });

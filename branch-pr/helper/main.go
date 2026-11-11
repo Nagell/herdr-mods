@@ -240,7 +240,7 @@ func list(ctx context.Context, r Request) (any, error) {
 	return out, nil
 }
 
-const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid author{login} reviewDecision mergeable mergeStateStatus autoMergeRequest{enabledAt}
+const detailQuery = `query($owner:String!,$name:String!,$number:Int!,$comments:String,$reviews:String,$threads:String){repository(owner:$owner,name:$name){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed pullRequest(number:$number){id number title url body state isDraft headRefName baseRefName headRefOid changedFiles author{login} reviewDecision mergeable mergeStateStatus autoMergeRequest{enabledAt}
  comments(first:100,after:$comments){` + pageInfo + ` nodes{id body url createdAt author{login}}}
  reviews(first:100,after:$reviews){` + pageInfo + ` nodes{id body url submittedAt state author{login}}}
  reviewThreads(first:50,after:$threads){` + pageInfo + ` nodes{id path line isResolved isOutdated viewerCanResolve viewerCanUnresolve viewerCanReply comments(first:100){` + pageInfo + ` nodes{id body url createdAt diffHunk author{login}}}}}
@@ -545,6 +545,12 @@ func handle(ctx context.Context, r Request) (any, error) {
 			return nil, errors.New("invalid run")
 		}
 		return gh(ctx, "api", "--paginate", "--slurp", fmt.Sprintf("repos/%s/actions/runs/%d/jobs?per_page=100", r.Repo, r.Run))
+	case "files":
+		if r.Number < 1 {
+			return nil, errors.New("invalid PR number")
+		}
+		// GitHub stops at 3000 files and leaves out the patch of a binary or very large file.
+		return gh(ctx, "api", "--paginate", "--slurp", fmt.Sprintf("repos/%s/pulls/%d/files?per_page=100", r.Repo, r.Number))
 	case "change-state":
 		return changeState(ctx, r)
 	case "reviewer":

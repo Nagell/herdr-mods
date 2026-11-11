@@ -6,6 +6,7 @@ import { diffRows, splitDiffRows, conflictRows } from "../git/model.js";
 import { TEXT, SIZE, codeFont, codeSize, Icon, Panel, PaneBar, DiffStat, Message, TextButton } from "./ui.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
+const NO_PATCH = "No text diff: GitHub leaves out binary and very large files.";
 // In widths of the code font's size, so a diff looks the same at any terminal size.
 const CHAR_WIDTH = 0.62;
 const GUTTERS = 10;
@@ -121,7 +122,7 @@ export const diffMethods = {
   },
 
   diffFile() {
-    if (this.scope === "commit" || this.scope === "committed") return this.commitFile;
+    if (["commit", "committed", "patch"].includes(this.scope)) return this.commitFile;
     const file = this.files.find((f) => f.path === this.path);
     if (!file) return null;
     // Git's counts for a conflict are of the markers, so they would mislead.
@@ -238,6 +239,10 @@ export const diffMethods = {
   },
 
   async readDiffContent(file, path, root, on) {
+    // A diff handed over whole, as Branch PR does with GitHub's patch for a PR's file.
+    // shortcut: Full file has no effect here, GitHub's patch has only its hunks.
+    if (this.scope === "patch")
+      return { lines: file.patch?.split("\n") ?? [NO_PATCH] };
     if (file.fresh) return this.readFreshFile(path, root, on);
     if (file.conflict) {
       const { rows, message } = await this.readConflict(path, root, on);
@@ -299,6 +304,7 @@ export const diffMethods = {
       unstaged: "Unstaged",
       committed: "Committed",
       commit: this.commitRef?.short,
+      patch: this.commitRef?.short,
     };
     const scope = file?.conflict ? this.conflictLabel() : scopes[this.scope];
     return {
