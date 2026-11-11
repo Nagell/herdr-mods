@@ -43,7 +43,7 @@
 <article class="doc" id="better-sidebar">
   <h2>Better Sidebar</h2>
   <p class="lead">A spaces sidebar that shows each space's Git branch on the same row, nests worktrees under their main checkout, and colours each space by its pull request's state. The same mod also draws an agents list, a one-line footer and a right panel toggle.</p>
-  <p class="meta-line"><span>Version 3.2.0</span><span>Needs: Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/better-sidebar">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 3.3.0</span><span>Needs: Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/better-sidebar">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="../gifs/better-sidebar.gif" alt="Better Sidebar in Herdr" width="1100" height="1192"></figure>
 
   <h3 id="better-sidebar-start">Quick start</h3>
@@ -69,7 +69,7 @@
   <ul>
     <li><b>Branches:</b> the current branch sits beside the space name, small and dim. <code>main</code>, <code>master</code> and a branch that repeats the space name are hidden. The selected space also shows how far it is ahead of or behind its remote.</li>
     <li><b>Worktrees:</b> worktree spaces nest under an open space for the same repository, each with its own branch and PR. A worktree whose main space isn't open stays a top-level row.</li>
-    <li><b>PR:</b> at the right of the space's row, an icon and number coloured green Open, gray Draft, purple Merged, red Closed or red Checks failed. Hover for repository, title and status. Several open PRs show the newest with a <code>+N</code> summary; hover it for the others.</li>
+    <li><b>PR:</b> at the right of the space's row, an icon and number coloured green Open, gray Draft, purple Merged, red Closed, red Conflicts, red Checks failed, yellow Changes requested, or green Ready to merge with a ✓. Hover for repository, title and status. Several open PRs show the newest with a <code>+N</code> summary; hover it for the others.</li>
     <li><b>Spaces and Agents tabs:</b> the <code>lists</code> view puts both lists in one block. <b>Spaces</b> shows each space's tabs beneath it, joined by tree lines, as the tab's title with its program beside it (<code>1 Claude Code</code>, <code>2 zsh</code>); click one to open it. Pinned agents sit in a Pinned group above every space. <b>Agents</b> shows the agents list with its grouping menu at the right of the tabs, and a count on the tab. The tab you pick is remembered. On the narrow rail the two lists sit one above the other.</li>
     <li><b>Open a PR:</b> Cmd-click the number (Ctrl-click on Linux and Windows) to open it on GitHub. A plain click selects the space.</li>
     <li><b>Spaces as before:</b> click to select, right-click for the space menu, drag to reorder within a machine, plus to create a space, machine groups with fold, and a compact rail when the sidebar is narrower than 160px.</li>

@@ -19,6 +19,7 @@ function harness() {
     dim: "gray",
     ansi1: "red",
     ansi2: "green",
+    ansi3: "yellow",
     ansi5: "purple",
   };
   function element() {
@@ -140,22 +141,32 @@ function text(node) {
 }
 const result = (stdout) => ({ code: 0, stdout });
 
-test("PR appearance distinguishes open, draft, merged, closed, and failed checks", () => {
+test("PR appearance distinguishes open, draft, merged, closed, failed checks, conflicts, review and ready", () => {
   const h = harness();
   h.context.colors = h.colors;
-  for (const [pr, icon, color] of [
+  for (const [pr, icon, color, label, ready] of [
     [{ state: "OPEN" }, "pull-request", "green"],
     [{ state: "OPEN", isDraft: true }, "draft", "gray"],
     [{ state: "MERGED", isDraft: true }, "merged", "purple"],
     [{ state: "CLOSED" }, "closed", "red"],
     [{ state: "OPEN", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red"],
     [{ state: "OPEN", statusCheckRollup: [{ state: "ERROR" }] }, "pull-request", "red"],
-    [{ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }, "pull-request", "green"],
+    [{ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }, "pull-request", "green", "Open"],
+    [{ state: "OPEN", mergeStateStatus: "DIRTY", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red", "Conflicts"],
+    [{ state: "OPEN", isDraft: true, mergeStateStatus: "DIRTY" }, "draft", "gray", "Draft"],
+    [{ state: "OPEN", reviewDecision: "CHANGES_REQUESTED", statusCheckRollup: [{ conclusion: "FAILURE" }] }, "pull-request", "red", "Checks failed"],
+    [{ state: "OPEN", reviewDecision: "CHANGES_REQUESTED", mergeStateStatus: "CLEAN" }, "pull-request", "yellow", "Changes requested"],
+    [{ state: "OPEN", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN" }, "pull-request", "green", "Ready to merge", true],
+    [{ state: "OPEN", reviewDecision: "", mergeStateStatus: "CLEAN" }, "pull-request", "green", "Ready to merge", true],
+    [{ state: "OPEN", reviewDecision: "REVIEW_REQUIRED", mergeStateStatus: "BLOCKED" }, "pull-request", "green", "Open"],
+    [{ state: "OPEN", reviewDecision: "APPROVED", mergeStateStatus: "BEHIND" }, "pull-request", "green", "Open"],
   ]) {
     h.context.pr = pr;
     const appearance = vm.runInContext("prAppearance(pr, colors)", h.context);
     assert.equal(appearance.icon, icon);
     assert.equal(appearance.color, color);
+    if (label) assert.equal(appearance.label, label);
+    assert.equal(Boolean(appearance.ready), Boolean(ready));
   }
 });
 
@@ -183,6 +194,7 @@ test("explicit branch association reads Git remotely and invokes gh locally", as
     assert.equal(args[1], "view");
     assert.equal(args[2], "42");
     assert.equal(args[args.indexOf("--repo") + 1], "owner/repo");
+    assert.match(args[args.indexOf("--json") + 1], /reviewDecision,mergeStateStatus/);
     assert.equal(options, undefined);
     return result(JSON.stringify({ number: 42, state: "OPEN" }));
   };
@@ -213,6 +225,7 @@ test("discovery excludes unrelated forks, deduplicates PRs, and prefers open ove
   h.observer.query = async (args) => {
     assert.equal(args[1], "list");
     assert.equal(args[args.indexOf("--head") + 1], "feature");
+    assert.match(args[args.indexOf("--json") + 1], /reviewDecision,mergeStateStatus/);
     return [pr("1", "MERGED"), pr("2", "OPEN"), pr("2", "OPEN"), pr("3", "OPEN", "stranger/fork")];
   };
   const prs = await h.observer.lookup({ folder: "/repo" });
@@ -282,6 +295,21 @@ test("gh results are cached and failures are not cached", async () => {
   assert.equal(h.calls.length, 1);
   h.context.exec = async () => ({ code: 1, stderr: "gh auth login" });
   await assert.rejects(h.observer.query(["pr", "view", "1"]), /gh auth login/);
+});
+
+test("the gh cache expires one poll after the call started, not after it returned", async () => {
+  const h = harness();
+  let now = 0;
+  vm.runInContext("Date", h.context).now = () => now;
+  h.context.exec = async () => {
+    h.calls.push(1);
+    now += 1500; // a slow gh call
+    return result("[]");
+  };
+  await h.observer.query(["pr", "list"]);
+  now = vm.runInContext("PR_POLL_MS", h.context);
+  await h.observer.query(["pr", "list"]);
+  assert.equal(h.calls.length, 2);
 });
 
 test("non-Git and detached checkouts do not query GitHub", async () => {

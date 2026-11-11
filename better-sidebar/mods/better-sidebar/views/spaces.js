@@ -545,7 +545,7 @@ export class Spaces {
         cx.stop_propagation();
         cx.open_url(url);
       })
-      .child(`#${pr.number}`);
+      .child(status.ready ? `#${pr.number} ✓` : `#${pr.number}`);
   }
 
   prBadge(w, t, compact = false) {

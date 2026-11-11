@@ -5,7 +5,7 @@ import { exec } from "herdr";
 export const PR_POLL_MS = 60000;
 export const prPlaceKey = (machine, folder) => JSON.stringify([machine ?? null, folder]);
 const PR_FIELDS =
-  "id,number,title,url,state,isDraft,headRefName,headRepository,updatedAt,statusCheckRollup";
+  "id,number,title,url,state,isDraft,headRefName,headRepository,updatedAt,statusCheckRollup,reviewDecision,mergeStateStatus";
 
 /** Terminal PR states win over draft/CI flags left over from when it was open. */
 export function prAppearance(pr, colors) {
@@ -17,11 +17,14 @@ export function prAppearance(pr, colors) {
       String(check.conclusion || check.state || check.status).toUpperCase(),
     ),
   );
-  return {
-    icon: "pull-request",
-    color: failed ? colors.ansi1 : colors.ansi2,
-    label: failed ? "Checks failed" : "Open",
-  };
+  const open = (color, label, ready = false) => ({ icon: "pull-request", color, label, ready });
+  if (pr.mergeStateStatus === "DIRTY") return open(colors.ansi1, "Conflicts");
+  if (failed) return open(colors.ansi1, "Checks failed");
+  if (pr.reviewDecision === "CHANGES_REQUESTED") return open(colors.ansi3, "Changes requested");
+  // CLEAN is GitHub's own "mergeable now": an empty decision means no review is required.
+  if (pr.mergeStateStatus === "CLEAN" && (pr.reviewDecision === "APPROVED" || !pr.reviewDecision))
+    return open(colors.ansi2, "Ready to merge", true);
+  return open(colors.ansi2, "Open");
 }
 
 /** Only github.com remotes are supported. Never pass an arbitrary remote URL to gh. */
@@ -178,11 +181,13 @@ export class PRStatusObserver {
     const key = JSON.stringify(args);
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.at < PR_POLL_MS) return cached.data;
+    // Stamp when the call started, like the poll does, so the next poll never lands on this entry.
+    const at = Date.now();
     const result = await exec("gh", args);
     if (result.code !== 0)
       throw new Error((result.stderr || "GitHub unavailable; check gh auth login").trim());
     const data = JSON.parse(result.stdout);
-    this.cache.set(key, { at: Date.now(), data });
+    this.cache.set(key, { at, data });
     return data;
   }
 }
