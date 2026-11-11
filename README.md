@@ -17,8 +17,6 @@ A collection of standalone mods. Choose a mod below and install only that packag
 | [Better Tabs](better-tabs/README.md) | Tab bar with draggable tabs that wrap onto more lines, a toolbar for panels, and a ⋮ menu to hide and pin them. |
 | [Branch PR](branch-pr/README.md) | GitHub PR sidebar that shows what stands between a PR and a merge, hands failures and comments to agents, and merges when ready. |
 | [Branch Issue](branch-issue/README.md) | Linear issue sidebar that follows the branch, with an All tab, state, priority and assignee edits, comments, and worktrees that open with an agent holding the issue, waiting for your go-ahead. |
-| [Hands](hands/README.md) | A `hands` CLI that gives agents hands on the Mac: read any app's accessibility tree, click, type, set values, scroll, screenshot a window, record the screen. Plus a panel with its captures, a filterable action history and its permissions. |
-| [Factory](factory/README.md) | Staged agent runs: a named workflow of agents, such as developer then reviewer, shown as a tree of live sessions, with findings by severity, review loops and follow-ups. |
 
 ### Better Changes
 
@@ -48,17 +46,9 @@ A collection of standalone mods. Choose a mod below and install only that packag
 
 ![Branch Issue](branch-issue/preview.png)
 
-### Hands
-
-![Hands](hands/preview.png)
-
-### Factory
-
-![Factory](factory/preview.png)
-
 ## Estro, a layout
 
-[Estro](estro/RECIPE.md) puts these mods together in one window for directing agents: every space and agent on the left, the session in the middle, and Changes, PRs, Issues, Hands and Factory on the right. *Estro* is Esperanto for the one in charge.
+[Estro](estro/RECIPE.md) puts these mods together in one window for directing agents: every space and agent on the left, the session in the middle, and Changes, PRs and Issues on the right. *Estro* is Esperanto for the one in charge.
 
 ![Estro](estro/preview.png)
 
@@ -70,18 +60,16 @@ Copy this prompt into your Herdr agent:
 Read ~/.config/herdr-app/AGENTS.md, then add this layout: https://github.com/munza/herdr-mods/tree/main/estro
 ```
 
-**This installs all nine mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Better Files, Better Config, Branch PR, Branch Issue, Hands and Factory. You don't need to add them separately. A mod you already have is updated instead of installed again, and Factory also installs its `/factory` skill.
+**This installs all seven mods along with the layout:** Better Sidebar, Better Tabs, Better Changes, Better Files, Better Config, Branch PR and Branch Issue. You don't need to add them separately. A mod you already have is updated instead of installed again.
 
 The agent then copies the layout, checks each mod and switches your window to Estro. It tells you what each mod can do as it goes, and if you already have a layout called `estro`, it won't overwrite it.
 
-Four of the mods need extra tools:
+Two of the mods need extra tools:
 
 | Mod | Needs |
 | --- | --- |
 | Branch PR | Go 1.23+ and `gh` |
 | Branch Issue | Go 1.23+ and a Linear API key |
-| Hands | Go 1.23+ and macOS |
-| Factory | Go 1.23+ and Claude Code |
 
 If you don't want one of them, tell the agent, and it can leave out that mod's button and block. [estro/RECIPE.md](estro/RECIPE.md) has the full steps.
 
@@ -116,14 +104,10 @@ Requires Node.js and Go for development tests:
 (cd branch-pr/helper && go test ./... && go vet ./...)
 (cd branch-issue && node --test tests/*.test.cjs)
 (cd branch-issue/helper && go test ./... && go vet ./...)
-(cd hands && node --test tests/*.test.cjs)
-(cd hands/helper && go test ./... && go vet ./...)
-(cd factory && node --test tests/*.test.cjs)
-(cd factory/helper && go test ./... && go vet ./...)
 (cd estro && node --test tests/*.test.cjs)
 ```
 
-The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes and Better Files use Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a local Go helper built during installation with Go 1.23+; see its README for access and explicit write actions. Branch Issue uses Git, `hc`, and a local Go helper, built the same way, that reaches Linear with your `LINEAR_API_KEY`; see its README too. Hands uses macOS's Accessibility and ScreenCaptureKit frameworks through a Go helper built on your machine, and needs Herdr to be granted Accessibility and Screen Recording; see its README before installing. Factory uses `hc`, Claude Code, optionally the Codex CLI, and a local Go helper; it starts agent sessions, so see its README first.
+The mods use Herdr's native JavaScript runtime, without Node.js at runtime. Better Changes and Better Files use Git; Better Sidebar uses Git, the GitHub CLI, and Herdr's `hc`. Better Tabs uses Herdr commands and has no external executable dependency. Branch PR uses Git, `gh`, `hc`, and a local Go helper built during installation with Go 1.23+; see its README for access and explicit write actions. Branch Issue uses Git, `hc`, and a local Go helper, built the same way, that reaches Linear with your `LINEAR_API_KEY`; see its README too.
 
 ## License
 

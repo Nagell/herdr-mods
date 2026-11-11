@@ -143,30 +143,6 @@
                         "stack": "panel-body",
                         "target": "linear-issues"
                       }
-                    },
-                    {
-                      "id": "hands",
-                      "label": "Hands",
-                      "icon": "mods/hands/icons/hand.svg",
-                      "group": "panels",
-                      "action": {
-                        "type": "panel",
-                        "container": "panel",
-                        "stack": "panel-body",
-                        "target": "hands"
-                      }
-                    },
-                    {
-                      "id": "factory",
-                      "label": "Factory",
-                      "icon": "mods/factory/icons/factory.svg",
-                      "group": "panels",
-                      "action": {
-                        "type": "panel",
-                        "container": "panel",
-                        "stack": "panel-body",
-                        "target": "factory"
-                      }
                     }
                   ]
                 }
@@ -258,20 +234,6 @@
                       "type": "block",
                       "content": {
                         "mod": "branch-issue"
-                      }
-                    },
-                    {
-                      "id": "hands",
-                      "type": "block",
-                      "content": {
-                        "mod": "hands"
-                      }
-                    },
-                    {
-                      "id": "factory",
-                      "type": "block",
-                      "content": {
-                        "mod": "factory"
                       }
                     }
                   ],

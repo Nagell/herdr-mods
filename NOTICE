@@ -1,5 +1,5 @@
 Herdr Mods — Better Changes, Better Files, Better Sidebar, Better Tabs, Branch PR,
-Branch Issue, Hands, and Factory
+and Branch Issue
 Copyright 2026 Tawsif Aqib
 
 Better Changes adapts behavior and code from Herdr Desktop's shipped Changes mod.
@@ -21,8 +21,6 @@ herdr-workflow by Tawsif Aqib, including its native UI, GitHub CLI Go bridge,
 agent actions, and tests. Its bundled UI SVG icons are adapted from Herdr
 Desktop's icon set.
 
-Factory is a separate mod for staged agent runs. It is unrelated to the former
-Factory Tabs clone named above.
 
 This distribution adds tree/flat file lists, staging controls, reusable diff
 tabs, inline/split views, configurable typography, right-aligned space branches,

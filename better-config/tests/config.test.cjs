@@ -128,7 +128,7 @@ test("this repository's mods ship a schema their mod.json passes, with their cod
   const { fieldsOf, flatten, problemWith } = await load();
   const repo = path.join(root, "..");
   const mods = fs.readdirSync(repo).filter((dir) => fs.existsSync(path.join(repo, dir, "mods", dir, "mod.json")));
-  assert.ok(mods.length >= 9);
+  assert.ok(mods.length >= 7);
   for (const name of mods) {
     const folder = path.join(repo, name, "mods", name);
     const manifest = JSON.parse(fs.readFileSync(path.join(folder, "mod.json"), "utf8"));
@@ -154,9 +154,8 @@ test("this repository's mods ship a schema their mod.json passes, with their cod
     const code = codeDefaults(folder);
     if (!code) continue;
     const described = Object.fromEntries(fields.map((f) => [f.key, f.default]));
-    // Hands' helper keeps some defaults in Go; every default the JS code has must match.
     for (const [key, value] of Object.entries(flatten(code)))
       assert.deepEqual(described[key], value, `${name}: ${key} defaults to ${JSON.stringify(value)} in code but ${JSON.stringify(described[key])} in mod.schema.json`);
-    if (name !== "hands") assert.deepEqual(Object.keys(described).sort(), Object.keys(flatten(code)).sort(), `${name}: schema and code know different settings`);
+    assert.deepEqual(Object.keys(described).sort(), Object.keys(flatten(code)).sort(), `${name}: schema and code know different settings`);
   }
 });
