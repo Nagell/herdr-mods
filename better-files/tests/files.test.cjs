@@ -744,6 +744,22 @@ test('env files, unknown types and each language\'s own keywords', async () => {
   assert.deepEqual(tokens('FROM node:24 AS build', m.lexerLanguage('Dockerfile')), [['FROM', 'keyword'], ['24', 'number'], ['AS', 'keyword']]);
 });
 
+test('files whose names hide their language are read as it', async () => {
+  const { context: m } = await ready();
+  const cases = {
+    'tsconfig.json': 'jsonc', 'tsconfig.app.json': 'jsonc', 'a/.vscode/settings.json': 'jsonc',
+    '.devcontainer/devcontainer.json': 'jsonc', 'package.json': 'json', '.babelrc': 'jsonc', '.nuxtrc': 'env',
+    'Brewfile': 'rb', 'Containerfile': 'dockerfile',
+  };
+  for (const [path, lang] of Object.entries(cases)) assert.equal(m.lexerLanguage(path), lang, path);
+  const tokens = (line, path) => JSON.parse(JSON.stringify(m.tokenizeLine(line, m.lexerLanguage(path)).runs.filter((r) => r.kind).map((r) => [r.text, r.kind])));
+  assert.deepEqual(tokens('  // the folders', 'portfolio.code-workspace'), [['// the folders', 'comment']]);
+  assert.deepEqual(tokens('model User {', 'schema.prisma'), [['model', 'keyword'], ['User', 'type']]);
+  assert.deepEqual(tokens('type Query { me: User }', 'q.gql'), [['type', 'keyword'], ['Query', 'type'], ['User', 'type']]);
+  assert.deepEqual(tokens('  "name": "x"', 'site.webmanifest'), [['"name"', 'property'], ['"x"', 'string']]);
+  assert.deepEqual(tokens('<Project Sdk="x">', 'app.csproj'), [['<Project', 'tag'], ['Sdk', 'attribute'], ['"x"', 'string']]);
+});
+
 test('a file over the whole-file limit keeps its own text and is coloured a row at a time', async () => {
   const filler = Array.from({ length: 5001 }, (_, i) => `// line ${i}`);
   const text = ['/* note', 'still note */ const A = 1', ...filler].join('\n');
