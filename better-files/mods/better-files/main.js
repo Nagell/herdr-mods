@@ -13,7 +13,7 @@
 // files/model.js says what the data means; views/ui.js holds every look but the token
 // colours: syntax.js colours the file view's code, and Better Changes has the same file.
 import { View } from "gpui-kit";
-import { TextareaState } from "gpui-base";
+import { ScrollHandle, TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./files/file-icons.js";
@@ -57,6 +57,8 @@ class BetterFiles extends View {
     this.markdownDefault = DEFAULT_SETTINGS.markdown;
     this.hunks = [];
     this.openHunks = new Set();
+    // The preview's position, so an `#anchor` link can scroll it. A handle must be made here.
+    this.previewScroll = ScrollHandle.new();
     this.syncViewer(cx);
     cx.timer.every(SYNC_MS, (cx) => this.syncViewer(cx));
     cx.spawn(async (cx) => {

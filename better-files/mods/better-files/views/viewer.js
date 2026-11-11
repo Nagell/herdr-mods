@@ -1,7 +1,7 @@
 // A file in the centre pane, read-only, following the file as it changes on disk. Editing
 // belongs in the code editor it can open.
 import { div, image } from "gpui-kit";
-import { h_flex, v_flex, Editor, EditorState, ScrollHandle, Scrollbar, v_virtual_list } from "gpui-base";
+import { h_flex, v_flex, Editor, EditorState, Scrollbar, v_virtual_list } from "gpui-base";
 import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme } from "herdr";
 import {
   baseName,
@@ -640,14 +640,13 @@ export const viewerMethods = {
 
   previewView() {
     // `#anchor` links scroll to their heading's block, a direct child of this list.
-    this.previewScroll ??= ScrollHandle.new();
     return v_flex()
       .id("viewer-preview")
       .flex_1()
       .min_h(0)
       .min_w(0)
       .overflow_y_scrollbar()
-      .track_scroll(this.previewScroll)
+      .when(Boolean(this.previewScroll), (el) => el.track_scroll(this.previewScroll))
       .px(24)
       .py(16)
       .gap(12)
