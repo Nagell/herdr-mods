@@ -727,6 +727,23 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
 });
 
+test('env files, unknown types and each language\'s own keywords', async () => {
+  const { context: m } = await ready();
+  const tokens = (line, lang) => JSON.parse(JSON.stringify(m.tokenizeLine(line, lang).runs.filter((r) => r.kind).map((r) => [r.text, r.kind])));
+  const env = '.' + 'env';
+  assert.equal(m.lexerLanguage(env), 'env');
+  assert.equal(m.lexerLanguage(`app/${env}.test`), 'env', 'whatever follows the dot');
+  assert.deepEqual(tokens('### auth - needed only for local development', 'env'), [['### auth - needed only for local development', 'comment']]);
+  assert.deepEqual(tokens('export APP_URL=http://localhost:3000', 'env'), [['APP_URL', 'property'], ['3000', 'number']]);
+  assert.deepEqual(tokens('APP_ID=061abc', 'env'), [['APP_ID', 'property']], 'digits running into letters are a value');
+  assert.deepEqual(tokens('for x in list return y', 'unknownext'), [], 'an unknown type stays plain');
+  assert.deepEqual(tokens('local and or', 'ts'), [], 'not TypeScript keywords');
+  assert.deepEqual(tokens('local x = 1', 'lua'), [['local', 'keyword'], ['1', 'number']]);
+  assert.deepEqual(tokens('for i := range xs {', 'go'), [['for', 'keyword'], ['range', 'keyword']]);
+  assert.deepEqual(tokens('fun main() { val x = 1 }', m.lexerLanguage('a.kt')), [['fun', 'keyword'], ['main', 'function'], ['val', 'keyword'], ['1', 'number']]);
+  assert.deepEqual(tokens('FROM node:24 AS build', m.lexerLanguage('Dockerfile')), [['FROM', 'keyword'], ['24', 'number'], ['AS', 'keyword']]);
+});
+
 test('a file over the whole-file limit keeps its own text and is coloured a row at a time', async () => {
   const filler = Array.from({ length: 5001 }, (_, i) => `// line ${i}`);
   const text = ['/* note', 'still note */ const A = 1', ...filler].join('\n');
