@@ -17,7 +17,7 @@ import {
   resolvePath,
   viewable,
 } from "../files/model.js";
-import { highlightLines, languageOf as lexerLanguage, syntaxColors } from "../syntax.js";
+import { WHOLE_FILE_LINES, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
@@ -254,13 +254,32 @@ export const viewerMethods = {
   },
 
   // Coloured once per version too, top to bottom, so a comment or string opened on one
-  // line is still one on the next.
+  // line is still one on the next. A huge file, or one the lexer fails on, gets no runs
+  // here: its rows are coloured one at a time as they're drawn (`rowRuns`). The runs are
+  // kept only once they're complete, so a row never shows another file's text.
   lineRuns(lines) {
     if (this.runsFor !== lines) {
+      let runs = null;
+      if (lines.length <= WHOLE_FILE_LINES) {
+        try {
+          runs = highlightLines(lines, lexerLanguage(this.file.path));
+        } catch {}
+      }
+      this.runs = runs;
       this.runsFor = lines;
-      this.runs = highlightLines(lines, lexerLanguage(this.file.path));
     }
     return this.runs;
+  },
+
+  // One row's runs: from the whole-file pass when there is one, else that line on its own.
+  rowRuns(row, lineRuns) {
+    const runs = lineRuns?.[row.number - 1];
+    if (runs) return runs;
+    try {
+      return tokenizeLine(row.text, lexerLanguage(this.file.path)).runs;
+    } catch {
+      return [{ text: row.text, kind: null }];
+    }
   },
 
   fileRow(row, lineRuns) {
@@ -282,7 +301,7 @@ export const viewerMethods = {
         ? { added: t.ansi2, changed: open ? t.ansi2 : t.ansi3 }[row.hunk.kind]
         : null;
     const SYNTAX = syntaxColors(t);
-    const runs = old ? [{ text: row.text, kind: "old" }] : (lineRuns[row.number - 1] ?? [{ text: row.text, kind: null }]);
+    const runs = old ? [{ text: row.text, kind: "old" }] : this.rowRuns(row, lineRuns);
     return h_flex()
       .id(`viewer-${row.key}`)
       .h(rowHeight())

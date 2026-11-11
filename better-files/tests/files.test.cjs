@@ -9,7 +9,7 @@ const root = path.join(__dirname, '../mods/better-files');
 const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 // syntax.js keeps a scope of its own, as a module does: its languageOf isn't model.js's.
 const lexer = fs.readFileSync(path.join(root, 'syntax.js'), 'utf8').replace(/^export /gm, '');
-const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf };\n})();\n`
+const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage, WHOLE_FILE_LINES } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf, WHOLE_FILE_LINES };\n})();\n`
   + FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
     .join('\n')
     .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -725,4 +725,16 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
   link('../../elsewhere/x.md', h.cx);
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
+});
+
+test('a file over the whole-file limit keeps its own text and is coloured a row at a time', async () => {
+  const filler = Array.from({ length: 5001 }, (_, i) => `// line ${i}`);
+  const text = ['/* note', 'still note */ const A = 1', ...filler].join('\n');
+  const file = { path: '/repo/big.ts', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/big.ts': text } });
+  const colorOf = (node, s) => (node?.nodes?.includes(s) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, s)).find(Boolean));
+  const row = find(h.mod.render(), 'viewer-line-1');
+  assert.ok(row, 'the second row is drawn');
+  assert.equal(colorOf(row, 'const'), '#ansi5', 'still coloured');
+  assert.notEqual(colorOf(row, 'still note */'), '#dim', 'no comment carried from the line above');
 });

@@ -38,6 +38,11 @@ const ALIASES = {
 };
 const SPECIAL_NAMES = { Dockerfile: "dockerfile", Makefile: "makefile", Justfile: "makefile" };
 
+// A file with more lines than this is coloured a row at a time, as rows are drawn, instead
+// of top to bottom: a comment or string doesn't carry from one line to the next there, but
+// a huge file opens at once.
+export const WHOLE_FILE_LINES = 5000;
+
 const KEYWORDS = new Set(
   ("abstract and as async await begin break case catch class const continue debugger declare def default defer del " +
     "delete do done elif else elsif end ensure enum esac except export extends fi finally fn for from func function " +

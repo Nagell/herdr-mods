@@ -17,7 +17,7 @@ const MODEL_NAMES =
   "conflictRows, changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo";
 const model = new Function(`${read("git/model.js")}; return { ${MODEL_NAMES} };`)();
 const { panelCommands } = new Function(`${read("panel.js")}; return { panelCommands };`)();
-const syntax = new Function(`${read("syntax.js")}; return { languageOf, syntaxColors, tokenizeLine };`)();
+const syntax = new Function(`${read("syntax.js")}; return { languageOf, syntaxColors, tokenizeLine, WHOLE_FILE_LINES };`)();
 
 function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {}) {
   const store = new Map();

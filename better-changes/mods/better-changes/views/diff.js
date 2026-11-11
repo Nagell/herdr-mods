@@ -3,7 +3,7 @@ import { div } from "gpui-kit";
 import { h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, readTextFile, theme, shared, setShared, run, layout } from "herdr";
 import { diffRows, splitDiffRows, conflictRows } from "../git/model.js";
-import { languageOf, syntaxColors, tokenizeLine } from "../syntax.js";
+import { WHOLE_FILE_LINES, languageOf, syntaxColors, tokenizeLine } from "../syntax.js";
 import { TEXT, SIZE, codeFont, codeSize, FileIcon, Panel, PaneBar, DiffStat, Message, TextButton } from "./ui.js";
 import { fileIcon, isLight } from "../file-icons.js";
 
@@ -480,23 +480,29 @@ export const diffMethods = {
   },
 
   // Worked out once per diff, since rows are drawn on every scroll. The old and new sides
-  // each carry their own open comment or string, and a hunk header starts both afresh.
+  // each carry their own open comment or string, and a hunk header starts both afresh. A
+  // huge diff, or one the lexer fails on, is left to `runsOf`, a row at a time.
   highlightRows() {
     const language = languageOf(this.path);
     const runs = new Map();
     let before = null;
     let after = null;
-    for (const row of this.rows) {
-      if (row.kind === "@" || row.kind === "marker") {
-        before = after = null;
-        continue;
-      }
-      if (!["+", "-", " ", "yours", "incoming"].includes(row.kind)) continue;
-      const result = tokenizeLine(row.text ?? "", language, row.kind === "-" ? before : after);
-      runs.set(row, result.runs);
-      if (row.kind === "-") before = result.state;
-      else if (row.kind === " ") before = after = result.state;
-      else after = result.state;
+    try {
+      if (this.rows.length <= WHOLE_FILE_LINES)
+        for (const row of this.rows) {
+          if (row.kind === "@" || row.kind === "marker") {
+            before = after = null;
+            continue;
+          }
+          if (!["+", "-", " ", "yours", "incoming"].includes(row.kind)) continue;
+          const result = tokenizeLine(row.text ?? "", language, row.kind === "-" ? before : after);
+          runs.set(row, result.runs);
+          if (row.kind === "-") before = result.state;
+          else if (row.kind === " ") before = after = result.state;
+          else after = result.state;
+        }
+    } catch {
+      runs.clear();
     }
     this.syntaxFor = this.rows;
     this.syntaxRuns = runs;
@@ -506,7 +512,13 @@ export const diffMethods = {
   runsOf(row) {
     if (["@", "marker", "base", ""].includes(row.kind)) return null;
     if (this.syntaxFor !== this.rows) this.highlightRows();
-    return this.syntaxRuns.get(row) ?? tokenizeLine(row.text ?? "", languageOf(this.path)).runs;
+    const runs = this.syntaxRuns.get(row);
+    if (runs) return runs;
+    try {
+      return tokenizeLine(row.text ?? "", languageOf(this.path)).runs;
+    } catch {
+      return [{ text: row.text ?? "", kind: null }];
+    }
   },
 
   // Text that isn't a token takes the theme's own colour on a change: the background and
