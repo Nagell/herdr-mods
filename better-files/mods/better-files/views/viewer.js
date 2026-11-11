@@ -47,6 +47,8 @@ export const viewerMethods = {
     // A tab reopened behind another one must not take that one's place.
     if (Object.values(viewerEntries()).some((other) => other.tab === tab)) return;
     if (entry?.others?.includes(tab)) return;
+    // Focus can sit in another space while this tab opens; that space's tab isn't this one.
+    if (!this.tabInSpace(tab, entry?.space ?? this.viewerSpace)) return;
     this.setViewer(this.viewerId, {
       tab,
       space: entry?.space ?? this.viewerSpace,

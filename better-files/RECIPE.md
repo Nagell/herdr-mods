@@ -20,7 +20,7 @@ Choosing an agent opens a box docked at the bottom of the panel with who it goes
 
 One class plays three roles, each its own copy: sidebar, viewer and menu, connected by `shared("better-files.*")`.
 
-A copy can't name its own tab, so each viewer has an ID in a registry, `better-files.viewers`, holding its space, file, whether it's the shared one, and its tab. It records its tab from `focused()` as it opens, never one in the list of tabs that existed when it was asked for, or one another viewer holds. Entries for closed tabs are removed.
+A copy can't name its own tab, so each viewer has an ID in a registry, `better-files.viewers`, holding its space, file, whether it's the shared one, and its tab. It records its tab from `focused()` as it opens, never one in the list of tabs that existed when it was asked for, one another viewer holds, or one outside its own space (focus can sit in another space while it opens). A click only uses a viewer whose tab is in the active space, so it never selects a tab elsewhere and switches spaces. Entries for closed tabs, or for a tab in another space, are removed.
 
 The menu closes at once, so it leaves its question in `better-files.compose` for the sidebar to ask.
 

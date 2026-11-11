@@ -62,7 +62,12 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
-    spaces: () => [{ id: 's', active: true, folder: '/repo', machine, tabs: [{ id: 'tab1' }] }],
+    // Space `s` is the active one; a pane with `space` set puts its tab in that space instead.
+    spaces: () => {
+      const tabsOf = (id) => live.panes.filter((p) => (p.space ?? 's') === id).map((p) => p.tab);
+      const ids = [...new Set(['s', ...live.panes.map((p) => p.space ?? 's')])];
+      return ids.map((id) => ({ id, active: id === 's', folder: '/repo', machine, tabs: [...new Set(id === 's' ? ['tab1', ...tabsOf(id)] : tabsOf(id))].map((tab) => ({ id: tab })) }));
+    },
     panes: () => live.panes, focused: () => live.focused, agents: () => live.agents,
     shared: (k) => store.get(k), setShared: (k, v) => { store.set(k, v); return null; },
     run: (name, args) => {
@@ -210,6 +215,30 @@ test('a new viewer never claims a tab that was already open, such as the one it 
   h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
   h.tick();
   assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
+});
+
+test('a viewer\'s tab is always in its own space, so a click never switches spaces', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  // Focus sits on a Better Files tab in another space while this viewer opens.
+  const h = world({ mode: 'viewer', viewer: 'v', file, sharedInit: { 'better-files.viewers': { v: { space: 's', file, tab: null, others: [], at: Date.now() } } } });
+  h.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  h.live.focused = { space: 'other', tab: 'tab9', pane: 'p9' };
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').v.tab, null, 'another space\'s tab is not its own');
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' });
+  h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
+
+  // An entry recorded wrongly before: its tab lives in another space.
+  const side = await ready({ sharedInit: { 'better-files.viewers': { bad: { space: 's', tab: 'tab9', file: { path: '/repo/b.md', root: '/repo', on: null }, preview: true } } } });
+  side.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  click(side, 'files-row-a.md');
+  assert.ok(!side.ran.some(([n, a]) => n === 'tab.select' && a.id === 'tab9'), 'never selects the other space\'s tab');
+  assert.equal(tabs(side).at(-1)[1].space, 's', 'opens a tab in this space instead');
+  side.mod.startedAt = 0;
+  side.tick();
+  assert.ok(!('bad' in side.store.get('better-files.viewers')), 'the wrong entry is pruned');
 });
 
 test('the viewer follows the file, and keeps the same rows until it really changes', async () => {

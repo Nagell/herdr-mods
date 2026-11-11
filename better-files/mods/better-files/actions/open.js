@@ -24,19 +24,30 @@ export const openMethods = {
     return entry.tab ? this.tabIsLive(entry.tab) : Date.now() - (entry.at ?? 0) < OPENING_MS;
   },
 
+  // Whether a tab is in a space. A viewer's tab has to be in the viewer's own space: one
+  // recorded from another space would make a click select a tab there, and Herdr would
+  // switch spaces to show it.
+  tabInSpace(tab, space) {
+    return Boolean(spaces().find((s) => s.id === space)?.tabs?.some((t) => t.id === tab));
+  },
+
   liveViewers(space) {
     return Object.entries(viewerEntries()).filter(
-      ([, entry]) => entry.space === space && this.viewerIsLive(entry),
+      ([, entry]) =>
+        entry.space === space && this.viewerIsLive(entry) && (!entry.tab || this.tabInSpace(entry.tab, space)),
     );
   },
 
-  // Tabs that have closed take their entries with them. Not at first: after a restart the
-  // tabs come back a moment after this runs, and would lose their place in the registry,
-  // so a click would open a file again that's already open.
+  // Tabs that have closed take their entries with them, and so does an entry whose tab is in
+  // another space, so that tab's own viewer can claim it again. Not at first: after a
+  // restart the tabs come back a moment after this runs, and would lose their place in the
+  // registry, so a click would open a file again that's already open.
   pruneViewers() {
     if (Date.now() - this.startedAt < PRUNE_AFTER_MS) return;
     const entries = viewerEntries();
-    const live = Object.entries(entries).filter(([, entry]) => this.viewerIsLive(entry));
+    const live = Object.entries(entries).filter(
+      ([, entry]) => this.viewerIsLive(entry) && (!entry.tab || this.tabInSpace(entry.tab, entry.space)),
+    );
     if (live.length !== Object.keys(entries).length) setShared(VIEWERS, Object.fromEntries(live));
   },
 
