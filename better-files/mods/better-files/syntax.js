@@ -135,6 +135,19 @@ export function languageOf(path) {
   return name.includes(".") ? name.split(".").pop().toLowerCase() : "txt";
 }
 
+// A Markdown code fence's language as the lexer's: the names people write (`typescript`,
+// `shell`) as well as extensions (`ts`, `sh`). None, or one it doesn't know, stays plain.
+const FENCE_NAMES = {
+  javascript: "js", node: "js", typescript: "ts", shell: "sh", shellscript: "sh", console: "sh", terminal: "sh",
+  zsh: "sh", bash: "sh", python: "py", python3: "py", ruby: "rb", rust: "rs", golang: "go", kotlin: "c",
+  java: "c", csharp: "c", "c#": "c", "c++": "c", cpp: "c", docker: "dockerfile", make: "makefile",
+  dotenv: "env", markdown: "md", text: "txt", plaintext: "txt", jsonc: "jsonc", json5: "jsonc", yml: "yaml",
+};
+export function fenceLanguage(word) {
+  const name = String(word ?? "").toLowerCase();
+  return FENCE_NAMES[name] ?? (name || "txt");
+}
+
 // The colour of each kind of run, from the theme, close to One Dark's choices.
 export function syntaxColors(t) {
   return {

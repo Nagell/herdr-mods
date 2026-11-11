@@ -1,7 +1,7 @@
 // A file in the centre pane, read-only, following the file as it changes on disk. Editing
 // belongs in the code editor it can open.
 import { div, image } from "gpui-kit";
-import { h_flex, v_flex, Editor, EditorState, Scrollbar, v_virtual_list } from "gpui-base";
+import { h_flex, v_flex, Editor, EditorState, ScrollHandle, Scrollbar, v_virtual_list } from "gpui-base";
 import { appHome, exec, focused, layout, panes, readTextFile, setShared, shared, theme } from "herdr";
 import {
   baseName,
@@ -17,11 +17,11 @@ import {
   resolvePath,
   viewable,
 } from "../files/model.js";
-import { WHOLE_FILE_LINES, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
+import { WHOLE_FILE_LINES, fenceLanguage, highlightLines, languageOf as lexerLanguage, syntaxColors, tokenizeLine } from "../syntax.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { fileIcon, isLight } from "../files/file-icons.js";
-import { TEXT, FileIcon, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
+import { TEXT, FileIcon, IconButton, Markdown, Message, MenuButton, TextButton, codeFont, codeSize } from "./ui.js";
 
 const CHAR_WIDTH = 0.62; // Of the code font's size, to size the sideways scroll.
 const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
@@ -31,6 +31,33 @@ const REMOVED_ROW = 8;
 // $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
 // the script itself, and only the cache's own copies are ever removed.
 const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" || cp -- "$1" "$2"; }`;
+// $1 a picture's web address, $2 its copy without an extension. A copy under a day old is used
+// as it is; otherwise it's downloaded (5 MB and 20 s at most) and named by the type the server
+// gives, which is how a badge with no extension in its address is known as SVG. A download that
+// fails leaves its `.part`, which the next try writes over. Prints the copy's path.
+const FETCH_IMAGE = `for c in "$2".*; do case "$c" in *.part) continue;; esac; [ -f "$c" ] && [ -n "$(find "$c" -mmin -1440)" ] && { printf %s "$c"; exit 0; }; done
+mkdir -p -- "$(dirname -- "$2")" && t="$2.part" || exit 1
+type=$(curl -fsSL --max-time 20 --max-filesize 5000000 -o "$t" -w '%{content_type}' -- "$1") || exit 1
+case "$type" in *svg*) e=svg;; *png*) e=png;; *jpeg*|*jpg*) e=jpg;; *gif*) e=gif;; *webp*) e=webp;; *) exit 1;; esac
+mv -f -- "$t" "$2.$e" && printf %s "$2.$e"`;
+const COPIED_MS = 1500;
+
+// A short, stable name for a web address, so the same badge is one file in the cache.
+const webName = (url) => {
+  let hash = 2166136261;
+  for (let i = 0; i < url.length; i++) hash = Math.imul(hash ^ url.charCodeAt(i), 16777619);
+  return `web-${(hash >>> 0).toString(16)}`;
+};
+
+// A code block's lines as runs, coloured once per block; a huge one, or one the lexer fails
+// on, stays plain.
+function codeRuns(block) {
+  const lines = block.text.split("\n");
+  try {
+    if (lines.length <= WHOLE_FILE_LINES) return highlightLines(lines, fenceLanguage(block.lang));
+  } catch {}
+  return lines.map((line) => [{ text: line, kind: null }]);
+}
 
 export const viewerMethods = {
   // What this tab shows: the registry, then what it was opened with, after a restart.
@@ -414,36 +441,70 @@ export const viewerMethods = {
     return this.blocks;
   },
 
-  // A Markdown file's pictures, copied into the cache the way the image viewer does, each
-  // under its own name for as long as the tab is open. Checked whenever the file is.
+  // Every picture a Markdown file shows, on its own line or in a row.
+  markdownSources() {
+    return this.previewBlocks().flatMap((block) =>
+      block.type === "image" ? [block] : block.type === "images" ? block.rows.flatMap((row) => row.items) : [],
+    );
+  },
+
+  // A Markdown file's pictures, through the cache the way the image viewer shows a file: one
+  // from this computer is copied under its own name for as long as the tab is open, and
+  // checked whenever the file is; one from the web is downloaded once per tab, and kept for a
+  // day under a name of its address, so every tab shares it.
   readMarkdownImages(cx) {
     const file = this.file;
-    if (!file || file.on || !isMarkdown(file.path) || this.text === undefined) return;
+    if (!file || !isMarkdown(file.path) || this.text === undefined) return;
     this.markdownCopies ??= new Map();
     this.markdownShown ??= new Map();
     this.markdownCopying ??= new Set();
-    for (const { path } of this.previewBlocks().filter((block) => block.type === "image")) {
-      if (this.markdownCopying.has(path)) continue;
-      if (!this.markdownCopies.has(path))
-        this.markdownCopies.set(path, `mods/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
-      const copy = this.markdownCopies.get(path);
-      this.markdownCopying.add(path);
+    for (const { path, url } of this.markdownSources()) {
+      const key = url ?? path;
+      if (!key || this.markdownCopying.has(key) || (path && file.on) || (url && this.markdownShown.has(key))) continue;
+      this.markdownCopying.add(key);
+      if (url) {
+        const base = `${appHome()}/mods/better-files/cache/${webName(url)}`;
+        cx.spawn(async (cx) => {
+          const result = await exec("sh", ["-c", FETCH_IMAGE, "fetch-image", url, base], {}).catch(() => null);
+          this.markdownCopying.delete(key);
+          const copy = result?.code === 0 ? result.stdout.trim() : "";
+          if (copy.startsWith(`${appHome()}/`)) this.markdownCopies.set(key, copy.slice(appHome().length + 1));
+          this.markdownShown.set(key, this.markdownCopies.has(key));
+          cx.notify();
+        });
+        continue;
+      }
+      if (!this.markdownCopies.has(key))
+        this.markdownCopies.set(key, `mods/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
+      const copy = this.markdownCopies.get(key);
       cx.spawn(async (cx) => {
         const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);
-        this.markdownCopying.delete(path);
+        this.markdownCopying.delete(key);
         const shown = result?.code === 0;
-        if (this.markdownShown.get(path) !== shown) {
-          this.markdownShown.set(path, shown);
+        if (this.markdownShown.get(key) !== shown) {
+          this.markdownShown.set(key, shown);
           cx.notify();
         }
       });
     }
   },
 
-  // A web link opens in the browser, and a link to a file here opens it like a click in
-  // the tree. Anchors and other schemes do nothing.
+  // A web link opens in the browser, a link to a file here opens it like a click in the tree,
+  // and `#anchor` scrolls to the heading it names. Other schemes do nothing.
   followLink(url, cx) {
     if (/^https?:\/\//i.test(url)) return cx.open_url(url);
+    if (url.startsWith("#")) {
+      let anchor = url.slice(1);
+      try {
+        anchor = decodeURIComponent(anchor);
+      } catch {}
+      const index = this.previewBlocks().findIndex((block) => block.anchor === anchor.toLowerCase());
+      if (index >= 0) {
+        this.previewScroll?.scroll_to_item(index);
+        cx.notify();
+      }
+      return;
+    }
     const file = this.file;
     const path = resolvePath(parentOf(file.path), url);
     if (!path || path === file.path) return;
@@ -451,30 +512,154 @@ export const viewerMethods = {
     this.openFile({ path, root, on: file.on ?? null }, cx);
   },
 
-  previewImage(block) {
-    const name = block.alt || baseName(block.path);
-    if (this.file.on) return Message(`${name}: images on another machine can't be shown here.`);
-    const shown = this.markdownShown?.get(block.path);
-    if (shown === false) return Message(`${name} isn't available.`);
-    if (!shown) return Message("Loading…");
-    return image(this.markdownCopies.get(block.path)).max_w_full().flex_none();
+  // One picture. In a row (`small`), one that's loading or missing shows its name in small
+  // dim text instead of a message, so a row of badges stays a row.
+  previewImage(item, id, small = false) {
+    const t = theme();
+    const name = item.alt || baseName(item.path ?? item.url);
+    const note = (text) => (small ? div().flex_none().text_size(TEXT.caption).text_color(t.dim).child(text) : Message(text));
+    if (item.path && this.file.on) return note(`${name}: images on another machine can't be shown here.`);
+    const key = item.url ?? item.path;
+    const shown = this.markdownShown?.get(key);
+    if (shown === false) return note(small ? name : `${name} isn't available.`);
+    if (!shown) return note(small ? name : "Loading…");
+    const picture = image(this.markdownCopies.get(key))
+      .flex_none()
+      .max_w_full()
+      .when(Boolean(item.width), (el) => el.w(item.width))
+      .when(Boolean(item.height), (el) => el.h(item.height));
+    if (!item.href) return picture;
+    return div()
+      .id(id)
+      .flex_none()
+      .cursor_pointer()
+      .tooltip(item.href)
+      .on_click((_e, cx) => this.followLink(item.href, cx))
+      .child(picture);
+  },
+
+  // Lines of pictures, a row each: badges side by side, and a bullet where they were a list.
+  previewImages(block, i) {
+    const t = theme();
+    return v_flex()
+      .id(`viewer-images-${i}`)
+      .w_full()
+      .min_w(0)
+      .flex_none()
+      .gap(6)
+      .children(
+        block.rows.map((row, r) =>
+          h_flex()
+            .w_full()
+            .min_w(0)
+            .flex_wrap()
+            .gap(6)
+            .items_center()
+            .when(row.bullet, (el) => el.child(div().flex_none().w(14).text_color(t.dim).child("•")))
+            .children(row.items.map((item, n) => this.previewImage(item, `viewer-image-${i}-${r}-${n}`, true))),
+        ),
+      );
+  },
+
+  // A fenced block, drawn here rather than by TextView: the code font at the terminals' size,
+  // the lexer's colours, the language at the top left and a copy button at the top right.
+  previewCode(block, i) {
+    const t = theme();
+    const SYNTAX = syntaxColors(t);
+    block.runs ??= codeRuns(block);
+    const widest = block.text.split("\n").reduce((n, line) => Math.max(n, line.length), 0);
+    const copied = this.copiedCode === i;
+    return v_flex()
+      .id(`viewer-code-${i}`)
+      .w_full()
+      .min_w(0)
+      .flex_none()
+      .rounded(6)
+      .border_1()
+      .border_color(t.border)
+      .bg(t.raised)
+      .child(
+        h_flex()
+          .h(26)
+          .pl(10)
+          .pr(2)
+          .items_center()
+          .justify_between()
+          .child(div().text_size(TEXT.caption).text_color(t.dim).child(block.lang || " "))
+          .child(
+            IconButton({
+              id: `viewer-code-copy-${i}`,
+              icon: copied ? "check" : "copy",
+              label: copied ? "Copied" : "Copy code",
+              small: true,
+              onClick: (cx) => {
+                cx.write_to_clipboard(block.text);
+                this.copiedCode = i;
+                cx.timer.after(COPIED_MS, (cx) => {
+                  if (this.copiedCode !== i) return;
+                  this.copiedCode = null;
+                  cx.notify();
+                });
+                cx.notify();
+              },
+            }),
+          ),
+      )
+      .child(
+        div()
+          .id(`viewer-code-lines-${i}`)
+          .w_full()
+          .overflow_x_scrollbar()
+          .px(10)
+          .pb(8)
+          .child(
+            v_flex()
+              .min_w(Math.ceil(widest * CHAR_WIDTH * codeSize()))
+              .font_family(codeFont())
+              .text_size(codeSize())
+              .children(
+                block.runs.map((runs) =>
+                  h_flex()
+                    .h(rowHeight())
+                    .items_center()
+                    .whitespace_nowrap()
+                    .children(
+                      runs.map((run) =>
+                        div()
+                          .flex_none()
+                          .whitespace_nowrap()
+                          .text_color(SYNTAX[run.kind] ?? t.foreground)
+                          .child(run.text || " "),
+                      ),
+                    ),
+                ),
+              ),
+          ),
+      );
   },
 
   previewView() {
+    // `#anchor` links scroll to their heading's block, a direct child of this list.
+    this.previewScroll ??= ScrollHandle.new();
     return v_flex()
       .id("viewer-preview")
       .flex_1()
       .min_h(0)
       .min_w(0)
       .overflow_y_scrollbar()
+      .track_scroll(this.previewScroll)
       .px(24)
       .py(16)
       .gap(12)
       .children(
         this.previewBlocks().map((block, i) =>
           block.type === "image"
-            ? this.previewImage(block)
-            : Markdown(`viewer-md-${this.viewerId}-${i}`, block.text).on_link_click((url, cx) => this.followLink(url, cx)),
+            ? this.previewImage(block, `viewer-image-${i}`)
+            : block.type === "images"
+              ? this.previewImages(block, i)
+              : block.type === "code"
+                ? this.previewCode(block, i)
+                : Markdown(`viewer-md-${this.viewerId}-${i}`, block.text).on_link_click((url, cx) => this.followLink(url, cx)),
         ),
       );
   },

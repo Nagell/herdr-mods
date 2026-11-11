@@ -103,9 +103,12 @@ class BetterFiles extends View {
     });
   }
 
-  // A closing tab takes its copies of images with it.
+  // A closing tab takes its copies of images with it. Pictures from the web stay: every tab
+  // shares them, and they're downloaded again after a day.
   async close() {
-    const copies = [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter(Boolean);
+    const copies = [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter(
+      (c) => c && !c.startsWith("mods/better-files/cache/web-"),
+    );
     if (copies.length) await exec("rm", ["-f", "--", ...copies.map((c) => `${appHome()}/${c}`)], {}).catch(() => {});
   }
 

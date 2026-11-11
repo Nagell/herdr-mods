@@ -9,7 +9,7 @@ const root = path.join(__dirname, '../mods/better-files');
 const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 // syntax.js keeps a scope of its own, as a module does: its languageOf isn't model.js's.
 const lexer = fs.readFileSync(path.join(root, 'syntax.js'), 'utf8').replace(/^export /gm, '');
-const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage, WHOLE_FILE_LINES } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf, WHOLE_FILE_LINES };\n})();\n`
+const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage, WHOLE_FILE_LINES, fenceLanguage } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf, WHOLE_FILE_LINES, fenceLanguage };\n})();\n`
   + FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
     .join('\n')
     .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -58,7 +58,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   const context = {
     View: class {}, div: el, svg: (p) => { const e = el(); e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
-    Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
+    Scrollbar: { vertical: () => el() }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => { context.scrolledTo = i; }, release() {} }) }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
@@ -77,6 +77,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
       if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
+      if (bin === 'sh' && args[2] === 'fetch-image') return { code: 0, stdout: `${args[4]}.svg` };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
       if (bin === 'git' && args[0] === 'rev-parse') return top ? { code: 0, stdout: `${top}\n` } : { code: 128, stdout: '' };
@@ -633,17 +634,32 @@ test('every icon is used, every used icon exists, and nothing here can write a f
   assert.doesNotMatch(code, /panel-body|better-tabs|estro/i);
 });
 
-test('Markdown blocks keep every element whole for TextView, and pull out pictures on their own line', async () => {
+test('Markdown splits at headings, gives code its own blocks, and pulls out lines of pictures', async () => {
   const { context: m } = await ready();
   const blocks = (text, folder = '/repo/docs') => JSON.parse(JSON.stringify(m.markdownBlocks(text, folder)));
   const elements = [
-    '# Title', '## Sub', 'A paragraph with **bold**, *italic*, `code` and [a link](other.md).',
-    '```js\nconst x = 1;\n```', '- one\n  - nested\n    1. deeper\n- two', '1. first\n2. second',
-    '> quoted\n> more', '| a | b |\n| --- | --- |\n| 1 | 2 |', '---', '<https://example.com>',
+    'A paragraph with **bold**, *italic*, `code` and [a link](other.md).', '- one\n  - nested\n    1. deeper\n- two',
+    '1. first\n2. second', '> quoted\n> more', '| a | b |\n| --- | --- |\n| 1 | 2 |', '---', '<https://example.com>',
   ];
   for (const element of elements) assert.deepEqual(blocks(element), [{ type: 'text', text: element }], element);
   const doc = elements.join('\n\n');
-  assert.deepEqual(blocks(doc), [{ type: 'text', text: doc }], 'one document stays one block');
+  assert.deepEqual(blocks(doc), [{ type: 'text', text: doc }], 'text with no heading stays one block');
+  assert.deepEqual(blocks('Intro\n# About The Project\nText\n## About *The* Project!'), [
+    { type: 'text', text: 'Intro' },
+    { type: 'text', text: '# About The Project\nText', anchor: 'about-the-project' },
+    { type: 'text', text: '## About *The* Project!', anchor: 'about-the-project-1' },
+  ], 'each heading starts a block with the anchor GitHub gives it');
+  const refs = blocks('See [the docs][d].\n\n# Next\nMore\n\n[d]: https://x.dev');
+  assert.equal(refs.length, 2);
+  assert.ok(refs.every((b) => b.text.endsWith('[d]: https://x.dev')), 'every piece keeps the reference definitions');
+
+  assert.deepEqual(blocks('```js\nconst x = 1;\n```'), [{ type: 'code', lang: 'js', text: 'const x = 1;' }]);
+  assert.deepEqual(blocks('- pnpm\n   ```sh\n   npm install pnpm -g\n   ```'), [
+    { type: 'text', text: '- pnpm' },
+    { type: 'code', lang: 'sh', text: 'npm install pnpm -g' },
+  ], 'a fence in a list item, its indent taken off');
+  assert.deepEqual(blocks('~~~~\n```\n![x](a.png)\n~~~~'), [{ type: 'code', lang: '', text: '```\n![x](a.png)' }], 'a picture in a fence is code');
+
   assert.deepEqual(blocks('Intro\n\n![A shot](../pics/My%20Shot.PNG "title")\n\nAfter'), [
     { type: 'text', text: 'Intro\n' },
     { type: 'image', alt: 'A shot', path: '/repo/pics/My Shot.PNG' },
@@ -651,7 +667,28 @@ test('Markdown blocks keep every element whole for TextView, and pull out pictur
   ]);
   assert.deepEqual(blocks('![x](<my pic.jpeg>)\r'), [{ type: 'image', alt: 'x', path: '/repo/docs/my pic.jpeg' }], 'angle brackets and CRLF');
   assert.deepEqual(blocks('![abs](/shots/a.gif)'), [{ type: 'image', alt: 'abs', path: '/shots/a.gif' }]);
-  for (const stays of ['```\n![x](a.png)\n```', '~~~~\n```\n![x](a.png)\n~~~~', '    ![x](a.png)', '- item\n  ![x](a.png)', 'see ![x](a.png) inline', '![web](https://x.dev/a.png)', '![doc](a.pdf)', '> ![x](a.png)'])
+  assert.deepEqual(blocks('![web](https://x.dev/a.png)'), [{ type: 'image', alt: 'web', url: 'https://x.dev/a.png' }], 'a picture from the web');
+
+  const badges = [
+    '* [![Nuxt][Nuxt.js]][Nuxt-url]', '* [![Vue][Vue.js]][Vue-url]', '',
+    '[Nuxt.js]: https://img.shields.io/badge/Nuxt', '[Nuxt-url]: https://nuxt.com',
+    '[Vue.js]: https://img.shields.io/badge/Vue', '[Vue-url]: https://vuejs.org',
+  ].join('\n');
+  assert.deepEqual(blocks(badges), [{
+    type: 'images',
+    rows: [
+      { bullet: true, items: [{ alt: 'Nuxt', url: 'https://img.shields.io/badge/Nuxt', href: 'https://nuxt.com' }] },
+      { bullet: true, items: [{ alt: 'Vue', url: 'https://img.shields.io/badge/Vue', href: 'https://vuejs.org' }] },
+    ],
+  }], 'reference badges in list items, one block of rows');
+  assert.deepEqual(blocks('    <img src="images/logo.png" alt="Logo" width="80" height="80">', '/repo'), [{
+    type: 'images', rows: [{ bullet: false, items: [{ alt: 'Logo', path: '/repo/images/logo.png', href: null, width: 80, height: 80 }] }],
+  }], 'an HTML picture, indented inside a <div>, with its size');
+  assert.deepEqual(blocks('<p><a href="https://x.dev"><img src="b.svg"></a> ![c](c.png)</p>', '/repo'), [{
+    type: 'images', rows: [{ bullet: false, items: [{ alt: '', path: '/repo/b.svg', href: 'https://x.dev' }, { alt: 'c', path: '/repo/c.png', href: null }] }],
+  }], 'pictures side by side, one of them a link');
+
+  for (const stays of ['    ![x](a.png)', '- item\n  ![x](a.png)', 'see ![x](a.png) inline', '![doc](a.pdf)', '> ![x](a.png)', '<div align="center">'])
     assert.ok(blocks(stays).every((b) => b.type === 'text'), `stays text: ${stays}`);
   assert.deepEqual(blocks(''), []);
   assert.deepEqual(blocks('\n\n  \n'), []);
@@ -725,6 +762,39 @@ test('links open on the web, or open a file here in the viewer', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(args.props.file)), { path: '/repo/docs/next.md', root: '/repo', on: null });
   link('../../elsewhere/x.md', h.cx);
   assert.equal(viewers(h).find((e) => e.file.path === '/elsewhere/x.md').file.root, '/elsewhere', 'outside the root, its own folder');
+});
+
+test('the preview draws code blocks, rows of badges from the web, and jumps to an anchor', async () => {
+  const readme = [
+    '# Title', '', 'See [the project](#about-the-project).', '', '## About The Project', 'Text', '',
+    '* [![Nuxt][n]][u]', '', '```sh', 'pnpm dev # start', '```', '',
+    '[n]: https://img.shields.io/badge/Nuxt', '[u]: https://nuxt.com',
+  ].join('\n');
+  const file = { path: '/repo/README.md', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/README.md': readme } });
+  const fetch = h.execs.find((e) => e[3] === 'fetch-image');
+  assert.equal(fetch[4], 'https://img.shields.io/badge/Nuxt', 'the badge is downloaded');
+  assert.match(fetch[5], /^\/app\/mods\/better-files\/cache\/web-[0-9a-f]+$/);
+  const render = () => h.mod.render();
+  const colorOf = (node, s) => (node?.nodes?.includes(s) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, s)).find(Boolean));
+
+  const code = find(render(), 'viewer-code-3');
+  assert.ok(code, 'the fence is a code block');
+  assert.match(strings(code), /sh/, 'its language at the top');
+  assert.equal(colorOf(code, '# start'), '#dim', 'a comment in it is grey');
+  click(h, 'viewer-code-copy-3');
+  assert.deepEqual([...h.clipboard], ['pnpm dev # start'], 'the copy button copies the code');
+
+  const badge = find(render(), 'viewer-image-2-0-0');
+  assert.match(strings(badge), /image:mods\/better-files\/cache\/web-[0-9a-f]+\.svg/);
+  click(h, 'viewer-image-2-0-0');
+  assert.deepEqual([...h.urls], ['https://nuxt.com'], 'a linked badge opens its link');
+
+  find(render(), 'viewer-md-v-0').handlers.link('#about-the-project', h.cx);
+  assert.equal(h.context.scrolledTo, 1, 'the anchor scrolls to its heading\'s block');
+
+  await h.mod.close();
+  assert.ok(!h.execs.some((e) => e[0] === 'rm' && e.some((a) => /web-/.test(a))), 'closing keeps the shared downloads');
 });
 
 test('env files, unknown types and each language\'s own keywords', async () => {

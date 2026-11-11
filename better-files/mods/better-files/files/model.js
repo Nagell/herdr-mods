@@ -57,41 +57,178 @@ export function resolvePath(folder, link) {
   return parts.join("/") || "/";
 }
 
-// A line that is only an image, not indented under a list item: `![alt](src)` or `![alt](<src> "title")`.
-const IMAGE_LINE = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+"[^"]*")?\s*\)\s*$/;
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+// A code fence, at any indent (one in a list item is indented): its indent, its run of
+// backticks or tildes, and what follows, the language.
+const FENCE = /^(\s*)(`{3,}|~{3,})(.*)$/;
+// `[label]: url "title"`, which reference links and images are resolved against.
+const REFERENCE = /^ {0,3}\[([^\]]+)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
+const HEADING = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
+const LIST_ITEM = /^([*+-]|\d{1,9}[.)])\s+/;
 
-// Markdown as blocks for the preview: Herdr's TextView draws the text, and an image on a
-// line of its own, from this computer, becomes an image block so it can be shown through
-// the cache like the image viewer. Code fences are kept whole, so an image in one stays text.
-// shortcut: an image inside a paragraph, list or table, or from the web, is left to TextView;
-// split those out too if they need to show.
-export function markdownBlocks(text, folder) {
-  const blocks = [];
-  let lines = [];
-  let fence = null;
-  const flush = () => {
-    if (lines.some((line) => line.trim())) blocks.push({ type: "text", text: lines.join("\n") });
-    lines = [];
+// The `#anchor` GitHub gives a heading: lower case, punctuation dropped, spaces as dashes.
+export function headingAnchor(title) {
+  return String(title)
+    .replace(/<[^>]*>/g, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_~]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+    .replace(/\s/g, "-");
+}
+
+const attribute = (tag, name) => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag)?.slice(1).find((v) => v != null);
+const pixels = (value) => (/^\d+$/.test(value ?? "") ? Number(value) : undefined);
+
+// A line made only of pictures, as `{ items }`, or null when anything else is on it:
+// `![alt](src)` and `![alt][ref]`, each maybe in a link (`[![alt](src)](href)`), and HTML
+// `<img>`, maybe in `<a href>` or a wrapper such as `<p>`. Markdown images must start the
+// line (or follow a list marker, kept as `bullet`); an indented one is code or belongs to the
+// item above. HTML may be indented, as it is inside a `<div>`.
+export function imageLine(line, refs, folder) {
+  let rest = line.replace(/\r$/, "");
+  const html = /^\s*</.test(rest);
+  let bullet = false;
+  const marker = LIST_ITEM.exec(rest);
+  if (marker) {
+    bullet = true;
+    rest = rest.slice(marker[0].length);
+  } else if (!html && /^\s/.test(rest)) return null;
+  const items = [];
+  let href = null;
+  const source = (src) => {
+    const link = String(src ?? "").trim();
+    if (/^https?:\/\//i.test(link)) return { url: link };
+    const path = resolvePath(folder, link);
+    return path && isImage(path) ? { path } : null;
   };
-  for (const line of String(text ?? "").split("\n")) {
+  const MD = /!\[([^\]]*)\](?:\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+"[^"]*")?\s*\)|\[([^\]]*)\])/y;
+  const LINK_END = /\](?:\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+"[^"]*")?\s*\)|\[([^\]]*)\])/y;
+  let at = 0;
+  const sticky = (pattern) => {
+    pattern.lastIndex = at;
+    const match = pattern.exec(rest);
+    if (match) at = pattern.lastIndex;
+    return match;
+  };
+  const markdownImage = () => {
+    const m = sticky(MD);
+    if (!m) return null;
+    const src = m[4] != null ? refs.get((m[4] || m[1]).toLowerCase()) : (m[2] ?? m[3]);
+    return { alt: m[1], ...source(src) };
+  };
+  while (at < rest.length) {
+    if (sticky(/\s+/y)) continue;
+    if (rest[at] === "[" && rest[at + 1] === "!") {
+      at++;
+      const item = markdownImage();
+      const end = item && sticky(LINK_END);
+      if (!end) return null;
+      items.push({ ...item, href: end[3] != null ? refs.get(end[3].toLowerCase()) ?? null : (end[1] ?? end[2]) });
+      continue;
+    }
+    if (rest[at] === "!") {
+      const item = markdownImage();
+      if (!item) return null;
+      items.push({ ...item, href });
+      continue;
+    }
+    if (!html && !bullet && rest[at] === "<") return null;
+    const tag = sticky(/<[^>]*>/y);
+    if (!tag) return null;
+    const name = /^<\/?([a-z]+)/i.exec(tag[0])?.[1]?.toLowerCase();
+    if (name === "img") {
+      const src = source(attribute(tag[0], "src"));
+      items.push({ alt: attribute(tag[0], "alt") ?? "", ...src, href, width: pixels(attribute(tag[0], "width")), height: pixels(attribute(tag[0], "height")) });
+    } else if (name === "a") href = tag[0].startsWith("</") ? null : (attribute(tag[0], "href") ?? null);
+    else if (!["p", "div", "span", "center", "picture", "source", "br"].includes(name)) return null;
+  }
+  const shown = items.filter((item) => item.path || item.url);
+  return shown.length ? { bullet, items: shown } : null;
+}
+
+// Markdown as blocks for the preview. Herdr's TextView draws the text, split at each heading so
+// an `#anchor` link can reach it (`anchor`), with the file's reference definitions added to
+// every piece so its reference links still resolve. Code fences become code blocks the viewer
+// draws itself. A line of pictures becomes an image block: one plain image as `image`, else
+// `images`, consecutive lines in one block, a row each. Pictures inside a paragraph, a quote
+// or under a list item are left to TextView.
+export function markdownBlocks(text, folder) {
+  const source = String(text ?? "").split("\n");
+  const refs = new Map();
+  const definitions = [];
+  let fence = null;
+  for (const line of source) {
     const opens = FENCE.exec(line);
     if (fence) {
-      if (opens && opens[1][0] === fence[0] && opens[1].length >= fence.length && !line.slice(opens[0].length).trim()) fence = null;
-    } else if (opens) fence = opens[1];
-    else {
-      const image = IMAGE_LINE.exec(line);
-      const path = image && resolvePath(folder, image[2] ?? image[3]);
-      if (path && isImage(path)) {
-        flush();
-        blocks.push({ type: "image", alt: image[1], path });
-        continue;
-      }
+      if (opens && opens[2][0] === fence[0] && opens[2].length >= fence.length && !opens[3].trim()) fence = null;
+      continue;
+    }
+    if (opens) {
+      fence = opens[2];
+      continue;
+    }
+    const ref = REFERENCE.exec(line);
+    if (ref) {
+      refs.set(ref[1].toLowerCase(), ref[2]);
+      definitions.push(line);
+    }
+  }
+  const appendix = definitions.length ? `\n\n${definitions.join("\n")}` : "";
+  const seen = new Map();
+  const blocks = [];
+  let lines = [];
+  let anchor = null;
+  const flush = () => {
+    if (lines.some((line) => line.trim() && !REFERENCE.test(line))) {
+      const block = { type: "text", text: lines.join("\n") + appendix };
+      if (anchor) block.anchor = anchor;
+      blocks.push(block);
+    }
+    lines = [];
+    anchor = null;
+  };
+  let code = null;
+  for (const line of source) {
+    if (code) {
+      const closes = FENCE.exec(line);
+      if (closes && closes[2][0] === code.fence[0] && closes[2].length >= code.fence.length && !closes[3].trim()) {
+        blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
+        code = null;
+      } else code.lines.push(line.replace(/\r$/, "").replace(new RegExp(`^ {0,${code.indent}}`), ""));
+      continue;
+    }
+    const opens = FENCE.exec(line);
+    if (opens && !(opens[2][0] === "`" && opens[3].includes("`"))) {
+      flush();
+      code = { fence: opens[2], indent: opens[1].length, lang: opens[3].trim().split(/[\s{,]/)[0], lines: [] };
+      continue;
+    }
+    const heading = HEADING.exec(line);
+    if (heading) {
+      flush();
+      const base = headingAnchor(heading[2]);
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      anchor = n ? `${base}-${n}` : base;
+    }
+    const row = !heading && imageLine(line, refs, folder);
+    if (row) {
+      flush();
+      const last = blocks.at(-1);
+      if (last?.type === "images") last.rows.push(row);
+      else blocks.push({ type: "images", rows: [row] });
+      continue;
     }
     lines.push(line);
   }
+  if (code) blocks.push({ type: "code", lang: code.lang, text: code.lines.join("\n") });
   flush();
-  return blocks;
+  // One plain picture on its own stays the simple shape the viewer has always drawn.
+  return blocks.map((block) => {
+    const only = block.type === "images" && block.rows.length === 1 && block.rows[0].items.length === 1 && !block.rows[0].bullet ? block.rows[0].items[0] : null;
+    return only && !only.href && !only.width && !only.height ? { type: "image", alt: only.alt, ...(only.path ? { path: only.path } : { url: only.url }) } : block;
+  });
 }
 
 export function languageOf(path) {
