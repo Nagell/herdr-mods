@@ -109,7 +109,7 @@ class BetterFiles extends View {
   // shares them, and they're downloaded again after a day.
   async close() {
     const copies = [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter(
-      (c) => c && !c.startsWith("mods/better-files/cache/web-"),
+      (c) => c && !c.startsWith("data/better-files/cache/web-"),
     );
     if (copies.length) await exec("rm", ["-f", "--", ...copies.map((c) => `${appHome()}/${c}`)], {}).catch(() => {});
   }

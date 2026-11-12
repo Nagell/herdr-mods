@@ -383,7 +383,7 @@ export const viewerMethods = {
       this.imageSerial = (this.imageSerial ?? 0) + 1;
       this.imageOld = this.imageCopy;
       const ext = file.path.split(".").pop().toLowerCase();
-      this.imageCopy = `mods/better-files/cache/${this.viewerId}-${this.imageSerial}.${ext}`;
+      this.imageCopy = `data/better-files/cache/${this.viewerId}-${this.imageSerial}.${ext}`;
       this.imageShown = null;
     }
     const copy = this.imageCopy;
@@ -463,7 +463,7 @@ export const viewerMethods = {
       if (!key || this.markdownCopying.has(key) || (path && file.on) || (url && this.markdownShown.has(key))) continue;
       this.markdownCopying.add(key);
       if (url) {
-        const base = `${appHome()}/mods/better-files/cache/${webName(url)}`;
+        const base = `${appHome()}/data/better-files/cache/${webName(url)}`;
         cx.spawn(async (cx) => {
           const result = await exec("sh", ["-c", FETCH_IMAGE, "fetch-image", url, base], {}).catch(() => null);
           this.markdownCopying.delete(key);
@@ -475,7 +475,7 @@ export const viewerMethods = {
         continue;
       }
       if (!this.markdownCopies.has(key))
-        this.markdownCopies.set(key, `mods/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
+        this.markdownCopies.set(key, `data/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
       const copy = this.markdownCopies.get(key);
       cx.spawn(async (cx) => {
         const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);

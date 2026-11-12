@@ -443,17 +443,17 @@ test('the setting can use Herdr\'s own editor instead', async () => {
 test('an image shows as a picture, with no text read and no gutter', async () => {
   const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, status: ' M shot.PNG\n', diff: '@@ -1 +1 @@\n' });
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /image:mods\/better-files\/cache\/v-1\.png/);
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /image:data\/better-files\/cache\/v-1\.png/);
   assert.equal(h.context.lastCode, undefined);
   const copy = h.execs.find((e) => e[1] === '-c' && e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/cache/v-1.png', ''], 'names go as arguments');
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/data/better-files/cache/v-1.png', ''], 'names go as arguments');
   h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
   h.tick();
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'viewer-image')), /cache\/v-2\.jpg/, 'a new file, a new name');
-  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[6], '/app/mods/better-files/cache/v-1.png', 'the old copy goes');
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[6], '/app/data/better-files/cache/v-1.png', 'the old copy goes');
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/cache/v-2.jpg']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/data/better-files/cache/v-2.jpg']);
   const gone = await ready({ mode: 'viewer', viewer: 'v', file, copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /no longer available/);
   assert.equal(markBars(h).length, 0);
@@ -735,14 +735,14 @@ test('a Markdown file opens in Preview; the toggle switches to Code and back, re
 test('the preview follows the file on disk, and shows its pictures through the cache', async () => {
   const h = await mdWorld();
   const copy = h.execs.find((e) => e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/cache/v-m1.png', '']);
-  assert.match(strings(h.mod.render()), /image:mods\/better-files\/cache\/v-m1\.png/);
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/data/better-files/cache/v-m1.png', '']);
+  assert.match(strings(h.mod.render()), /image:data\/better-files\/cache\/v-m1\.png/);
   h.live.texts['/repo/docs/guide.md'] = '# Changed';
   h.tick();
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'viewer-preview')), /md:# Changed/);
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/cache/v-m1.png']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/data/better-files/cache/v-m1.png']);
   const gone = await mdWorld({ copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /Shot isn't available/);
   const far = await mdWorld({ file: { ...MD, on: 'box' } });
@@ -774,7 +774,7 @@ test('the preview draws code blocks, rows of badges from the web, and jumps to a
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/README.md': readme } });
   const fetch = h.execs.find((e) => e[3] === 'fetch-image');
   assert.equal(fetch[4], 'https://img.shields.io/badge/Nuxt', 'the badge is downloaded');
-  assert.match(fetch[5], /^\/app\/mods\/better-files\/cache\/web-[0-9a-f]+$/);
+  assert.match(fetch[5], /^\/app\/data\/better-files\/cache\/web-[0-9a-f]+$/);
   const render = () => h.mod.render();
   const colorOf = (node, s) => (node?.nodes?.includes(s) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, s)).find(Boolean));
 
@@ -786,7 +786,7 @@ test('the preview draws code blocks, rows of badges from the web, and jumps to a
   assert.deepEqual([...h.clipboard], ['pnpm dev # start'], 'the copy button copies the code');
 
   const badge = find(render(), 'viewer-image-2-0-0');
-  assert.match(strings(badge), /image:mods\/better-files\/cache\/web-[0-9a-f]+\.svg/);
+  assert.match(strings(badge), /image:data\/better-files\/cache\/web-[0-9a-f]+\.svg/);
   click(h, 'viewer-image-2-0-0');
   assert.deepEqual([...h.urls], ['https://nuxt.com'], 'a linked badge opens its link');
 
