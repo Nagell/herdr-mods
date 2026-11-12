@@ -1,9 +1,10 @@
 // The design kit: Herdr's own conventions, measured from its shipped mods, as
 // tokens and small components. UI only: values in, callbacks out, no Git or
 // Herdr commands. Components return ordinary elements, so callers can chain.
-import { div, svg } from "gpui-kit";
+import { div, image, svg } from "gpui-kit";
 import { h_flex, v_flex, Popover, Textarea } from "gpui-base";
 import { theme, settings } from "herdr";
+import { fileIcon, isLight } from "../file-icons.js";
 
 // Plain px: Herdr scales a mod's sizes by zoom itself.
 export const TEXT = { badge: 10, caption: 11, small: 12, menu: 12.8, body: 13 };
@@ -38,6 +39,14 @@ export const codeFont = () => settings().font_family ?? "JetBrains Mono";
 export const codeSize = () => settings().font_size ?? 14;
 
 export const Icon = (name, size = 14) => svg(`${ICONS}/${name}.svg`).size(size).flex_none();
+
+// A file's or folder's icon: Better Icons' one when it's installed, else this mod's plain file,
+// tinted. Folders draw it only with the table. t: the theme the caller already holds.
+export function FileIcon({ icons, path, dir = false, open = false, color, t, size = 14 }) {
+  const picture = fileIcon(icons, path, { dir, open, light: isLight(t.background) });
+  if (picture) return image(picture).size(size).flex_none();
+  return Icon("file", size).text_color(color);
+}
 
 // A folder's first column.
 export function Chevron(open) {

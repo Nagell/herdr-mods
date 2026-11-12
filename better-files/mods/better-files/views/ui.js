@@ -1,9 +1,10 @@
 // The design kit: Herdr's own conventions, measured from its shipped mods, as
 // tokens and small components, with only what this mod uses. UI only: values in,
 // callbacks out. Components return ordinary elements, so callers can chain.
-import { div, svg } from "gpui-kit";
+import { div, image, svg } from "gpui-kit";
 import { h_flex, v_flex, Popover, Textarea, TextView } from "gpui-base";
 import { theme, settings } from "herdr";
+import { fileIcon, isLight } from "../files/file-icons.js";
 
 // Plain px: Herdr scales a mod's sizes by zoom itself.
 export const TEXT = { badge: 10, caption: 11, small: 12, tab: 12.8, body: 13 };
@@ -16,6 +17,13 @@ export const codeSize = () => settings().font_size ?? 14;
 
 export const Icon = (name, size = 14) =>
   svg(`mods/better-files/icons/${name}.svg`).size(size).flex_none();
+
+// A file's or folder's icon: Better Icons' full-colour one when it's installed, else this
+// mod's own, tinted. t: the theme the caller already holds, so a row asks Herdr for nothing more.
+export function FileIcon({ icons, path, dir = false, open = false, color, t, size = 14 }) {
+  const picture = fileIcon(icons, path, { dir, open, light: isLight(t.background) });
+  return picture ? image(picture).size(size).flex_none() : Icon(dir ? "folder" : "file", size).text_color(color);
+}
 
 // A sidebar panel's frame.
 export function Panel({ id }) {

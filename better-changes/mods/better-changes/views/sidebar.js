@@ -7,7 +7,7 @@ import {
   TEXT,
   SPIN_MS,
   codeFont,
-  Icon,
+  FileIcon,
   Chevron,
   Panel,
   PanelHeader,
@@ -376,6 +376,9 @@ export const sidebarMethods = {
       },
     })
       .child(Chevron(!closed))
+      .when(Boolean(this.fileIcons), (el) =>
+        el.child(FileIcon({ icons: this.fileIcons, path: `${this.root}/${row.path}`, dir: true, open: !closed, t })),
+      )
       .child(div().flex_1().min_w(0).truncate().child(row.name));
   },
 
@@ -398,7 +401,7 @@ export const sidebarMethods = {
       depth,
       selected: open?.path === file.path && open?.scope === scope,
       onClick: (cx) => this.pick(file, scope, cx),
-    }).child(Icon("file", 14).text_color(t.muted));
+    }).child(FileIcon({ icons: this.fileIcons, path: `${this.root}/${file.path}`, color: t.muted, t }));
     if (tree) row.child(div().flex_1().min_w(0).truncate().child(name));
     else
       row.child(

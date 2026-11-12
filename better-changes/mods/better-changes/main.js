@@ -10,6 +10,7 @@ import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";
 import { loadSettings, duration } from "./settings.js";
+import { followFileIcons } from "./file-icons.js";
 import { panelCommands } from "./panel.js";
 import { gitMethods } from "./git/repository.js";
 import { sidebarMethods } from "./views/sidebar.js";
@@ -50,6 +51,7 @@ class BetterChanges extends View {
       ...(shared("mod-icons") ?? {}),
       "better-changes": "mods/better-changes/icons/file.svg",
     });
+    followFileIcons(this, cx);
 
     this.tab = localStorage.getItem("tab") === "commit" ? "commit" : "changes";
     this.view = localStorage.getItem("view") === "flat" ? "flat" : "tree";

@@ -3,7 +3,8 @@ import { div } from "gpui-kit";
 import { h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, readTextFile, theme, shared, setShared, run, layout } from "herdr";
 import { diffRows, splitDiffRows, conflictRows } from "../git/model.js";
-import { TEXT, SIZE, codeFont, codeSize, Icon, Panel, PaneBar, DiffStat, Message, TextButton } from "./ui.js";
+import { TEXT, SIZE, codeFont, codeSize, FileIcon, Panel, PaneBar, DiffStat, Message, TextButton } from "./ui.js";
+import { fileIcon, isLight } from "../file-icons.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
 const NO_PATCH = "No text diff: GitHub leaves out binary and very large files.";
@@ -307,10 +308,12 @@ export const diffMethods = {
       patch: this.commitRef?.short,
     };
     const scope = file?.conflict ? this.conflictLabel() : scopes[this.scope];
+    const picture = this.path && fileIcon(this.fileIcons, `${this.root}/${this.path}`, { light: isLight(theme().background) });
     return {
       title,
       detail: [parts.join("/"), scope].filter(Boolean).join(" · "),
-      icon: "mods/better-changes/icons/file.svg",
+      // color: a full-colour picture, which the pane header draws untinted.
+      ...(picture ? { icon: picture, color: true } : { icon: "mods/better-changes/icons/file.svg" }),
       add: file?.add ?? 0,
       del: file?.del ?? 0,
     };
@@ -352,7 +355,7 @@ export const diffMethods = {
     const t = theme();
     const head = this.head();
     return PaneBar()
-      .child(Icon("file", 14).text_color(t.dim))
+      .child(FileIcon({ icons: this.path && this.fileIcons, path: `${this.root}/${this.path}`, color: t.dim, t }))
       .child(div().flex_none().truncate().max_w(260).font_medium().child(head.title))
       .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))
       .child(DiffStat(head))

@@ -12,6 +12,7 @@ A Git panel for Herdr Desktop, built to look like Herdr's own panels: file chang
 - **Commits** lists history, grouped by your branch and its remote, and opens any commit's description and changes, with a link to GitHub for commits already pushed.
 - A commit box with **Commit** and **Amend**.
 - Local and remote spaces: Git and file reads run on the space's machine.
+- **Icons:** with [Better Icons](../better-icons/README.md) installed, changed files and their folders get colour icons from VS Code's Material Icon Theme, in the lists and the diff's header. Without it, files keep the plain icon and folders have none.
 
 ## Install only this mod
 

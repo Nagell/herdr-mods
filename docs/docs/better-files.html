@@ -33,6 +33,7 @@
         <a href="better-sidebar.html">Better Sidebar</a>
         <a href="better-tabs.html">Better Tabs</a>
         <a href="better-config.html">Better Config</a>
+        <a href="better-icons.html">Better Icons</a>
         <h4>Branch panels</h4>
         <a href="branch-pr.html">Branch PR</a>
         <a href="branch-issue.html">Branch Issue</a>
@@ -43,7 +44,7 @@
 <article class="doc" id="better-files">
   <h2>Better Files</h2>
   <p class="lead">A read-only file browser for Herdr Desktop that opens files in the centre pane, beside your agents. For people directing agents: see where an agent has been, read what it wrote, and hand a file to one.</p>
-  <p class="meta-line"><span>Version 1.3.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 1.4.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="../gifs/better-files.gif" alt="Better Files in Herdr" width="1440" height="802"></figure>
 
   <h3 id="better-files-start">Quick start</h3>
@@ -73,6 +74,7 @@
     <li><b>Changed lines:</b> lines that differ from the last commit are tinted with a bar at their edge: green added, yellow changed, and a thin red line where lines were removed. Click a yellow line or the red line to show the old lines in place; click again to close. <b>Expand all</b>, beside Open in, opens or closes them all. Text can't be selected and there's no folding in this view; use <b>Open in</b>, or turn <code>gutter</code> off.</li>
     <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>mods/better-files/cache/</code>, removed when its tab closes.</li>
     <li><b>Markdown:</b> a <code>.md</code> or <code>.markdown</code> file opens rendered in Herdr's own Markdown view, with text you can select. <b>Preview</b> and <b>Code</b>, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice. A web link opens in your browser, and a link to another file here opens it in the viewer. A picture on a line of its own, from this computer, shows inline. The preview follows the file as it changes.</li>
+    <li><b>Icons:</b> with <a href="https://github.com/munza/herdr-mods/tree/main/better-icons">Better Icons</a> installed, every file and folder gets its colour icon from VS Code's Material Icon Theme, in the tree and in the tab's title row. Without it, they keep the plain file and folder icons.</li>
     <li><b>Open in</b> your editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with <code>editors</code>. The folder icon beside refresh opens the whole folder in an editor or Finder.</li>
     <li><b>Right-click</b> a file or folder for: <b>Open</b> and <b>Open in new tab</b>; <b>Open in</b> each editor; <b>Open in default app</b>; <b>Show in Finder</b>; <b>Show diff</b> (opens a changed file's diff in <a href="better-changes.html">Better Changes</a>, if you have it); <b>Copy relative path</b> and <b>Copy full path</b>.</li>
     <li><b>Send to an agent:</b> from the right-click menu, pick an agent that's running, <b>(spawn)</b> to start a sub-agent under it, or a new one in its own tab. A box asks what it should do; only <b>Send</b> delivers. The agent gets your prompt and the path, not the file's text.</li>

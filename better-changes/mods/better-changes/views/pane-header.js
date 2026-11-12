@@ -42,7 +42,9 @@ export const paneHeaderMethods = {
     const name = (isProgram && p.program.name) || p.title || p.program?.name || "shell";
     const head = shared("pane-heads")?.[p.pane];
     const pic = head?.icon
-      ? svg(head.icon).size(14).flex_none().text_color(t.dim)
+      ? head.color
+        ? image(head.icon).size(14).flex_none()
+        : svg(head.icon).size(14).flex_none().text_color(t.dim)
       : programIcon(p.program, 14, t.dim);
     const pane = p.pane;
 

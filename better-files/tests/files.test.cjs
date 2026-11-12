@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(root, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -53,7 +53,7 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
   }
   const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; }, on() {}, focus() {}, release() { this.released = true; } });
   const context = {
-    View: class {}, div: el, svg: el, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
+    View: class {}, div: el, svg: (p) => { const e = el(); e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
     Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
     Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
@@ -320,6 +320,28 @@ test('there is one title: the pane header with Better Changes\' header, else the
   assert.equal(h.store.get('pane-heads').p2.detail, 'src');
   const own = await ready({ layout: { content: { pane: { header: { content: { mod: 'pane' } } } } }, mode: 'viewer', viewer: 'v', file, texts: { '/repo/src/main.go': 'x' } });
   assert.match(strings(find(own.mod.render(), 'viewer-bar')), /main\.go[\s\S]*src/);
+});
+
+test('with Better Icons installed, rows and the title show its icons; without it, the plain ones', async () => {
+  const PACK = { '/app/mods/better-icons/icons.json': fs.readFileSync(path.join(__dirname, '../../better-icons/mods/better-icons/icons.json'), 'utf8') };
+  const icon = (h, id) => strings(find(h.mod.render(), id).nodes[1]);
+  const h = await ready({ texts: PACK });
+  assert.equal(icon(h, 'files-row-src'), 'image:mods/better-icons/icons/folder-src.svg');
+  assert.equal(icon(h, 'files-row-a.md'), 'image:mods/better-icons/icons/markdown.svg');
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.equal(icon(h, 'files-row-src'), 'image:mods/better-icons/icons/folder-src-open.svg');
+  assert.equal(icon(h, 'files-row-src/main.go'), 'image:mods/better-icons/icons/go.svg');
+  const plain = await ready();
+  assert.equal(icon(plain, 'files-row-src'), 'svg:mods/better-files/icons/folder.svg');
+  assert.equal(icon(plain, 'files-row-a.md'), 'svg:mods/better-files/icons/file.svg');
+  assert.doesNotMatch(strings(plain.mod.render()), /image:/);
+  const file = { path: '/repo/src/main.go', root: '/repo', on: null };
+  const bar = (texts) => ready({ layout: { content: { pane: { header: { content: { mod: 'pane' } } } } }, mode: 'viewer', viewer: 'v', file, texts: { '/repo/src/main.go': 'x', ...texts } });
+  assert.equal(strings(find((await bar(PACK)).mod.render(), 'viewer-bar').nodes[0]), 'image:mods/better-icons/icons/go.svg');
+  assert.equal(strings(find((await bar({})).mod.render(), 'viewer-bar').nodes[0]), 'svg:mods/better-files/icons/file.svg');
+  const outside = await ready({ layout: { content: { pane: { header: { content: { mod: 'pane' } } } } }, mode: 'viewer', viewer: 'v', file: { path: '/elsewhere/Dockerfile', root: '/repo/src', on: null }, texts: { '/elsewhere/Dockerfile': 'x', ...PACK } });
+  assert.equal(strings(find(outside.mod.render(), 'viewer-bar').nodes[0]), 'image:mods/better-icons/icons/docker.svg');
 });
 
 test('git diff becomes changes by the file\'s lines as they are now, with what they replaced', async () => {

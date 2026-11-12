@@ -52,6 +52,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
     "SIZE",
     "codeFont",
     "Icon",
+    "FileIcon",
     "Chevron",
     "Panel",
     "PanelHeader",
@@ -98,7 +99,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
       },
     }),
   };
-  const source = ["settings.js", "git/reads.js", "git/repository.js", "views/sidebar.js", "views/diff.js", "views/pane-header.js", "main.js"]
+  const source = ["settings.js", "file-icons.js", "git/reads.js", "git/repository.js", "views/sidebar.js", "views/diff.js", "views/pane-header.js", "main.js"]
     .map(read)
     .join("\n");
   const Mod = new Function(...Object.keys(env), source)(...Object.values(env));
@@ -669,4 +670,20 @@ test("a handed-over patch, as from Branch PR, shows without reading Git's diff",
   await cx.settle();
   assert.deepEqual(mod.rows.map((row) => row.text).filter((text) => text === "old" || text === "new"), ["old", "new"]);
   assert.deepEqual(mod.head(), { title: "a.go", detail: "src · PR #5", icon: "mods/better-changes/icons/file.svg", add: 1, del: 1 });
+});
+
+test("with Better Icons installed, the diff's head carries its full-colour icon", async () => {
+  const { root } = repo();
+  const source = { cwd: root, on: null };
+  const file = { path: "src/a.go", add: 1, del: 1, patch: "@@ -1 +1 @@\n-old\n+new" };
+  const selection = { context: JSON.stringify(source), path: file.path, scope: "patch", commit: { short: "PR #5" }, file, at: 1 };
+  const home = path.join(__dirname, "../../better-icons");
+  const { mod, cx } = load(root, { home, props: { mode: "diff", space: "s", source, selection } });
+  await cx.settle();
+  assert.ok(mod.fileIcons, "the table loaded");
+  const head = mod.head();
+  assert.equal(head.icon, "mods/better-icons/icons/go.svg");
+  assert.equal(head.color, true);
+  mod.path = null;
+  assert.equal(mod.head().icon, "mods/better-changes/icons/file.svg", "no file, no picture from the repo's folder name");
 });

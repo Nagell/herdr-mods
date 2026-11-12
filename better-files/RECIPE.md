@@ -6,7 +6,7 @@ A read-only file browser for a person's Herdr window, for directing agents rathe
 
 One framed sidebar panel, radius 10, with a 42px header: the plain title Files with the folder's name in a badge, and on the right a folder icon, a menu opening the folder in each editor or Finder (this computer only), and refresh.
 
-Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. A file or diff tab has no folder, so focusing one leaves the tree where it was.
+Below is a tree for the focused pane's folder: 26px rows of chevron, icon, name and a Git letter, directories first, with a dot on a folder holding changes. The icon is the plain file or folder in `muted`, or, when Better Icons is installed, its full-colour Material icon at 14px, open folders with their open icon. A file or diff tab has no folder, so focusing one leaves the tree where it was.
 
 A click opens the file in one shared centre tab per space, named after the file, or goes to its tab if it's already open. A double-click keeps that tab, and never opens a second. The next click starts a new shared tab.
 
@@ -34,9 +34,11 @@ Changed lines come from `git diff -U0 HEAD`, with external diff and text convers
 
 The Markdown preview is gpui-base's `TextView.markdown`, as Herdr's own PR mod uses it, wrapped as `Markdown` in `views/ui.js`, selectable and not scrolling on its own. `markdownBlocks` in `files/model.js` splits the file only where an unindented line is just a local image, outside code fences, so each such picture is copied into the cache and drawn with `image()` like an image file; everything else goes to TextView whole. Links come back through `on_link_click`: `http(s)` goes to `cx.open_url`, a path is resolved from the file's folder and opened as a tree click would, and anchors and other schemes do nothing. The choice is `markdown: "preview" | "code"` on the viewer's registry entry. A tab's copies, its image and its Markdown pictures, are removed when it closes.
 
+Each view calls `followFileIcons(this, cx)` from `files/file-icons.js`, a copy of Better Icons' own, kept identical, which keeps `this.fileIcons` current and redraws on an install or update. `fileIcon` picks a row's picture by its full path, and `image()` draws it, since `svg()` would tint it one colour. With no table, `FileIcon` in `views/ui.js` draws the mod's own tinted icon. The tab's title row uses the same icon, and so does the head published to `shared("pane-heads")`: with `color: true` when it's full colour, so Better Changes' header draws it untinted.
+
 ## Built from
 
-`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
+`mods/better-files/`: `main.js`, `settings.js` (shared between this repo's mods), `files/file-icons.js` (shared the same way), `mod.json` (`place: none`, title Better Files), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `files/` (`model.js`, `reads.js`), `actions/` (`open.js`, `outside.js`, `agents.js`, `menus.js`), `views/` (`ui.js`, `tree.js`, `viewer.js`, `context-menu.js`), `icons/`. Adapted from Herdr's shipped Files mod.
 
 ## Watch out
 

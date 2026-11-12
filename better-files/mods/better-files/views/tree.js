@@ -6,7 +6,7 @@ import { baseName, holdsChange, TOTAL_ROWS } from "../files/model.js";
 import { viewerEntries } from "../actions/open.js";
 import { foundEditors } from "../actions/outside.js";
 import { agentName } from "../actions/agents.js";
-import { TEXT, Badge, Button, Chevron, Icon, markColor, IconButton, Message, Panel, PanelHeader, StatusLetter, TextBox } from "./ui.js";
+import { TEXT, Badge, Button, Chevron, FileIcon, Icon, markColor, IconButton, Message, Panel, PanelHeader, StatusLetter, TextBox } from "./ui.js";
 
 const INDENT = 14;
 const FOLDER_LABEL = 28;
@@ -85,7 +85,7 @@ export const treeMethods = {
         this.showRowMenu(this.targetOf(relative, dir));
       })
       .child(dir ? Chevron(open) : div().w(14).flex_none())
-      .child(Icon(dir ? "folder" : "file", 14).text_color(t.muted))
+      .child(FileIcon({ icons: this.fileIcons, path, dir, open, color: t.muted, t }))
       .child(
         div()
           .flex_1()
