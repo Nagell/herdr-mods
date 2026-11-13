@@ -100,7 +100,7 @@
         },
         "gutter": {
           "title": "Changed lines",
-          "description": "Tint changed lines. Off uses Herdr's own editor instead: fuller highlighting, selection and folding, but no line colours.",
+          "description": "Tint changed lines. Off uses Herdr's own editor instead: selection, folding and a real grammar, but no line colours, and no TypeScript or Vue grammar.",
           "type": "boolean",
           "default": true
         },

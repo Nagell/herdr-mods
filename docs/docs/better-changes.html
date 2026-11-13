@@ -44,7 +44,7 @@
 <article class="doc" id="better-changes">
   <h2>Better Changes</h2>
   <p class="lead">A Git panel for Herdr Desktop that looks like Herdr's own panels: file changes, staging, commits and history in a right sidebar, with diffs in the centre. For anyone who wants to check and commit what their agents changed without leaving Herdr.</p>
-  <p class="meta-line"><span>Version 2.4.0</span><span>Needs: Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-changes">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 2.5.0</span><span>Needs: Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-changes">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="../gifs/better-changes.gif" alt="Better Changes in Herdr" width="1280" height="870"></figure>
 
   <h3 id="better-changes-start">Quick start</h3>
@@ -72,6 +72,7 @@
     <li><b>Staging:</b> <b>+</b> and <b>−</b> on a row stage or unstage that file. <b>Stage all</b> and <b>Unstage all</b> act on the whole repository except conflicts. Working files on disk are never changed.</li>
     <li><b>View menu (⋮):</b> picks <b>Flat</b> or <b>Tree</b> for file lists, and <b>Inline</b> or <b>Side by side</b> for diffs.</li>
     <li><b>Diffs:</b> clicking a file opens its diff in one reusable centre tab per space, named after the file. It comes back to that file after a restart.</li>
+    <li><b>Syntax colours:</b> a diff's code shows keywords, strings, comments, numbers, constants, function calls, types, Vue/HTML/JSX tags and attributes, and JSON/YAML keys in colour. A block comment or template string stays coloured on the lines after it. The sign and a tinted background mark added and removed lines.</li>
     <li><b>Full file:</b> hover the diff's header row and choose <b>Full file</b> to see the whole file with its changes marked. It stays on for every diff until you turn it off, and still stops at <code>limits.diff_lines</code>.</li>
     <li><b>Commit and Amend:</b> type a message in the box at the bottom; <b>Enter</b> makes a new line and only the button commits. The chevron switches between <b>Commit</b> and <b>Amend</b> without running either. Commit takes only what is staged. Amend rewrites the latest commit and can change just its message; it loads the latest message into an empty box, never over your text, and stops if the latest commit moved meanwhile. A failure keeps your message. The mod never pushes.</li>
     <li><b>Conflicts:</b> conflicted files get their own group at the top, each saying what kind it is, such as "both edited". Opening one shows only the conflict blocks with Git's <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code> and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers and the file's real line numbers. Side by side puts yours on the left and incoming on the right. Resolving is left to an agent or your editor, and Commit and Amend stay off until no conflicts remain.</li>

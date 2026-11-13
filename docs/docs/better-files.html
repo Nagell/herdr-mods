@@ -44,7 +44,7 @@
 <article class="doc" id="better-files">
   <h2>Better Files</h2>
   <p class="lead">A read-only file browser for Herdr Desktop that opens files in the centre pane, beside your agents. For people directing agents: see where an agent has been, read what it wrote, and hand a file to one.</p>
-  <p class="meta-line"><span>Version 1.4.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 1.5.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="../gifs/better-files.gif" alt="Better Files in Herdr" width="1440" height="802"></figure>
 
   <h3 id="better-files-start">Quick start</h3>
@@ -72,6 +72,7 @@
     <li><b>Double-click</b>, or <b>Keep tab</b>, to keep that tab. The next click starts a new shared tab.</li>
     <li><b>File view:</b> read-only, at your terminal's font size, and follows the file as it changes on disk. Binary and unreadable files say so, and very long files are cut at 400,000 characters.</li>
     <li><b>Changed lines:</b> lines that differ from the last commit are tinted with a bar at their edge: green added, yellow changed, and a thin red line where lines were removed. Click a yellow line or the red line to show the old lines in place; click again to close. <b>Expand all</b>, beside Open in, opens or closes them all. Text can't be selected and there's no folding in this view; use <b>Open in</b>, or turn <code>gutter</code> off.</li>
+    <li><b>Syntax colours:</b> the file view's code shows keywords, strings, comments, numbers, constants, function calls, types, Vue/HTML/JSX tags and attributes, and JSON/YAML keys in colour. A block comment or template string stays coloured on the lines after it. It's a small lexer, not a grammar, the same one Better Changes uses for diffs.</li>
     <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>mods/better-files/cache/</code>, removed when its tab closes.</li>
     <li><b>Markdown:</b> a <code>.md</code> or <code>.markdown</code> file opens rendered in Herdr's own Markdown view, with text you can select. <b>Preview</b> and <b>Code</b>, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice. A web link opens in your browser, and a link to another file here opens it in the viewer. A picture on a line of its own, from this computer, shows inline. The preview follows the file as it changes.</li>
     <li><b>Icons:</b> with <a href="https://github.com/munza/herdr-mods/tree/main/better-icons">Better Icons</a> installed, every file and folder gets its colour icon from VS Code's Material Icon Theme, in the tree and in the tab's title row. Without it, they keep the plain file and folder icons.</li>
@@ -89,7 +90,7 @@
     <tr><td><code>refresh.tree</code></td><td><code>"10s"</code></td><td>How often the tree rereads, on top of watching the folder. Never closer than 1 second.</td></tr>
     <tr><td><code>refresh.file</code></td><td><code>"2s"</code></td><td>How often an open file is checked for changes. Never closer than 500ms.</td></tr>
     <tr><td><code>editors</code></td><td><code>[]</code></td><td>More editors for Open in, each <code>{ "name": "PhpStorm", "bundle": "com.jetbrains.PhpStorm" }</code> by macOS app ID. Shown only if installed.</td></tr>
-    <tr><td><code>gutter</code></td><td><code>true</code></td><td>Tint changed lines. Off uses Herdr's own editor: fuller highlighting, selection and folding, but no line colours.</td></tr>
+    <tr><td><code>gutter</code></td><td><code>true</code></td><td>Tint changed lines. Off uses Herdr's own editor: selection, folding and a real grammar, but no line colours. Its grammars have no TypeScript or Vue, so those are highlighted as JavaScript and HTML.</td></tr>
     <tr><td><code>markdown</code></td><td><code>"preview"</code></td><td>How a Markdown file first opens: <code>"preview"</code> or <code>"code"</code>. The toggle in a tab overrides it for that tab.</td></tr>
   </tbody></table>
 

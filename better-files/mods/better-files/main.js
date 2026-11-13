@@ -10,7 +10,8 @@
 //   actions/agents.js     sending a file to an agent
 //   actions/menus.js      popup menus
 //   views/tree.js, viewer.js, context-menu.js   the drawing
-// files/model.js says what the data means; views/ui.js holds every look.
+// files/model.js says what the data means; views/ui.js holds every look but the token
+// colours: syntax.js colours the file view's code, and Better Changes has the same file.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";

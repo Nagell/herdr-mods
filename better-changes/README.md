@@ -9,6 +9,7 @@ A Git panel for Herdr Desktop, built to look like Herdr's own panels: file chang
 - The **⋮** menu picks **Flat** or **Tree** for file lists, and **Inline** or **Side by side** for diffs.
 - **Full file**, shown when you hover over the diff's header row, shows the whole file with its changes marked, instead of only the changed lines. It applies to every diff until you turn it off. A diff still stops at `limits.diff_lines`.
 - Clicking a file opens its diff in one reusable centre tab, named after the file. It comes back to that file after a restart.
+- **Syntax colours** in diffs: keywords, strings, comments, numbers, constants, function calls, types, Vue/HTML/JSX tags and attributes, and JSON/YAML keys. A block comment or template string stays coloured on the lines after it. The sign and a tinted background mark added and removed lines.
 - **Commits** lists history, grouped by your branch and its remote, and opens any commit's description and changes, with a link to GitHub for commits already pushed.
 - A commit box with **Commit** and **Amend**.
 - Local and remote spaces: Git and file reads run on the space's machine.
@@ -92,9 +93,9 @@ Colors show additions and removals, not whether a person or an agent wrote the l
 
 In `mods/better-changes/`:
 
-- `main.js`: setup, settings and commands. `settings.js`: shared with the other mods. `panel.js`: what the panel key does, with no Herdr calls.
+- `main.js`: setup, settings and commands. `settings.js`: shared with the other mods. `panel.js`: what the panel key does, with no Herdr calls. `syntax.js`: the lexer that colours a diff's code, the same file as Better Files'.
 - `git/repository.js`: following the repository, the index, history, commit and amend. `git/reads.js`: plain functions that read from Git. `git/model.js`: parsing with no Herdr calls.
-- `views/sidebar.js`, `views/diff.js`, `views/pane-header.js`: the three things it can draw. `views/ui.js`: the design kit, Herdr's sizes and small components. Every look lives here.
+- `views/sidebar.js`, `views/diff.js`, `views/pane-header.js`: the three things it can draw. `views/ui.js`: the design kit, Herdr's sizes and small components. Every look lives here, except the token colours, which are in `syntax.js`.
 - `icons/`: Lucide icons, the set Herdr uses, and Herdr's own pane header icons.
 
 - `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.

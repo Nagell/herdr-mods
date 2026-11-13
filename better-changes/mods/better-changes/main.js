@@ -5,7 +5,8 @@
 //   views/sidebar.js    the tabs, options menu, file groups and commit views
 //   views/diff.js       opening a file in the centre tab, reading it, and drawing it
 //   views/pane-header.js  the header row above a pane
-// git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look.
+// git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look
+// but the token colours: syntax.js colours a diff's code, and Better Files has the same file.
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";

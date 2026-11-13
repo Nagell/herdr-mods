@@ -17,6 +17,7 @@ const MODEL_NAMES =
   "conflictRows, changedFiles, fileTree, diffRows, splitDiffRows, parseLog, commitFiles, timeAgo, githubRepo";
 const model = new Function(`${read("git/model.js")}; return { ${MODEL_NAMES} };`)();
 const { panelCommands } = new Function(`${read("panel.js")}; return { panelCommands };`)();
+const syntax = new Function(`${read("syntax.js")}; return { languageOf, syntaxColors, tokenizeLine, WHOLE_FILE_LINES };`)();
 
 function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {}) {
   const store = new Map();
@@ -25,6 +26,7 @@ function load(cwd, { props, saved, home = "/nonexistent", tree, calls = [] } = {
   const stub = new Proxy(() => stub, { get: () => stub, apply: () => stub });
   const env = {
     ...model,
+    ...syntax,
     panelCommands,
     closeOverlay: (id) => calls.push(["closeOverlay", id]),
     notify: ({ title }) => calls.push(["notify", title]),
@@ -686,4 +688,25 @@ test("with Better Icons installed, the diff's head carries its full-colour icon"
   assert.equal(head.color, true);
   mod.path = null;
   assert.equal(mod.head().icon, "mods/better-changes/icons/file.svg", "no file, no picture from the repo's folder name");
+});
+
+test("a diff is coloured per side, and a hunk header starts both sides afresh", async () => {
+  const { root } = repo();
+  const source = { cwd: root, on: null };
+  const patch = ['@@ -1,3 +1,3 @@', " /* a", "-old */ x", '+new */ "y"', "-/* gone", "+let kept", "@@ -9 +9 @@", "-*/ z", "+const w = 1"].join("\n");
+  const file = { path: "src/a.js", add: 3, del: 3, patch };
+  const selection = { context: JSON.stringify(source), path: file.path, scope: "patch", commit: { short: "PR #5" }, file, at: 1 };
+  const { mod, cx } = load(root, { props: { mode: "diff", space: "s", source, selection } });
+  await cx.settle();
+  const coloured = (text) => {
+    const row = mod.rows.find((r) => r.text === text);
+    assert.ok(row, `no row ${text}`);
+    return mod.runsOf(row).filter((r) => r.kind).map((r) => [r.text, r.kind]);
+  };
+  assert.deepEqual(coloured("old */ x"), [["old */", "comment"]], "a comment opened in context carries to the old side");
+  assert.deepEqual(coloured('new */ "y"'), [["new */", "comment"], ['"y"', "string"]], "and to the new side");
+  assert.deepEqual(coloured("let kept"), [["let", "keyword"]], "a comment opened on the old side stays there");
+  assert.deepEqual(coloured("*/ z"), [], "a hunk header starts afresh");
+  assert.deepEqual(coloured("const w = 1"), [["const", "keyword"], ["1", "number"]]);
+  assert.equal(mod.runsOf(mod.rows.find((r) => r.kind === "@")), null);
 });
