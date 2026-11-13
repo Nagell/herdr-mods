@@ -41,17 +41,26 @@ export const viewerMethods = {
   // Runs as the tab opens, which is when the focused tab is its own.
   claimTab() {
     const entry = this.viewerEntry();
-    if (entry?.tab) return;
+    const where = this.tabSpaces();
+    const holds = (other) => Boolean(other.tab) && !this.wrongTab(other, where);
+    // A tab recorded from another space isn't this one, so it keeps looking for its own.
+    if (entry && holds(entry)) return;
+    const space = entry?.space ?? this.viewerSpace;
     const tab = focused()?.tab;
     if (!tab || !panes().some((p) => p.tab === tab && p.mod === "better-files")) return;
-    // A tab reopened behind another one must not take that one's place.
-    if (Object.values(viewerEntries()).some((other) => other.tab === tab)) return;
-    if (entry?.others?.includes(tab)) return;
     // Focus can sit in another space while this tab opens; that space's tab isn't this one.
-    if (!this.tabInSpace(tab, entry?.space ?? this.viewerSpace)) return;
+    if ((where.get(tab) ?? space) !== space) return;
+    const rest = Object.entries(viewerEntries()).filter(([id]) => id !== this.viewerId).map(([, other]) => other);
+    // A tab reopened behind another one must not take that one's place.
+    if (rest.some((other) => holds(other) && other.tab === tab)) return;
+    if (entry?.others?.includes(tab)) return;
+    // Nor may it take the tab of a viewer here asked for after it, which hasn't claimed one yet.
+    const unclaimed = (other) => (other.tab ? !holds(other) : this.viewerIsLive(other));
+    const newer = (other) => other.space === space && (other.at ?? 0) > (entry?.at ?? 0) && unclaimed(other);
+    if (rest.some((other) => newer(other) && other.others && !other.others.includes(tab))) return;
     this.setViewer(this.viewerId, {
       tab,
-      space: entry?.space ?? this.viewerSpace,
+      space,
       file: entry?.file ?? this.viewerFile,
       preview: entry?.preview ?? false,
     });
@@ -175,7 +184,9 @@ export const viewerMethods = {
   },
 
   publishHead() {
-    const tab = this.viewerEntry()?.tab;
+    // Never onto a tab in another space: that one has its own viewer.
+    const entry = this.viewerEntry();
+    const tab = entry && !this.wrongTab(entry) ? entry.tab : null;
     const pane = tab && panes().find((p) => p.mod === "better-files" && p.tab === tab)?.pane;
     const head = this.viewerHead();
     if (!pane || !head) return;
