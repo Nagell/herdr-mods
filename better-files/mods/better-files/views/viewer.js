@@ -258,7 +258,8 @@ export const viewerMethods = {
   // here: its rows are coloured one at a time as they're drawn (`rowRuns`). The runs are
   // kept only once they're complete, so a row never shows another file's text.
   lineRuns(lines) {
-    if (this.runsFor !== lines) {
+    // Keyed on the path too: two files with the same text share `lines`, not a language.
+    if (this.runsFor !== lines || this.runsPath !== this.file.path) {
       let runs = null;
       if (lines.length <= WHOLE_FILE_LINES) {
         try {
@@ -267,6 +268,7 @@ export const viewerMethods = {
       }
       this.runs = runs;
       this.runsFor = lines;
+      this.runsPath = this.file.path;
     }
     return this.runs;
   },

@@ -755,3 +755,36 @@ test('a file over the whole-file limit keeps its own text and is coloured a row 
   assert.equal(colorOf(row, 'const'), '#ansi5', 'still coloured');
   assert.notEqual(colorOf(row, 'still note */'), '#dim', 'no comment carried from the line above');
 });
+
+test('the lexer\'s edge cases keep text and state right', async () => {
+  const { context: m } = await ready();
+  const lines = (list, lang) => JSON.parse(JSON.stringify(m.highlightLines(list, lang)));
+  const coloured = (list, lang) => lines(list, lang).map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]));
+  const text = (list, lang) => lines(list, lang).map((runs) => runs.map((r) => r.text).join(''));
+  const css = ['/* old', '  color: red; */', 'a { color: red; }'];
+  assert.deepEqual(text(css, 'css'), css, 'a key after a closed comment is not drawn twice');
+  assert.deepEqual(coloured(['s = s.replace(/\\/*$/, "");', 'const x = 1;'], 'js'), [[['replace', 'function'], ['/\\/*$/', 'string'], ['""', 'string']], [['const', 'keyword'], ['1', 'number']]], 'a regex opens no comment');
+  assert.deepEqual(coloured(['n = a / b / 2;'], 'ts'), [[['2', 'number']]], 'division is not a regex');
+  assert.deepEqual(coloured(['re := `C:\\`', 'x := 1'], 'go'), [[['`C:\\`', 'string']], [['1', 'number']]], 'a Go raw string has no escapes');
+  const long = 'x'.repeat(2100);
+  assert.deepEqual(coloured(['/* a', long, 'b */ const y = 2'], 'js')[2], [['b */', 'comment'], ['const', 'keyword'], ['2', 'number']], 'a long line keeps the comment open');
+  assert.deepEqual(coloured(['echo ${#arr[@]} $# done # note'], 'sh')[0].filter(([, k]) => k === 'comment'), [['# note', 'comment']], 'a # inside a word is no comment');
+  assert.deepEqual(coloured(['<Button onClick={() => go()} disabled />'], 'tsx')[0].filter(([, k]) => k === 'attribute'), [['onClick', 'attribute'], ['disabled', 'attribute']], 'an arrow in a prop does not close the tag');
+  assert.deepEqual(coloured(["$a = 'hello';"], m.lexerLanguage('a.php')), [[["'hello'", 'string']]], 'PHP single quotes are strings');
+  assert.deepEqual(coloured(["let c = 'x';"], 'rs')[0].filter(([, k]) => k === 'string'), [["'x'", 'string']], 'Rust keeps its char literals');
+});
+
+test('the row view recolours when another file has the same text', async () => {
+  const file = { path: '/repo/a.py', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/a.py': 'def f(): pass' } });
+  const lines = ['let x = 1'];
+  const kinds = () => JSON.parse(JSON.stringify(h.mod.lineRuns(lines)[0].filter((r) => r.kind).map((r) => r.kind)));
+  assert.deepEqual(kinds(), ['number'], 'let is not a Python keyword');
+  h.mod.file = { ...file, path: '/repo/a.js' };
+  assert.deepEqual(kinds(), ['keyword', 'number'], 'the same lines, coloured as JavaScript');
+});
+
+test('syntax.js is the same file in Better Files and Better Changes', () => {
+  const read = (mod) => fs.readFileSync(path.join(__dirname, `../../${mod}/mods/${mod}/syntax.js`), 'utf8');
+  assert.equal(read('better-files'), read('better-changes'));
+});
