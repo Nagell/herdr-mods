@@ -58,11 +58,16 @@ export const viewerMethods = {
     const unclaimed = (other) => (other.tab ? !holds(other) : this.viewerIsLive(other));
     const newer = (other) => other.space === space && (other.at ?? 0) > (entry?.at ?? 0) && unclaimed(other);
     if (rest.some((other) => newer(other) && other.others && !other.others.includes(tab))) return;
+    // A click skips a viewer while its tab is wrong, so the space may have a new shared tab
+    // by now; then this one becomes a tab you keep, leaving one shared tab per space.
+    const sharedHere = rest.some(
+      (other) => other.space === space && other.preview && this.viewerIsLive(other) && !this.wrongTab(other, where),
+    );
     this.setViewer(this.viewerId, {
       tab,
       space,
       file: entry?.file ?? this.viewerFile,
-      preview: entry?.preview ?? false,
+      preview: (entry?.preview ?? false) && !sharedHere,
     });
   },
 

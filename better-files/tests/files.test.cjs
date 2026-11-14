@@ -311,6 +311,37 @@ test('the newer of two opening viewers claims the newer tab', async () => {
   }
 });
 
+test('a newer viewer only holds an older one back while it is still opening in the same space', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const old = { space: 's', tab: null, file, others: ['tab1'], at: Date.now() - 100 };
+  for (const [why, entries] of [
+    ['it already has its tab', { old, n: { space: 's', tab: 'tab3', file, others: ['tab1'], at: Date.now() } }],
+    ['it opens in another space', { old, n: { space: 'other', tab: null, file, others: [], at: Date.now() } }],
+    // Both asked for long ago: the newer one's opening has run out without a tab.
+    ['its opening has run out', { old: { ...old, at: 5 }, n: { space: 's', tab: null, file, others: [], at: 10 } }],
+  ]) {
+    const h = world({ mode: 'viewer', viewer: 'old', file, sharedInit: { 'better-files.viewers': entries } });
+    h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' });
+    h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+    h.tick();
+    assert.equal(h.store.get('better-files.viewers').old.tab, 'tab2', `claims its tab when ${why}`);
+  }
+});
+
+test('a viewer finding its own tab next to a newer shared tab becomes a tab you keep', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const wrong = { space: 's', tab: 'tab9', file, preview: true, others: ['tab1'], at: 1 };
+  const shared = { space: 's', tab: 'tab3', file, preview: true, others: ['tab1', 'tab2'], at: Date.now() };
+  for (const [entries, preview] of [[{ v: wrong }, true], [{ v: wrong, n: shared }, false]]) {
+    const h = world({ mode: 'viewer', viewer: 'v', file, sharedInit: { 'better-files.viewers': entries } });
+    h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' }, { pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+    h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+    h.tick();
+    const v = h.store.get('better-files.viewers').v;
+    assert.deepEqual([v.tab, v.preview], ['tab2', preview]);
+  }
+});
+
 test('a tab held by an entry from another space can still be claimed by its own viewer', async () => {
   const file = { path: '/repo/a.md', root: '/repo', on: null };
   const h = world({ mode: 'viewer', viewer: 'r', file, sharedInit: { 'better-files.viewers': {
