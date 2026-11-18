@@ -749,13 +749,17 @@ test('files whose names hide their language are read as it', async () => {
   const cases = {
     'tsconfig.json': 'jsonc', 'tsconfig.app.json': 'jsonc', 'a/.vscode/settings.json': 'jsonc',
     '.devcontainer/devcontainer.json': 'jsonc', 'package.json': 'json', '.babelrc': 'jsonc', '.nuxtrc': 'env',
-    'Brewfile': 'rb', 'Containerfile': 'dockerfile',
+    'Brewfile': 'rb', 'Containerfile': 'dockerfile', 'tsconfig-base.json': 'jsonc', 'jsconfig_build.json': 'jsonc',
+    'tsconfigs.json': 'json',
   };
   for (const [path, lang] of Object.entries(cases)) assert.equal(m.lexerLanguage(path), lang, path);
   const tokens = (line, path) => JSON.parse(JSON.stringify(m.tokenizeLine(line, m.lexerLanguage(path)).runs.filter((r) => r.kind).map((r) => [r.text, r.kind])));
   assert.deepEqual(tokens('  // the folders', 'portfolio.code-workspace'), [['// the folders', 'comment']]);
   assert.deepEqual(tokens('model User {', 'schema.prisma'), [['model', 'keyword'], ['User', 'type']]);
   assert.deepEqual(tokens('type Query { me: User }', 'q.gql'), [['type', 'keyword'], ['Query', 'type'], ['User', 'type']]);
+  const described = JSON.parse(JSON.stringify(m.highlightLines(['"""', 'The type of a user, for query input', '"""', 'type User'], 'graphql')
+    .map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]))));
+  assert.deepEqual(described, [[['"""', 'string']], [['The type of a user, for query input', 'string']], [['"""', 'string']], [['type', 'keyword'], ['User', 'type']]]);
   assert.deepEqual(tokens('  "name": "x"', 'site.webmanifest'), [['"name"', 'property'], ['"x"', 'string']]);
   assert.deepEqual(tokens('<Project Sdk="x">', 'app.csproj'), [['<Project', 'tag'], ['Sdk', 'attribute'], ['"x"', 'string']]);
 });

@@ -83,10 +83,10 @@ const SPECS = {
   hash: { ...HASH, keywords: NONE },
   dockerfile: { ...HASH, keywords: DOCKER_KEYWORDS },
   makefile: { ...HASH, keywords: MAKE_KEYWORDS },
-  graphql: { ...HASH, keywords: GRAPHQL_KEYWORDS },
+  graphql: { ...HASH, triple: true, keywords: GRAPHQL_KEYWORDS },
   proto: { ...C_LIKE, keywords: PROTO_KEYWORDS },
   prisma: { ...C_LIKE, keywords: PRISMA_KEYWORDS },
-  sql:{ line: "--", block: ["/*", "*/"], anyCase: true },
+  sql: { line: "--", block: ["/*", "*/"], anyCase: true },
   lua: { line: "--", keywords: LUA_KEYWORDS },
   hs: { line: "--", keywords: HS_KEYWORDS },
   json: { keys: true, data: true },
@@ -121,7 +121,7 @@ const SPECIAL_NAMES = {
   ".prettierrc": "jsonc", ".swcrc": "jsonc", ".jshintrc": "jsonc", ".nuxtrc": "env", ".npmrc": "toml",
 };
 // JSON files that are known to allow comments, by name or by folder.
-const JSONC_NAME = /^(?:[jt]sconfig(?:\..+)?|devcontainer|\.devcontainer|deno|biome|turbo)\.json$/;
+const JSONC_NAME = /^(?:[jt]sconfig(?:[._-].+)?|devcontainer|\.devcontainer|deno|biome|turbo)\.json$/;
 
 // A file with more lines than this is coloured a row at a time, as rows are drawn, instead
 // of top to bottom: a comment or string doesn't carry from one line to the next there, but
