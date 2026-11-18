@@ -10,6 +10,7 @@ A tab bar for [Herdr Desktop](https://herdr.dev/): tabs you can drag, that wrap 
 - **Drag panel buttons** (Files, Changes and any you add) to reorder them, the same way.
 - **The ⋮ menu:** drop a panel button on it to hide it. Click **⋮** to see hidden buttons, then click one to use it, drag it back out, or click its **pin** to return it to the toolbar. The menu also holds buttons there's no room for.
 - Double-click to rename, right-click for the tab menu, and close the active tab with its ×.
+- **Tabs name themselves** and keep up: an agent by its conversation topic, the title Herdr gets from it, or its name until it has one; a shell by its folder; another program by its name (Neovim). Your own names stay, and renaming a tab to nothing hands it back.
 - Program icons, working spinners and blocked or done dots.
 - Each space remembers which panel it had open.
 - Window controls where the system needs them.
@@ -63,7 +64,7 @@ Your arrangement is saved per layout, by button ID, and doesn't edit the layout 
 
 `herdr-app do better-tabs.button:changes` runs a button by ID, and `herdr-app do better-tabs.overflow` opens the menu. Bind them in `keys.json` if you like; the mod installs no keys.
 
-A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes does this.
+A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Changes does this. A tab whose pane publishes its own icon in `pane-heads`, as a Better Files or Better Changes file tab does, shows that icon instead.
 
 ## Settings
 
@@ -72,10 +73,10 @@ A mod's tab shows the icon it publishes in the `mod-icons` shared map. Better Ch
 Add a `settings` block to the installed `mods/better-tabs/mod.json` with only what you change. `mod.schema.json` beside it describes every setting, so an editor that reads `$schema`, such as VS Code or Zed, checks the block as you type. The defaults:
 
 ```json
-"settings": { "tabs": { "max_width": 170, "drag_delay": "400ms" }, "menu": { "width": 240 } }
+"settings": { "tabs": { "max_width": 170, "drag_delay": "400ms", "auto_name": true }, "menu": { "width": 240 } }
 ```
 
-`tabs.max_width` caps a tab's width in pixels. `tabs.drag_delay` is how long a press must last before a drag can start. `menu.width` sizes the ⋮ menu.
+`tabs.max_width` caps a tab's width in pixels. `tabs.drag_delay` is how long a press must last before a drag can start. `tabs.auto_name: false` turns tab names off. `menu.width` sizes the ⋮ menu.
 
 ## Upgrading from 2.x
 
@@ -86,7 +87,7 @@ Add a `settings` block to the installed `mods/better-tabs/mod.json` with only wh
 In `mods/better-tabs/`:
 
 - `main.js`: setup, settings and commands. `settings.js`: shared with the other mods.
-- `actions/engine.js`: what a button does. `actions/toolbar.js`: arrangement and tab-move logic with no drawing.
+- `actions/engine.js`: what a button does. `actions/toolbar.js`: arrangement and tab-move logic with no drawing. `actions/names.js`: auto names.
 - `views/tab-bar.js`: the bar. `views/menu.js`: buttons and the ⋮ menu. `views/drags.js`: dragging. `views/arrangement.js`: saved order. `views/panel-memory.js`: panels per space. `views/ui.js`: the design kit.
 - `icons/`: this mod's icons.
 - `sync.sh`: copies the mod into Herdr, which reloads it. A symlink loads the code but not the icons.

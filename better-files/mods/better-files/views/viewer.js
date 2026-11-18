@@ -28,13 +28,36 @@ const LINE_COLUMNS = 6; // The number column and a margin, in the same units.
 const rowHeight = () => Math.round(codeSize() * 1.6);
 const REMOVED_ROW = 8;
 
-// $1 the file, $2 its copy, $3 the copy of what this tab showed before. No file name reaches
-// the script itself, and only the cache's own copies are ever removed.
-const COPY_IMAGE = `[ -z "$3" ] || rm -f -- "$3"; mkdir -p -- "$(dirname -- "$2")" && { cmp -s -- "$1" "$2" || cp -- "$1" "$2"; }`;
+// Copies go in a hidden folder: saving any other file in a mod's folder makes Herdr reload
+// the mod, which threw the tree away on every picture opened. Herdr doesn't see a hidden file
+// change either, and keeps what it loaded under a name, so a name is never given to other
+// bytes: it's the picture's checksum and size, and a changed picture gets a new one.
+// $1 the file, $2 the cache folder, $3 the name's start, $4 its extension, $5 the copy this one
+// replaces, removed once the new one is in. With no $5, as when a tab starts again after a
+// reload, every other copy under the same start goes instead, so none outlives what tracked
+// it. Prints the copy's name. No file name reaches the script itself, and only the cache's
+// own copies are ever removed. A picture that changes while it's copied exits BUSY, and a
+// copy that fails or is BUSY leaves nothing half-made behind; it's copied on the next check.
+const CACHE = "mods/better-files/.cache";
+const BUSY = 75;
+const COPY_IMAGE = `sum=$(cksum < "$1") || exit 1
+name="$3-\${sum%% *}-\${sum##* }.$4"; copy="$2/$name"
+if [ ! -e "$copy" ]; then
+  trap 'rm -f -- "$copy.part"' EXIT
+  mkdir -p -- "$2" && cp -- "$1" "$copy.part" || exit 1
+  [ "$(cksum < "$copy.part")" = "$sum" ] || exit ${BUSY}
+  mv -f -- "$copy.part" "$copy" || exit 1
+fi
+if [ -n "$5" ]; then set -- "$5"; else set -- "$2/$3"-[0-9]*; fi
+for old in "$@"; do [ "$old" = "$copy" ] || [ ! -e "$old" ] || rm -f -- "$old"; done
+printf %s "$name"`;
+const extension = (path) => path.split(".").pop().toLowerCase();
+const absolute = (copy) => (copy ? `${appHome()}/${copy}` : "");
 // $1 a picture's web address, $2 its copy without an extension. A copy under a day old is used
 // as it is; otherwise it's downloaded (5 MB and 20 s at most) and named by the type the server
 // gives, which is how a badge with no extension in its address is known as SVG. A download that
-// fails leaves its `.part`, which the next try writes over. Prints the copy's path.
+// fails leaves its `.part`, which the next try writes over. Prints the copy's path. Its name is
+// kept when it's downloaded again, so Herdr may show the old bytes until it restarts: a badge.
 const FETCH_IMAGE = `for c in "$2".*; do case "$c" in *.part) continue;; esac; [ -f "$c" ] && [ -n "$(find "$c" -mmin -1440)" ] && { printf %s "$c"; exit 0; }; done
 mkdir -p -- "$(dirname -- "$2")" && t="$2.part" || exit 1
 type=$(curl -fsSL --max-time 20 --max-filesize 5000000 -o "$t" -w '%{content_type}' -- "$1") || exit 1
@@ -68,17 +91,33 @@ export const viewerMethods = {
   // Runs as the tab opens, which is when the focused tab is its own.
   claimTab() {
     const entry = this.viewerEntry();
-    if (entry?.tab) return;
+    const where = this.tabSpaces();
+    const holds = (other) => Boolean(other.tab) && !this.wrongTab(other, where);
+    // A tab recorded from another space isn't this one, so it keeps looking for its own.
+    if (entry && holds(entry)) return;
+    const space = entry?.space ?? this.viewerSpace;
     const tab = focused()?.tab;
     if (!tab || !panes().some((p) => p.tab === tab && p.mod === "better-files")) return;
+    // Focus can sit in another space while this tab opens; that space's tab isn't this one.
+    if ((where.get(tab) ?? space) !== space) return;
+    const rest = Object.entries(viewerEntries()).filter(([id]) => id !== this.viewerId).map(([, other]) => other);
     // A tab reopened behind another one must not take that one's place.
-    if (Object.values(viewerEntries()).some((other) => other.tab === tab)) return;
+    if (rest.some((other) => holds(other) && other.tab === tab)) return;
     if (entry?.others?.includes(tab)) return;
+    // Nor may it take the tab of a viewer here asked for after it, which hasn't claimed one yet.
+    const unclaimed = (other) => (other.tab ? !holds(other) : this.viewerIsLive(other));
+    const newer = (other) => other.space === space && (other.at ?? 0) > (entry?.at ?? 0) && unclaimed(other);
+    if (rest.some((other) => newer(other) && other.others && !other.others.includes(tab))) return;
+    // A click skips a viewer while its tab is wrong, so the space may have a new shared tab
+    // by now; then this one becomes a tab you keep, leaving one shared tab per space.
+    const sharedHere = rest.some(
+      (other) => other.space === space && other.preview && this.viewerIsLive(other) && !this.wrongTab(other, where),
+    );
     this.setViewer(this.viewerId, {
       tab,
-      space: entry?.space ?? this.viewerSpace,
+      space,
       file: entry?.file ?? this.viewerFile,
-      preview: entry?.preview ?? false,
+      preview: (entry?.preview ?? false) && !sharedHere,
     });
   },
 
@@ -200,7 +239,9 @@ export const viewerMethods = {
   },
 
   publishHead() {
-    const tab = this.viewerEntry()?.tab;
+    // Never onto a tab in another space: that one has its own viewer.
+    const entry = this.viewerEntry();
+    const tab = entry && !this.wrongTab(entry) ? entry.tab : null;
     const pane = tab && panes().find((p) => p.mod === "better-files" && p.tab === tab)?.pane;
     const head = this.viewerHead();
     if (!pane || !head) return;
@@ -372,37 +413,37 @@ export const viewerMethods = {
       );
   },
 
+  // Removes copies this tab made, given as paths under Herdr's folder.
+  async dropCopies(copies) {
+    if (copies.length) await exec("rm", ["-f", "--", ...copies.map(absolute)], {}).catch(() => {});
+  },
+
   // Herdr only loads images from under its own folder, so the file is shown through a copy
-  // in this mod's cache. Saving over the copy updates what's on screen, which is how a
-  // changed image refreshes. Each file a tab shows gets its own name, for the same reason.
+  // in this mod's cache, named for what's in it. The copy it replaces goes once it's in.
   readImage(cx) {
     const file = this.file;
     if (file.on || this.reading) return;
     if (this.imageFor !== file.path) {
       this.imageFor = file.path;
-      this.imageSerial = (this.imageSerial ?? 0) + 1;
-      this.imageOld = this.imageCopy;
-      const ext = file.path.split(".").pop().toLowerCase();
-      this.imageCopy = `data/better-files/cache/${this.viewerId}-${this.imageSerial}.${ext}`;
       this.imageShown = null;
     }
-    const copy = this.imageCopy;
-    const old = this.imageOld ? `${appHome()}/${this.imageOld}` : "";
-    this.imageOld = null;
     this.reading = true;
     cx.spawn(async (cx) => {
       const result = await exec(
         "sh",
-        ["-c", COPY_IMAGE, "copy-image", file.path, `${appHome()}/${copy}`, old],
+        ["-c", COPY_IMAGE, "copy-image", file.path, absolute(CACHE), this.viewerId, extension(file.path), absolute(this.imageCopy)],
         {},
       ).catch(() => null);
       this.reading = false;
-      if (this.file?.path !== file.path) return;
-      const problem = result?.code === 0 ? null : "This file is no longer available.";
-      const shown = problem ? null : copy;
-      if (problem !== this.problem || shown !== this.imageShown) {
+      const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+      // Kept even when the tab has moved on, so the next copy replaces it; a closed tab's goes now.
+      if (copy) this.imageCopy = copy;
+      if (copy && this.closed) return this.dropCopies([copy]);
+      if (this.file?.path !== file.path || result?.code === BUSY) return;
+      const problem = copy ? null : "This file is no longer available.";
+      if (problem !== this.problem || copy !== this.imageShown) {
         this.problem = problem;
-        this.imageShown = shown;
+        this.imageShown = copy;
         cx.notify();
       }
     });
@@ -448,22 +489,25 @@ export const viewerMethods = {
     );
   },
 
-  // A Markdown file's pictures, through the cache the way the image viewer shows a file: one
-  // from this computer is copied under its own name for as long as the tab is open, and
-  // checked whenever the file is; one from the web is downloaded once per tab, and kept for a
-  // day under a name of its address, so every tab shares it.
+  // A Markdown file's pictures, copied into the cache the way the image viewer does. One from
+  // this computer gets a name of its own for as long as the tab is open, and is checked whenever
+  // the file is. The last copy stays on screen until the new one is in: a name shown before its
+  // file is there would stay blank, as Herdr doesn't see the hidden folder change. One from the
+  // web is downloaded once per tab, and kept for a day under a name of its address, so every
+  // tab shares it.
   readMarkdownImages(cx) {
     const file = this.file;
     if (!file || !isMarkdown(file.path) || this.text === undefined) return;
     this.markdownCopies ??= new Map();
     this.markdownShown ??= new Map();
     this.markdownCopying ??= new Set();
+    this.markdownSlots ??= new Map();
     for (const { path, url } of this.markdownSources()) {
       const key = url ?? path;
       if (!key || this.markdownCopying.has(key) || (path && file.on) || (url && this.markdownShown.has(key))) continue;
       this.markdownCopying.add(key);
       if (url) {
-        const base = `${appHome()}/data/better-files/cache/${webName(url)}`;
+        const base = absolute(`${CACHE}/${webName(url)}`);
         cx.spawn(async (cx) => {
           const result = await exec("sh", ["-c", FETCH_IMAGE, "fetch-image", url, base], {}).catch(() => null);
           this.markdownCopying.delete(key);
@@ -474,15 +518,18 @@ export const viewerMethods = {
         });
         continue;
       }
-      if (!this.markdownCopies.has(key))
-        this.markdownCopies.set(key, `data/better-files/cache/${this.viewerId}-m${this.markdownCopies.size + 1}.${path.split(".").pop().toLowerCase()}`);
-      const copy = this.markdownCopies.get(key);
+      if (!this.markdownSlots.has(path)) this.markdownSlots.set(path, this.markdownSlots.size + 1);
+      const start = `${this.viewerId}-m${this.markdownSlots.get(path)}`;
       cx.spawn(async (cx) => {
-        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, `${appHome()}/${copy}`, ""], {}).catch(() => null);
-        this.markdownCopying.delete(key);
-        const shown = result?.code === 0;
-        if (this.markdownShown.get(key) !== shown) {
-          this.markdownShown.set(key, shown);
+        const old = this.markdownCopies.get(path);
+        const result = await exec("sh", ["-c", COPY_IMAGE, "copy-image", path, absolute(CACHE), start, extension(path), absolute(old)], {}).catch(() => null);
+        this.markdownCopying.delete(path);
+        if (result?.code === BUSY) return;
+        const copy = result?.code === 0 ? `${CACHE}/${result.stdout.trim()}` : null;
+        if (copy && this.closed) return this.dropCopies([copy]);
+        if (copy) this.markdownCopies.set(path, copy);
+        if (this.markdownShown.get(path) !== Boolean(copy) || copy !== old) {
+          this.markdownShown.set(path, Boolean(copy));
           cx.notify();
         }
       });

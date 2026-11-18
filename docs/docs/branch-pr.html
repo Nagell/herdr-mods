@@ -34,6 +34,7 @@
         <a href="better-tabs.html">Better Tabs</a>
         <a href="better-config.html">Better Config</a>
         <a href="better-icons.html">Better Icons</a>
+        <a href="better-alerts.html">Better Alerts</a>
         <h4>Branch panels</h4>
         <a href="branch-pr.html" class="on" aria-current="page">Branch PR</a>
         <a href="branch-issue.html">Branch Issue</a>
@@ -44,7 +45,7 @@
 <article class="doc" id="branch-pr">
   <h2>Branch PR</h2>
   <p class="lead">A pull-request panel for working with agents: see what's in the way of a PR, hand it to an agent, check the result, and merge. It works with GitHub through the <code>gh</code> CLI.</p>
-  <p class="meta-line"><span>Version 2.3.0</span><span>Needs: Go 1.23+, Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/branch-pr">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 2.4.0</span><span>Needs: Go 1.23+, Git, <code>gh</code></span><a href="https://github.com/munza/herdr-mods/tree/main/branch-pr">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/branch-pr/preview.png" alt="Branch PR in Herdr" width="1440" height="810"></figure>
 
   <h3 id="branch-pr-start">Quick start</h3>
@@ -83,7 +84,7 @@
     <li><b>Actions:</b> the PR header's menu holds Merge, Close and Reopen, which ask first. A merged PR shows a <b>Merged</b> badge there instead. A merge names the commit you saw, so a newer push is refused. <b>Merge when ready</b> turns on GitHub's auto-merge, offered only when GitHub has something required to wait for. GitHub merges whatever the branch holds once checks pass, so a push after you turn it on goes in too.</li>
     <li><b>Comments:</b> threads, reviews and comments with their code, unread markers, author and Unresolved filters, reply, resolve and reopen, a box for a new comment, and Send to agent on one comment with a prompt you can edit.</li>
     <li><b>Checks:</b> workflows, jobs, steps and failed output, with links to GitHub.</li>
-    <li><b>Files:</b> what the PR changes, with lines added and removed. A click shows the file's diff in <a href="better-changes.html">Better Changes</a>' centre tab, read from GitHub so it works for a PR you haven't checked out; without Better Changes, the files open on GitHub.</li>
+    <li><b>Files:</b> what the PR changes, with lines added and removed. A click shows the file's diff in <a href="better-changes.html">Better Changes</a>' centre tab, read from GitHub so it works for a PR you haven't checked out; without Better Changes, the files open on GitHub. With <a href="better-icons.html">Better Icons</a> installed, each file and folder gets its colour icon.</li>
     <li><b>Reviewers:</b> who approved, who asked for changes, who is still to review, and asking someone again.</li>
     <li><b>Worktrees:</b> a PR's checkouts, and <b>New worktree</b> to make another as its own space, with a terminal or an agent in its first tab.</li>
     <li><b>Remote spaces:</b> Git runs on the space's machine and <code>gh</code> on this computer.</li>
@@ -129,7 +130,7 @@
 (cd helper &amp;&amp; go test ./... &amp;&amp; go vet ./...)
 herdr-app check "$HOME/.config/herdr-app/mods/branch-pr"</pre>
 </article>
-      <nav class="pager" aria-label="More docs"><a href="better-icons.html"><span>Previous</span>Better Icons</a><a class="next" href="branch-issue.html"><span>Next</span>Branch Issue</a></nav>
+      <nav class="pager" aria-label="More docs"><a href="better-alerts.html"><span>Previous</span>Better Alerts</a><a class="next" href="branch-issue.html"><span>Next</span>Branch Issue</a></nav>
     </main>
     <nav class="toc" aria-label="On this page">
       <h4>On this page</h4>

@@ -11,6 +11,8 @@ Cmd-click a PR number to open it on GitHub.
 - The checkout's PR sits at the **right of the same row**, as an icon and number, coloured **green Open**, **gray Draft**, **purple Merged**, **red Closed**, **red Conflicts**, **red Checks failed**, **yellow Changes requested**, or **green Ready to merge** with a ✓ after the number. The tooltip says which. GitHub works out conflicts and mergeability on its first ask, so a new PR can show Open for up to a minute before its real state. Colors follow the current theme.
 - **Cmd-click the PR number** to open its GitHub URL (Ctrl-click on Linux/Windows). A normal click still selects the space. Hover a PR for its repository, title, and status. If there are several open PRs, the newest is shown with a `+N` summary; hover that summary for the others.
 - Preserves space selection, right-click menus, drag reordering within a machine, colored avatars, ahead/behind counts, machine groups, and the compact sidebar rail.
+- When you switch spaces from the keyboard, the list scrolls that space and its tabs into view, as little as it can. A click in the list never scrolls it.
+- **Sort spaces** from the icon beside the plus: **Manual** is Herdr's own order, the one you drag; **Recent** puts the space where something last changed first; **Name** sorts A to Z. A worktree stays under its main space, which sorts by the latest change in either. Dragging works only in Manual. The choice is remembered.
 
 ## Agents
 

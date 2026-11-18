@@ -84,6 +84,12 @@
               "format": "duration",
               "pattern": "^\\s*\\d+(\\.\\d+)?\\s*(ms|s|m|h)\\s*$",
               "default": "400ms"
+            },
+            "auto_name": {
+              "title": "Name tabs",
+              "description": "Tabs follow what runs in them: an agent's topic, else its name, a shell's folder, another program's name. Your own names stay; renaming a tab to nothing hands it back.",
+              "type": "boolean",
+              "default": true
             }
           }
         },

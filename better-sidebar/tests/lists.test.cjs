@@ -49,8 +49,9 @@ async function harness({ settings = {}, tab = null, panes = [], sharedValues = {
   const context = {
     Date, JSON, Map, Set, Math, console,
     View: class {},
-    div: element, svg: (p) => element().child(`svg:${p}`), image: element, v_flex: element, h_flex: element,
-    Popover: { new: element },
+    div: element, svg: (p) => element().child(`svg:${p}`), image: (p) => element().child(`image:${p}`), v_flex: element, h_flex: element,
+    Popover: { new: (id) => element().id(id) },
+    ScrollHandle: { new: () => ({ scroll_to_item() {} }) },
     spaces: () => spaces,
     agents: () => agents,
     terminals: () => [],
@@ -135,6 +136,44 @@ test("in Spaces a pinned agent sits above every space", async () => {
 
 });
 
+test("a mod's tab shows its pane's own published icon before the mod's, in colour when it says so", async () => {
+  const panes = [{ pane: "pd", tab: "d", mod: "better-files" }];
+  const modIcons = { "better-files": "mods/better-files/icons/file.svg" };
+  const { mod } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { pd: { icon: "mods/better-icons/icons/javascript.svg", color: true } } },
+  });
+  const row = text(find(mod.render(), "tab-d"));
+  assert.match(row, /image:mods\/better-icons\/icons\/javascript\.svg/);
+  assert.doesNotMatch(row, /svg:mods\/better-files/);
+  const { mod: plain } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { pd: { icon: "mods/better-changes/icons/file.svg" } } },
+  });
+  assert.match(text(find(plain.render(), "tab-d")), /svg:mods\/better-changes\/icons\/file\.svg/);
+  const { mod: other } = await harness({
+    panes,
+    sharedValues: { "mod-icons": modIcons, "pane-heads": { p9: { icon: "mods/better-icons/icons/javascript.svg", color: true } } },
+  });
+  assert.match(text(find(other.render(), "tab-d")), /svg:mods\/better-files\/icons\/file\.svg/);
+});
+
+test("a split mod tab shows the head any of its panes published", async () => {
+  const { mod } = await harness({
+    panes: [
+      { pane: "pa", tab: "d", mod: "branch-pr" },
+      { pane: "pd", tab: "d", mod: "better-files" },
+    ],
+    sharedValues: {
+      "mod-icons": { "branch-pr": "mods/branch-pr/pull-request.svg" },
+      "pane-heads": { pd: { icon: "mods/better-icons/icons/javascript.svg", color: true } },
+    },
+  });
+  const row = text(find(mod.render(), "tab-d"));
+  assert.match(row, /image:mods\/better-icons\/icons\/javascript\.svg/);
+  assert.doesNotMatch(row, /pull-request/);
+});
+
 test("an Agents row reads its tab's title, then its space", async () => {
   const { mod } = await harness({ tab: "agents" });
   assert.match(text(find(mod.render(), "ag-t1")), /^\s*1\s+shop/);
@@ -149,3 +188,15 @@ test("a mod's tab shows the icon the mod publishes, and a tab with neither keeps
   const { mod: bare } = await harness();
   assert.doesNotMatch(text(find(bare.render(), "tab-d")), /svg:/);
 });
+
+test("the Spaces tab offers the space sort beside New space, and Agents its own sort", async () => {
+  const { mod } = await harness({ tab: "spaces" });
+  const tree = mod.render();
+  assert.ok(find(tree, "space-sort-menu"), "space sort on Spaces");
+  assert.ok(find(tree, "space-new"));
+  const { mod: agentsTab } = await harness({ tab: "agents" });
+  const other = agentsTab.render();
+  assert.equal(find(other, "space-sort-menu"), undefined);
+  assert.ok(find(other, "ag-sort-menu"));
+});
+

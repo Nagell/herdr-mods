@@ -224,3 +224,58 @@ export function editManifest(raw, field, value) {
   if (!Object.keys(manifest.settings).length) delete manifest.settings;
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
+
+// The Installed page ---------------------------------------------------------
+
+// Where a mod is used: "layout" when the layout names it anywhere (a block, a floating block,
+// a pane header, the root toast or terminal menu), "key" when keys.json opens it or runs one
+// of its commands, else null.
+export function modUse(name, layout, keys) {
+  // Arrays are objects too, so here and in byKey their items are walked the same way.
+  const inLayout = (node) => {
+    if (!node || typeof node !== "object") return false;
+    if (node.mod === name || node.toast === name || node.terminal_menu === name) return true;
+    return Object.values(node).some(inLayout);
+  };
+  if (inLayout(layout)) return "layout";
+  const byKey = (value) => {
+    if (typeof value === "string") return value === `mod.open:${name}` || value.startsWith(`${name}.`);
+    if (!value || typeof value !== "object") return false;
+    if (value.command === "mod.open" && value.args?.name === name) return true;
+    return Object.values(value).some(byKey);
+  };
+  return byKey(keys) ? "key" : null;
+}
+
+// Herdr's own mods, from its installed.json, which records the files it ships: mods by name,
+// layouts as "layout:<name>".
+export function shippedMods(installed) {
+  return new Set(Object.keys(installed ?? {}).filter((key) => !key.startsWith("layout:")));
+}
+
+// A mod's name to show: its mod.json title when that's text, else its folder.
+export function modTitle(name, manifest) {
+  const title = manifest?.title;
+  return typeof title === "string" && title.trim() ? title : name;
+}
+
+// One row per mod folder, the person's own first, then Herdr's, each by title. A folder with
+// no mod.json still gets a row, marked missing.
+export function installedRows(entries, shipped) {
+  const rows = entries.map(({ name, manifest, missing = false }) => ({
+    name,
+    title: modTitle(name, manifest),
+    version: typeof manifest?.version === "string" ? manifest.version : null,
+    herdr: shipped.has(name),
+    missing,
+  }));
+  return rows.sort((a, b) => a.herdr - b.herdr || a.title.localeCompare(b.title));
+}
+
+// The rows on one Installed tab, "yours" or "herdr", whose title or folder holds the search.
+export function filterInstalled(rows, tab, query) {
+  const text = query.trim().toLowerCase();
+  return rows.filter(
+    (row) => row.herdr === (tab === "herdr") && `${row.title} ${row.name}`.toLowerCase().includes(text),
+  );
+}

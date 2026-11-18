@@ -6,7 +6,7 @@ An icon pack for this repo's mods: the icons of VS Code's Material Icon Theme, a
 
 ## What you see
 
-Nothing of its own. In Better Files, each tree row and the file tab's title row show a full-colour 14px icon in place of the plain file or folder: `package.json` the Node icon, `Dockerfile` the Docker whale, `src` a green folder with `</>`, `.github` a folder with the GitHub mark. An open folder shows its open icon. Under a light theme, the 236 names the theme has light icons for (179 file names, 32 extensions, 25 folder names) use them.
+Nothing of its own. In Better Files, each tree row and the file tab's title row show a full-colour 14px icon in place of the plain file or folder: `package.json` the Node icon, `Dockerfile` the Docker whale, `src` a green folder with `</>`, `.github` a folder with the GitHub mark. An open folder shows its open icon. Better Changes does the same in its file lists and its diff's header, and Branch PR in a PR's Files tab. Under a light theme, the 236 names the theme has light icons for (179 file names, 32 extensions, 25 folder names) use them.
 
 If a layout shows `{ "mod": "better-icons" }` anyway, it lists seven sample names (`src`, `.github/workflows`, `package.json`, `main.ts`, `main.spec.ts`, `README.md`, `Dockerfile`) in 26px rows with 16px icons, under a 12px `dim` line naming the source, on `background`.
 
@@ -46,4 +46,4 @@ A user's copy of `file-icons.js` must match this one byte for byte; the test wal
 - `node --test tests/*.test.cjs` passes, and `herdr-app check` passes for `mods/better-icons`.
 - Every icon the table names is in `icons/`, and nothing else is: 1,184 files.
 - `package.json`, `Dockerfile`, `main.ts`, `main.spec.ts`, `notes.draft.md`, `src` (shut and open) and `.github/workflows` get `nodejs`, `docker`, `typescript`, `test-ts`, `markdown`, `folder-src`/`folder-src-open` and `folder-gh-workflows`; an unknown name gets `file` or `folder`.
-- With it installed, Better Files' tree shows these icons; without it, Better Files shows its plain ones.
+- With it installed, Better Files' tree, Better Changes' file lists and Branch PR's Files tab show these icons; without it, they show their plain ones.

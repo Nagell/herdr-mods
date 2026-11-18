@@ -34,6 +34,7 @@
         <a href="better-tabs.html" class="on" aria-current="page">Better Tabs</a>
         <a href="better-config.html">Better Config</a>
         <a href="better-icons.html">Better Icons</a>
+        <a href="better-alerts.html">Better Alerts</a>
         <h4>Branch panels</h4>
         <a href="branch-pr.html">Branch PR</a>
         <a href="branch-issue.html">Branch Issue</a>
@@ -44,7 +45,7 @@
 <article class="doc" id="better-tabs">
   <h2>Better Tabs</h2>
   <p class="lead">A tab bar with tabs you can drag, that wrap onto more lines when they don't fit, and a toolbar of panel buttons with a ⋮ menu for the ones you rarely use.</p>
-  <p class="meta-line"><span>Version 3.0.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 3.2.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-tabs">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-tabs/preview.png" alt="Better Tabs in Herdr" width="1440" height="810"></figure>
 
   <h3 id="better-tabs-start">Quick start</h3>
@@ -66,6 +67,7 @@
     <li><b>Wrapping:</b> tabs wrap onto more lines and the bar grows to hold them, then shrinks back as tabs close.</li>
     <li><b>New tab:</b> the <b>+</b> sits right after the last tab.</li>
     <li><b>Tabs:</b> double-click to rename, right-click for the tab menu, close the active tab with its ×.</li>
+    <li><b>Auto names:</b> tabs name themselves and keep up: an agent by its conversation topic, the title Herdr gets from it, or its name until it has one; a shell by its folder; another program by its name. Your own names stay; renaming a tab to nothing hands it back.</li>
     <li><b>Status:</b> program icons, a spinner while working, and a dot when blocked or done.</li>
     <li><b>Panel buttons:</b> Files, Changes and any you add. Drag them to reorder, the same way as tabs.</li>
     <li><b>The ⋮ menu:</b> drop a button on it to hide it. Click ⋮ to see hidden buttons, then click one to use it, drag it back out, or click its pin to return it to the toolbar. Buttons with no room also go there.</li>
@@ -78,6 +80,7 @@
   <table class="keys"><thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead><tbody>
     <tr><td><code>tabs.max_width</code></td><td><code>170</code></td><td>The widest a tab gets, in px. At least 60.</td></tr>
     <tr><td><code>tabs.drag_delay</code></td><td><code>400ms</code></td><td>How long a press must last before a tab can be dragged.</td></tr>
+    <tr><td><code>tabs.auto_name</code></td><td><code>true</code></td><td>Tabs name themselves after what runs in them. <code>false</code> turns it off.</td></tr>
     <tr><td><code>menu.width</code></td><td><code>240</code></td><td>The width of the ⋮ menu, in px. At least 120.</td></tr>
   </tbody></table>
 
@@ -124,7 +127,7 @@
   <p>Commands, to bind in <code>keys.json</code> if you like:</p>
   <pre>herdr-app do better-tabs.button:changes   # run a button by ID
 herdr-app do better-tabs.overflow         # open the ⋮ menu</pre>
-  <p>A mod's tab shows the icon it publishes in the <code>mod-icons</code> shared map. <a href="better-changes.html">Better Changes</a> does this.</p>
+  <p>A mod's tab shows the icon it publishes in the <code>mod-icons</code> shared map. <a href="better-changes.html">Better Changes</a> does this. A tab whose pane publishes its own icon in <code>pane-heads</code>, as a <a href="better-files.html">Better Files</a> or Better Changes file tab does, shows that icon instead.</p>
   <h4>Work on the mod</h4>
   <ul>
     <li><code>mods/better-tabs/main.js</code>: setup, settings and commands. <code>settings.js</code>: shared with the other mods.</li>

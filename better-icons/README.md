@@ -9,7 +9,7 @@ The icons of VS Code's [Material Icon Theme](https://github.com/material-extensi
 - **Picked the way VS Code picks them:** a rule for a path, such as `.github/workflows`, beats a name, a name beats an extension, and the longest extension wins, so `app.spec.ts` gets the test icon and `app.ts` the TypeScript one. Light themes get the light icons where the theme has them.
 - 1,184 icons from Material Icon Theme 5.40.0, about 5 MB.
 
-Mods that use it: [Better Files](../better-files/README.md), [Better Changes](../better-changes/README.md).
+Mods that use it: [Better Files](../better-files/README.md), [Better Changes](../better-changes/README.md), [Branch PR](../branch-pr/README.md).
 
 ## Install
 
@@ -21,7 +21,7 @@ Copy this prompt into your Herdr agent:
 
 ## Limits
 
-- About 5 MB of icons. Better Files and Better Changes use them so far.
+- About 5 MB of icons. Better Files, Better Changes and Branch PR use them so far.
 - Mods reread the table when Better Icons' folder changes, so an update shows at once. An install, or a folder replaced by copying, shows within 10 seconds.
 - A symlinked mod folder loads code but not icons, so install by copying, as `sync.sh` does.
 

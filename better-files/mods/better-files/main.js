@@ -5,16 +5,18 @@
 // shared("better-files.*") connects them. The class is built from:
 //   files/reads.js        the folder tree and Git's view of it
 //   files/file-icons.js   Better Icons' pictures, when it's installed
+//   files/filter.js       what the filter matches, from a list of every file
 //   actions/open.js       opening tabs, and handing a file to Better Changes
 //   actions/outside.js    code editors, Finder
 //   actions/agents.js     sending a file to an agent
 //   actions/menus.js      popup menus
-//   views/tree.js, viewer.js, context-menu.js   the drawing
+//   views/tree.js, filter.js, tools.js, viewer.js, context-menu.js   the drawing
+//   views/keys.js         the tree from the keyboard
 // files/model.js says what the data means; views/ui.js holds every look but the token
 // colours: syntax.js colours the file view's code, and Better Changes has the same file.
 import { View } from "gpui-kit";
-import { ScrollHandle, TextareaState } from "gpui-base";
-import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
+import { InputState, ScrollHandle, TextareaState } from "gpui-base";
+import { nextCommand, props, setShared, shared, spaces } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./files/file-icons.js";
 import { readMethods } from "./files/reads.js";
@@ -23,6 +25,9 @@ import { outsideMethods } from "./actions/outside.js";
 import { agentMethods } from "./actions/agents.js";
 import { menuMethods } from "./actions/menus.js";
 import { treeMethods } from "./views/tree.js";
+import { filterMethods } from "./views/filter.js";
+import { savedDotfiles, toolMethods } from "./views/tools.js";
+import { keyMethods } from "./views/keys.js";
 import { viewerMethods } from "./views/viewer.js";
 import { contextMenuMethods } from "./views/context-menu.js";
 
@@ -89,6 +94,25 @@ class BetterFiles extends View {
     this.marks = {};
     this.editor = TextareaState.new({ placeholder: "What should it do with this?", rows: 3 });
     this.editor.on("change", (_e, cx) => cx.notify());
+    this.filter = InputState.new({ placeholder: "Filter files" });
+    this.filter.on("change", (_e, cx) => {
+      // New words, new matches: the arrows start again from the top.
+      this.cursor = null;
+      this.ensureIndex(cx);
+      cx.notify();
+    });
+    this.filter.on("submit", (_e, cx) => this.openFirstMatch(cx));
+    this.filter.on("focus", (_e, cx) => {
+      this.filterFocused = true;
+      cx.notify();
+    });
+    this.filter.on("blur", (_e, cx) => {
+      this.filterFocused = false;
+      cx.notify();
+    });
+    this.treeScroll = ScrollHandle.new();
+    this.treeFocus = cx.focus_handle();
+    this.dotfiles = savedDotfiles();
     this.refresh(cx);
     this.findBetterChanges(cx);
     this.findNewAgents(this.on, cx);
@@ -101,17 +125,23 @@ class BetterFiles extends View {
       cx.timer.every(Math.max(1000, duration(settings.refresh.tree, 10000)), (cx) => this.refresh(cx));
     });
     cx.spawn(async (cx) => {
-      for (;;) if ((await nextCommand()) === "refresh") this.refresh(cx);
+      // "focus" gives the tree the keyboard, for a key bound to better-files.focus.
+      for (;;) {
+        const command = await nextCommand();
+        if (command === "refresh") this.refresh(cx);
+        else if (command === "focus") this.focusTree(cx);
+      }
     });
   }
 
-  // A closing tab takes its copies of images with it. Pictures from the web stay: every tab
-  // shares them, and they're downloaded again after a day.
+  // A closing tab takes its copies of images with it, and any copy still being made when it
+  // closes goes as soon as it's done. Pictures from the web stay: every tab shares them, and
+  // they're downloaded again after a day.
   async close() {
-    const copies = [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter(
-      (c) => c && !c.startsWith("data/better-files/cache/web-"),
+    this.closed = true;
+    await this.dropCopies(
+      [this.imageCopy, ...(this.markdownCopies?.values() ?? [])].filter((c) => c && !c.startsWith("mods/better-files/.cache/web-")),
     );
-    if (copies.length) await exec("rm", ["-f", "--", ...copies.map((c) => `${appHome()}/${c}`)], {}).catch(() => {});
   }
 
   // Keeps up with the focused pane, tabs closing, and questions left by the menu.
@@ -142,6 +172,9 @@ Object.assign(
   agentMethods,
   menuMethods,
   treeMethods,
+  filterMethods,
+  toolMethods,
+  keyMethods,
   viewerMethods,
   contextMenuMethods,
 );

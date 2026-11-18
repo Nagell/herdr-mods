@@ -132,6 +132,6 @@ export class Lists {
           .child(tab("spaces", "Spaces", null))
           .child(tab("agents", "Agents", view.count)),
       )
-      .child(this.tab === "spaces" ? this.spaces.newSpaceButton() : this.agents.sortMenu());
+      .child(this.tab === "spaces" ? this.spaces.headerButtons() : this.agents.sortMenu());
   }
 }

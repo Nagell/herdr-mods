@@ -159,3 +159,94 @@ test("this repository's mods ship a schema their mod.json passes, with their cod
     assert.deepEqual(Object.keys(described).sort(), Object.keys(flatten(code)).sort(), `${name}: schema and code know different settings`);
   }
 });
+
+// The Installed page. The layout and keys are shaped like Herdr's, with made-up mods.
+const LAYOUT = {
+  id: "root",
+  type: "row",
+  toast: "quiet-toast",
+  floating: [{ id: "alerts", content: { mod: "lantern-alerts" }, edge: "bottom", align: "end" }],
+  children: [
+    { id: "sidebar", type: "block", content: { mod: "lantern-sidebar" } },
+    { id: "main", type: "block", content: { tab: "active", terminal_menu: "lantern-menu", pane: { header: { content: { mod: "lantern-header" } } } } },
+  ],
+};
+const KEYS = { global: { "super-.": "mod.open:lantern-config", "super-e": "lantern-files.focus", "super-p": { command: "mod.open", args: { name: "lantern-picker" } } } };
+
+test("a mod is used by the layout, by a key, or neither", async () => {
+  const { modUse } = await load();
+  for (const name of ["lantern-sidebar", "lantern-header", "lantern-alerts", "quiet-toast", "lantern-menu"]) assert.equal(modUse(name, LAYOUT, KEYS), "layout", name);
+  for (const name of ["lantern-config", "lantern-files", "lantern-picker"]) assert.equal(modUse(name, LAYOUT, KEYS), "key", name);
+  assert.equal(modUse("lantern-icons", LAYOUT, KEYS), null);
+  // A name that only starts like another's isn't it.
+  assert.equal(modUse("lantern", LAYOUT, KEYS), null);
+  assert.equal(modUse("lantern-side", LAYOUT, KEYS), null);
+  // A block in the layout wins over a key.
+  assert.equal(modUse("lantern-sidebar", LAYOUT, { global: { x: "mod.open:lantern-sidebar" } }), "layout");
+  assert.equal(modUse("lantern-sidebar", null, null), null);
+});
+
+test("Herdr's own mods are the ones its installed.json records, not its layouts", async () => {
+  const { shippedMods } = await load();
+  const installed = { agents: { "main.js": "1a" }, toast: { "main.js": "2b" }, "layout:main": { json: "3c" } };
+  assert.deepEqual([...shippedMods(installed)].sort(), ["agents", "toast"]);
+  assert.deepEqual([...shippedMods(null)], []);
+});
+
+test("installed mods list yours first, then Herdr's, each by title", async () => {
+  const { installedRows } = await load();
+  const rows = installedRows(
+    [
+      { name: "toast", manifest: { place: "none" } },
+      { name: "lantern-tabs", manifest: { title: "Lantern Tabs", version: "2.0.0" } },
+      { name: "agents", manifest: { title: "Agents" } },
+      { name: "broken", manifest: null },
+      { name: "lantern-alerts", manifest: { title: "Lantern Alerts", version: "1.0.0" } },
+      { name: "odd-title", manifest: { title: 3, version: 2 } },
+      { name: "half-copied", manifest: null, missing: true },
+    ],
+    new Set(["toast", "agents"]),
+  );
+  assert.deepEqual(
+    rows.map((r) => [r.name, r.title, r.version, r.herdr, r.missing]),
+    [
+      ["broken", "broken", null, false, false],
+      ["half-copied", "half-copied", null, false, true],
+      ["lantern-alerts", "Lantern Alerts", "1.0.0", false, false],
+      ["lantern-tabs", "Lantern Tabs", "2.0.0", false, false],
+      ["odd-title", "odd-title", null, false, false],
+      ["agents", "Agents", null, true, false],
+      ["toast", "toast", null, true, false],
+    ],
+  );
+});
+
+test("a mod's title is its mod.json title when that's text, else its folder", async () => {
+  const { modTitle } = await load();
+  assert.equal(modTitle("lantern-tabs", { title: "Lantern Tabs" }), "Lantern Tabs");
+  assert.equal(modTitle("lantern-tabs", { title: 3 }), "lantern-tabs");
+  assert.equal(modTitle("lantern-tabs", { title: { en: "Lantern Tabs" } }), "lantern-tabs");
+  assert.equal(modTitle("lantern-tabs", { title: "  " }), "lantern-tabs");
+  assert.equal(modTitle("lantern-tabs", null), "lantern-tabs");
+});
+
+test("the Installed tabs and search: yours or Herdr's, matching the title or folder, case aside", async () => {
+  const { installedRows, filterInstalled } = await load();
+  const rows = installedRows(
+    [
+      { name: "lantern-tabs", manifest: { title: "Lantern Tabs" } },
+      { name: "lantern-alerts", manifest: { title: "Lantern Alerts" } },
+      { name: "trail-notes", manifest: null },
+      { name: "agents", manifest: { title: "Agents" } },
+      { name: "toast", manifest: null },
+    ],
+    new Set(["agents", "toast"]),
+  );
+  const names = (tab, query) => filterInstalled(rows, tab, query).map((r) => r.name);
+  assert.deepEqual(names("yours", ""), ["lantern-alerts", "lantern-tabs", "trail-notes"]);
+  assert.deepEqual(names("herdr", ""), ["agents", "toast"]);
+  assert.deepEqual(names("yours", "  ALERTS "), ["lantern-alerts"]);
+  assert.deepEqual(names("yours", "lantern-al"), ["lantern-alerts"], "the folder name matches too");
+  assert.deepEqual(names("yours", "lantern al"), ["lantern-alerts"], "the title matches, case aside");
+  assert.deepEqual(names("herdr", "lantern"), []);
+});

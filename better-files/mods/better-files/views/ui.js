@@ -2,7 +2,7 @@
 // tokens and small components, with only what this mod uses. UI only: values in,
 // callbacks out. Components return ordinary elements, so callers can chain.
 import { div, image, svg } from "gpui-kit";
-import { h_flex, v_flex, Popover, Textarea, TextView } from "gpui-base";
+import { h_flex, v_flex, Input, Popover, Textarea, TextView } from "gpui-base";
 import { theme, settings } from "herdr";
 import { fileIcon, isLight } from "../files/file-icons.js";
 
@@ -195,6 +195,23 @@ export function Message(text, error = false) {
 // Rendered Markdown, selectable, in Herdr's own TextView, the way its PR mod shows a description.
 export const Markdown = (id, text) =>
   TextView.markdown(id, text).text_size(TEXT.body).w_full().min_w(0).scrollable(false).selectable(true);
+
+// One line of text, such as the filter, the way Branch PR draws its search.
+export function TextField({ id, state, height = 28 }) {
+  const t = theme();
+  return Input.new(state)
+    .id(id)
+    .flex_1()
+    .min_w(0)
+    .h(height)
+    .px(10)
+    .rounded(8)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.input)
+    .text_size(TEXT.small)
+    .text_color(t.foreground);
+}
 
 export function TextBox({ id, state, label, height = 96 }) {
   const t = theme();

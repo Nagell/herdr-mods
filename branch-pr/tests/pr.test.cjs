@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const dir = path.join(__dirname, '../mods/branch-pr');
-const FILES = ['settings.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'views/files.js', 'main.js'];
+const FILES = ['settings.js', 'file-icons.js', 'github/model.js', 'views/ui.js', 'state/saved.js', 'github/discovery.js', 'github/reads.js', 'actions/menus.js', 'actions/agents.js', 'actions/changes.js', 'actions/worktrees.js', 'views/list.js', 'views/detail.js', 'views/conversation.js', 'views/checks.js', 'views/worktrees.js', 'views/files.js', 'main.js'];
 const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .join('\n')
   .replace(/^import\s+[\s\S]*?;$/gm, '')
@@ -14,7 +14,7 @@ const source = FILES.map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
   .replace(/^export /gm, '')
   + '\nObject.assign(globalThis, { authorsOf, repoUrl, who, agentName });';
 
-function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
+function harness({ storage = new Map(), exec, hc, known = [], home = '/app' } = {}) {
   const pending = [], timers = [], after = [], ran = [], sent = [], opened = [];
   const cx = { focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {}, open_url: (u) => opened.push(u), write_to_clipboard() {}, spawn(fn) { pending.push(fn(cx)); }, timer: { every(_ms, fn) { timers.push(fn); }, after(_ms, fn) { after.push(fn); } } };
   function el() {
@@ -40,7 +40,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
   const state = ({ value = '' } = {}) => ({ text: value, value() { return this.text; }, set_value(v) { this.text = v; }, handlers: {}, on(e, f) { this.handlers[e] = f; }, focus() {}, set_selected_range(r) { this.selected = r; } });
   const live = { spaces: [], panes: [], agents: [], shared: {} };
   const context = {
-    View: class {}, div: el, svg: el, v_flex: el, h_flex: el,
+    View: class {}, div: el, svg: (p) => { const e = el(); e.svgPath = p; return e; }, image: (p) => el().child(`image:${p}`), v_flex: el, h_flex: el,
     Popover: { new: (id) => el().id(id) }, Input: { new: () => el() }, Textarea: { new: () => el() },
     TextView: { markdown: (_id, text) => el().child(text) },
     InputState: { new: state }, TextareaState: { new: state },
@@ -49,8 +49,8 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
     hc: hc ?? (async (args) => { sent.push(args); return { code: 0, stdout: '', stderr: '' }; }),
     run: (name, args) => ran.push([name, args]),
     shared: (k) => live.shared[k], setShared: (k, v) => { live.shared[k] = v; },
-    home: () => '/home/sam', appHome: () => '/app', theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
-    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async () => null,
+    home: () => '/home/sam', appHome: () => home, watchFolder: () => new Promise(() => {}), theme: () => new Proxy({}, { get: (_t, k) => String(k) }),
+    layout: () => live.layout, settings: () => ({ font_family: 'Code' }), readTextFile: async (file) => (home === '/app' || !fs.existsSync(file) ? null : fs.readFileSync(file, 'utf8')),
     
     nextCommand: () => new Promise(() => {}), knownAgents: async () => known,
     localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) },
@@ -66,6 +66,7 @@ function harness({ storage = new Map(), exec, hc, known = [] } = {}) {
 }
 const same = (actual, expected) => assert.deepEqual(JSON.parse(JSON.stringify(actual)), expected);
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
+const svgs = (node) => (typeof node === 'string' || !node ? [] : [node.svgPath, ...(node.nodes ?? []).flatMap(svgs)].filter(Boolean));
 const strings = (node) => (typeof node === 'string' ? node : (node?.nodes ?? []).map(strings).join(' '));
 const click = (tree, id, h, event = {}) => { const node = find(tree, id); assert.ok(node, `no ${id}`); assert.ok(node.handlers.click, `${id} isn't clickable`); node.handlers.click(event, h.cx); };
 
@@ -1037,7 +1038,9 @@ test('a merged PR shows a Merged badge where Actions would be', () => {
 });
 
 const FILE = { filename: 'src/a.go', additions: 3, deletions: 1, patch: '@@ -1 +1 @@\n-a\n+b' };
-const filesHarness = () => harness({ exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[FILE]] : {}), stderr: '' }) });
+// The table is read by a task started in init, which the harness doesn't wait for, so wait for it a bounded while.
+const iconsRead = async (h) => { for (let i = 0; i < 100 && !h.mod.fileIcons; i++) await new Promise((done) => setImmediate(done)); };
+const filesHarness = (options = {}) => harness({ ...options, exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[FILE]] : {}), stderr: '' }) });
 
 test('the Files tab counts the files, lists them, and opens one on GitHub without Better Changes', async () => {
   const h = filesHarness();
@@ -1103,3 +1106,47 @@ test('moving to a tab with no terminal, such as a diff, keeps the PR instead of 
   h.tick();
   assert.equal(h.mod.spaceKey, key);
 });
+
+test("with Better Icons installed, the Files tab shows each file's and folder's colour icon", async () => {
+  const h = filesHarness({ home: path.join(__dirname, '../../better-icons') });
+  await iconsRead(h);
+  assert.ok(h.mod.fileIcons, 'the table loaded');
+  h.mod.pr = PR();
+  h.mod.selectSection('files', h.cx);
+  await h.flush();
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-file-src/a.go')), /image:mods\/better-icons\/icons\/go\.svg/);
+  assert.match(strings(find(tree, 'pr-folder-src')), /image:mods\/better-icons\/icons\/folder-src-open\.svg/);
+  click(tree, 'pr-folder-src', h);
+  assert.match(strings(find(h.mod.render(), 'pr-folder-src')), /image:mods\/better-icons\/icons\/folder-src\.svg/);
+  const plain = filesHarness();
+  await iconsRead(plain);
+  assert.equal(plain.mod.fileIcons, null, 'no table without Better Icons');
+  plain.mod.pr = PR();
+  plain.mod.selectSection('files', plain.cx);
+  await plain.flush();
+  tree = plain.mod.render();
+  assert.doesNotMatch(strings(find(tree, 'pr-file-src/a.go')), /image:/);
+  assert.doesNotMatch(strings(find(tree, 'pr-folder-src')), /image:/);
+  assert.ok(!svgs(find(tree, 'pr-folder-src')).includes('mods/branch-pr/icons/file.svg'), 'a folder gets no file icon');
+  assert.ok(svgs(find(tree, 'pr-file-src/a.go')).includes('mods/branch-pr/icons/file.svg'), 'a file keeps the plain icon');
+});
+
+test("on a light theme, the Files tab takes Better Icons' light pictures", async () => {
+  const toml = { filename: 'Cargo.toml', additions: 1, deletions: 0, patch: '@@ -0,0 +1 @@\n+a' };
+  const rules = { filename: '.cursor/rules.md', additions: 1, deletions: 0, patch: '@@ -0,0 +1 @@\n+a' };
+  const h = harness({ home: path.join(__dirname, '../../better-icons'), exec: async (_bin, [request]) => ({ code: 0, stdout: JSON.stringify(JSON.parse(request).action === 'files' ? [[toml, rules]] : {}), stderr: '' }) });
+  await iconsRead(h);
+  h.mod.pr = PR();
+  h.mod.selectSection('files', h.cx);
+  await h.flush();
+  assert.match(strings(find(h.mod.render(), 'pr-file-Cargo.toml')), /image:mods\/better-icons\/icons\/toml\.svg/);
+  h.context.theme = () => new Proxy({ background: '#fbf7f0' }, { get: (t, k) => t[k] ?? String(k) });
+  assert.match(strings(find(h.mod.render(), 'pr-file-Cargo.toml')), /image:mods\/better-icons\/icons\/toml_light\.svg/);
+  let tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor-open_light\.svg/, 'an open folder takes its light open picture');
+  click(tree, 'pr-folder-.cursor', h);
+  tree = h.mod.render();
+  assert.match(strings(find(tree, 'pr-folder-.cursor')), /image:mods\/better-icons\/icons\/folder-cursor_light\.svg/, 'a closed folder takes its light picture');
+});
+

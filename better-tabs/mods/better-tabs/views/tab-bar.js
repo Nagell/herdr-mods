@@ -33,15 +33,20 @@ export const tabBarMethods = {
 
   tabIcon(tab, ps, t) {
     const mine = ps.filter((p) => p.tab === tab.id);
-    const program = (mine.find((p) => p.program?.agent) ?? mine[0])?.program;
-    if (program?.icon) {
-      return program.tint
-        ? svg(program.icon).size(14).text_color(t.muted)
-        : image(program.icon).size(14);
-    }
-    // Mod panes carry no program, but a mod may publish an icon for itself.
-    const modIcon = shared("mod-icons")?.[mine.find((p) => p.mod)?.mod];
-    return modIcon ? svg(modIcon).size(14).text_color(t.muted) : null;
+    const draw = (pic) =>
+      pic?.icon ? (pic.tint ? svg(pic.icon).size(14).text_color(t.muted) : image(pic.icon).size(14)) : null;
+    // A program pane leads, picked the way Better Sidebar's lead() picks it: an agent, else the
+    // focused one, else the first. So both show the same icon for a tab.
+    const progs = mine.filter((p) => !p.mod);
+    const program = (progs.find((p) => p.program?.agent) ?? progs.find((p) => p.focused) ?? progs[0])?.program;
+    if (program?.icon) return draw(program);
+    // Mod panes carry no program. Any of them may publish its own icon in shared("pane-heads"), as
+    // a Better Files or Better Changes tab does for its file, with color: true for a full-colour
+    // picture; else the mod may publish an icon for itself.
+    const heads = shared("pane-heads") ?? {};
+    const head = heads[mine.find((p) => p.mod && heads[p.pane]?.icon)?.pane];
+    if (head) return draw({ icon: head.icon, tint: !head.color });
+    return draw({ icon: shared("mod-icons")?.[mine.find((p) => p.mod)?.mod], tint: true });
   },
 
   tabItem(tab, space, ps, t) {

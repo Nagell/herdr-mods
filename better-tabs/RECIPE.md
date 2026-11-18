@@ -18,6 +18,8 @@ The ⋮ menu is a 240px popup on `popover` with 5px padding and 32px rows, listi
 
 A press becomes a drag only after 400ms and 12px of movement, for tabs and toolbar buttons alike; anything less is a click. Nothing moves until release. Leaving the bar cancels a drag. Dropping a tab on + puts it last. A tab's click selects it, double-click renames it through `tab.rename`, and right-click opens the shipped `menu` mod. `tab.move` takes a one-based index.
 
+Tabs name themselves through `tab.rename`, from the bar's 300ms timer, never render, and not before the installed settings are read. From its panes, an agent beats another program, which beats a shell, and the first pane breaks a tie: an agent takes its `title` as Herdr gives it (its topic), on one line, with any status glyph in front removed (✳, a braille spinner) so the name holds still while it works, or its `program.name` while the title is empty or only says where it is (the folder, its path, or a short mark and the folder such as `π - lantern`); another program its `program.name`; a shell its folder (the last part, `~` for `home()`, `/` at the root). Names are cut at 80 characters. A mod's pane has no program and names nothing. A tab is renamed only when that name changes, so it follows a shell that starts an agent, then the agent's topic. `shared("better-tabs.names")` keeps, per tab, the name this mod set (`auto`) or `manual`, plus `pending` and `at` while a rename is on its way, so every window's bar waits for the same request. A rename that hasn't landed after 2 seconds is asked again if the tab still shows the name before it; a tab that shows some other name is the person's and is left alone. A tab named before the mod saw it is taken over only if a pane could have named it (its title, program name or folder), else it's `manual`. Renaming a tab to nothing hands it back. A closed tab's record is kept 10 seconds, and a tick where Herdr lists no tabs changes nothing, so startup and restore forget no one's names. `settings.tabs.auto_name: false` turns it off.
+
 Dropping a toolbar button on ⋮ hides it. In the menu, clicking a row runs its action, dragging out closes the menu so it can be dropped on the toolbar, and the pin restores it at the front. Buttons that don't fit the width also go in the menu. The arrangement is saved by button ID, per layout, in `shared("better-tabs.toolbar")`.
 
 Tabs use a wrapping flex row whose measured height resizes the bar with `layout.resize` on `tabs-row` if it exists, else `tabs`. Measured sizes are scaled by zoom, so divide by `settings().zoom`.
@@ -28,7 +30,7 @@ Actions are `panel` (`container`, `stack`, `target`) and `command` (`name`, `arg
 
 ## Built from
 
-One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
+One folder, `mods/better-tabs/`: `main.js`, `settings.js`, `mod.json` (`place: none`), `mod.schema.json` (its settings with their defaults, which the code's `DEFAULT_SETTINGS` must match), `actions/` (`engine.js`, `toolbar.js`, `names.js`), `views/` (`tab-bar.js`, `menu.js`, `drags.js`, `arrangement.js`, `panel-memory.js`, `ui.js`) and `icons/`. It uses `div`, `svg`, `image`, flex containers and popups through `openOverlay`. It runs no programs. Mod tabs show the icon their pane publishes in `shared("pane-heads")[pane].icon`, drawn with `image()` when `color` is true and tinted otherwise, else the icon in `shared("mod-icons")[mod]`. On macOS it leaves room for the traffic lights when the sidebar doesn't.
 
 ## Watch out
 
@@ -47,3 +49,4 @@ Copying the folder is not enough: shipped layouts are read-only, so point a tabs
 - Dragging shows the line between tabs and moves on release; leaving the bar cancels.
 - Many tabs wrap, the bar grows, + stays after the last tab, and the bar shrinks back when tabs close.
 - Dropping a button on ⋮ hides it, and the pin or a drag brings it back, surviving a restart.
+- A new shell tab shows its folder; starting Claude Code in it names it Claude Code, then its topic, which it follows; a tab you named keeps its name.

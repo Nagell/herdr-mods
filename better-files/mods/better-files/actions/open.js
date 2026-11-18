@@ -24,9 +24,24 @@ export const openMethods = {
     return entry.tab ? this.tabIsLive(entry.tab) : Date.now() - (entry.at ?? 0) < OPENING_MS;
   },
 
+  // Which space each tab is in, from one look at the spaces.
+  tabSpaces() {
+    return new Map(spaces().flatMap((s) => (s.tabs ?? []).map((t) => [t.id, s.id])));
+  },
+
+  // Whether a viewer's recorded tab is listed in another space. Focus can sit in another
+  // space while a viewer opens, and a click selecting that tab would make Herdr switch
+  // spaces, so it isn't the viewer's: the viewer looks for its own, and that tab's own viewer
+  // can claim it. Only a tab listed elsewhere counts: one not listed yet, as while tabs come
+  // back after a restart, is left alone.
+  wrongTab(entry, where = this.tabSpaces()) {
+    return Boolean(entry.tab) && (where.get(entry.tab) ?? entry.space) !== entry.space;
+  },
+
   liveViewers(space) {
+    const where = this.tabSpaces();
     return Object.entries(viewerEntries()).filter(
-      ([, entry]) => entry.space === space && this.viewerIsLive(entry),
+      ([, entry]) => entry.space === space && this.viewerIsLive(entry) && !this.wrongTab(entry, where),
     );
   },
 

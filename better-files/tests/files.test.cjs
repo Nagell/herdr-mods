@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.join(__dirname, '../mods/better-files');
-const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
+const FILES = ['settings.js', 'files/model.js', 'files/file-icons.js', 'files/filter.js', 'views/ui.js', 'files/reads.js', 'actions/open.js', 'actions/outside.js', 'actions/agents.js', 'actions/menus.js', 'views/tree.js', 'views/filter.js', 'views/tools.js', 'views/keys.js', 'views/viewer.js', 'views/context-menu.js', 'main.js'];
 // syntax.js keeps a scope of its own, as a module does: its languageOf isn't model.js's.
 const lexer = fs.readFileSync(path.join(root, 'syntax.js'), 'utf8').replace(/^export /gm, '');
 const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: lexerLanguage, WHOLE_FILE_LINES, fenceLanguage } = (() => {\n${lexer}\nreturn { highlightLines, tokenizeLine, syntaxColors, languageOf, WHOLE_FILE_LINES, fenceLanguage };\n})();\n`
@@ -15,20 +15,34 @@ const source = `const { highlightLines, tokenizeLine, syntaxColors, languageOf: 
     .replace(/^import\s+[\s\S]*?;$/gm, '')
     .replace(/^export default (\w+);$/m, 'globalThis.Mod = $1;')
     .replace(/^export /gm, '')
-  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS });';
+  + '\nObject.assign(globalThis, { parseStatus, parseHunks, buildRows, highlightLines, tokenizeLine, lexerLanguage, viewable, languageOf, sortEntries, markdownBlocks, resolvePath, isMarkdown, MAX_CHARS, indexOf, findMatches, matchRows, foldersTo, MAX_INDEXED, MAX_MATCHES, COPY_IMAGE });';
 
 const TREE = { '/repo': [['d', 'src'], ['f', 'b.md'], ['f', 'a.md']], '/repo/src': [['f', 'main.go']] };
 
-function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
+// Every file under /repo, as git ls-files -z would list it.
+const EVERY = 'a.md\0b.md\0new.txt\0src/main.go\0';
+
+function world({ pictures = {}, spaceFolder = '/repo', focusOn = null, storage = {}, everything = EVERY, deleted = '', found = '', copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, file, target, tree = TREE, status = ' M b.md\0M  src/main.go\0?? new.txt\0', editors = ['dev.zed.Zed'], top = '/repo', machine = null, cwd = '/repo', texts = {}, agents = [], known = [], sharedInit = {}, hcResult } = {}) {
   const store = new Map(Object.entries(sharedInit));
-  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [];
-  const live = { layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }], focused: { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
-  const timers = [];
+  const ran = [], execs = [], sent = [], clipboard = [], closed = [], overlays = [], urls = [], scrolled = [];
+  const live = { pictures: { ...pictures }, layout, panes: [{ pane: 'p1', tab: 'tab1', cwd }, ...(focusOn ? [focusOn] : [])], focused: focusOn ? { space: 's', tab: focusOn.tab, pane: focusOn.pane, cwd: null } : { space: 's', tab: 'tab1', pane: 'p1', cwd }, agents, texts: { ...texts } };
+  const timers = [], later = [];
+  const kept = new Map(Object.entries(storage));
+  const waiting = [];
+  // What holds the keyboard: a focus handle or an input's state.
+  let holder = null;
+  const take = (next) => {
+    if (holder === next) return;
+    const last = holder;
+    holder = next;
+    last?.handlers?.blur?.({}, cx);
+    next?.handlers?.focus?.({}, cx);
+  };
   const pending = [];
   const cx = {
-    focus_handle: () => ({ focus() {} }), stop_propagation() {}, notify() {},
+    focus_handle: () => { const handle = { focus: () => take(handle), is_focused: () => holder === handle }; return handle; }, stop_propagation() {}, notify() { cx.notified = (cx.notified ?? 0) + 1; },
     spawn(fn) { const p = fn(cx); pending.push(p); return p; },
-    timer: { every: (_ms, fn) => timers.push(fn), after() {} },
+    timer: { every: (_ms, fn) => timers.push(fn), after: (ms, fn) => later.push([ms, fn]) },
     write_to_clipboard: (text) => clipboard.push(text),
     open_url: (url) => urls.push(url),
   };
@@ -43,26 +57,34 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
         return (...a) => {
           if (k === 'id') t.elementId = a[0];
           if (k === 'text_color') t.colors.push(a[0]);
+          if (k === 'border_color') t.border = a[0];
           if (k === 'on_click') t.handlers.click = a[0];
           if (k === 'on_item_click') t.handlers.item = a[0];
           if (k === 'on_link_click') t.handlers.link = a[0];
           if (k === 'on_open_change') t.handlers.open = a[0];
           if (k === 'on_mouse_down') t.handlers[`down-${a[0]}`] = a[1];
+          if (k === 'on_key_down') t.handlers.key = a[0];
           return proxy;
         };
       },
     });
     return proxy;
   }
-  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; }, on() {}, focus() {}, release() { this.released = true; } });
+  const state = (o = {}) => ({ text: o.value ?? '', opts: o, sets: 0, handlers: {}, value() { return this.text; }, set_value(v) { this.text = v; this.sets++; this.handlers.change?.({}, cx); }, on(ev, fn) { this.handlers[ev] = fn; }, focus() { take(this); }, get focused() { return holder === this; }, release() { this.released = true; } });
   const context = {
-    View: class {}, div: el, svg: (p) => { const e = el(); e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
-    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state },
-    Scrollbar: { vertical: () => el() }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => { context.scrolledTo = i; }, release() {} }) }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
+    View: class {}, div: el, svg: (p) => { const e = el(); e.svgPath = p; e.child(`svg:${p}`); return e; }, image: (p) => { const e = el(); e.child(`image:${p}`); return e; }, h_flex: el, v_flex: el,
+    Popover: { new: (id) => el().id(id) }, Textarea: { new: () => el() }, TextareaState: { new: state }, Input: { new: () => el() }, InputState: { new: state }, ScrollHandle: { new: () => ({ scroll_to_item: (i) => scrolled.push(i) }) },
+    Scrollbar: { vertical: () => el() }, TextView: { markdown: (id, text) => el().id(id).child(`md:${text}`) }, v_virtual_list: (_id, count, sizes, key, render) => { const e = el().id('viewer-list'); if (Array.isArray(sizes) && sizes.length !== count) throw new Error('sizes'); for (let i = 0; i < count; i++) key(i); e.children(render({ start: 0, end: Math.min(count, 60) })); return e; }, Editor: { new: (s) => el().child(s.text) }, EditorState: { new: (o) => { const s = state(o); context.lastCode = s; return s; } },
     theme: () => new Proxy({}, { get: (_t, k) => `#${String(k)}` }),
     settings: () => ({ font_family: 'Code', font_size: 14 }), window: () => ({ platform: 'macos' }),
     props: () => ({ mode, viewer, file, target, space: 's', overlay: 'ov1' }),
-    spaces: () => [{ id: 's', active: true, folder: '/repo', machine, tabs: [{ id: 'tab1' }] }],
+    // Space `s` is the active one; a pane with `space` set puts its tab in that space instead.
+    // A focused file tab (`focusOn`) is its space's shown tab.
+    spaces: () => {
+      const tabsOf = (id) => live.panes.filter((p) => (p.space ?? 's') === id).map((p) => p.tab);
+      const ids = [...new Set(['s', ...live.panes.map((p) => p.space ?? 's')])];
+      return ids.map((id) => ({ id, active: id === 's', folder: spaceFolder, machine, tabs: [...new Set(id === 's' ? ['tab1', ...tabsOf(id)] : tabsOf(id))].map((tab) => ({ id: tab, ...(focusOn && tab === focusOn.tab ? { active: true } : {}) })) }));
+    },
     panes: () => live.panes, focused: () => live.focused, agents: () => live.agents,
     shared: (k) => store.get(k), setShared: (k, v) => { store.set(k, v); return null; },
     run: (name, args) => {
@@ -70,13 +92,16 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
       if (name === 'tab.new' && args.mod) live.panes.push({ pane: `p${live.panes.length + 1}`, tab: `tab${live.panes.length + 1}`, mod: args.mod });
     },
     openOverlay: (spec) => { overlays.push(JSON.parse(JSON.stringify(spec))); return 'ov1'; }, closeOverlay: (id) => closed.push(id),
-    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise(() => {}), watchFolder: () => new Promise(() => {}),
+    layout: () => live.layout, appHome: () => '/app', nextCommand: () => new Promise((resolve) => waiting.push(resolve)), watchFolder: () => new Promise(() => {}),
     readTextFile: async (p) => { if (p.endsWith('better-changes/mod.json')) return '{}'; if (p.endsWith('better-files/mod.json')) return null; if (live.texts[p] instanceof Error) throw live.texts[p]; return live.texts[p] ?? null; },
     knownAgents: async () => known,
     hc: async (args) => { sent.push(args); return hcResult ?? { code: 0, stdout: '', stderr: '' }; },
     exec: async (bin, args, options) => {
       execs.push([bin, ...args]);
-      if (bin === 'sh' && args[2] === 'copy-image') return copyImage ?? { code: 0 };
+      if (bin === 'sh' && args[2] === 'copy-image') return (typeof copyImage === 'function' ? copyImage(args) : copyImage) ?? { code: 0, stdout: `${args[5]}-${live.pictures[args[3]] ?? '111-3'}.${args[6]}` };
+      if (bin === 'sh' && args[2] === 'index') return { code: 0, stdout: found };
+      if (bin === 'git' && args.includes('--deleted')) return top ? { code: 0, stdout: deleted } : { code: 128, stdout: '' };
+      if (bin === 'git' && args.includes('ls-files')) return top ? { code: 0, stdout: everything } : { code: 128, stdout: '' };
       if (bin === 'sh' && args[2] === 'fetch-image') return { code: 0, stdout: `${args[4]}.svg` };
       if (bin === 'sh') return { code: 0, stdout: (tree[args.at(-1)] ?? []).flatMap(([k, n]) => [k, n, '']).join('\0').replace(/\0\0/g, '\0') };
       if (bin === 'mdfind') return { code: 0, stdout: editors.some((b) => args[0].includes(b)) ? '/Apps/It.app\n' : '' };
@@ -85,14 +110,15 @@ function world({ copyImage, diff = '', layout = {}, mode = 'sidebar', viewer, fi
       if (bin === 'git') return { code: 0, stdout: status };
       return { code: 0, stdout: '', stderr: '' };
     },
-    localStorage: { getItem: () => null, setItem() {} }, console,
+    localStorage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)) }, console,
   };
   vm.createContext(context);
   vm.runInContext(source, context);
   const mod = new context.Mod();
   mod.init({}, cx);
   const flush = async () => { for (let i = 0; i < 25; i++) await new Promise(setImmediate); };
-  return { mod, cx, store, ran, execs, sent, clipboard, closed, overlays, urls, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
+  const command = async (name) => { for (let i = 0; i < 25 && !waiting.length; i++) await new Promise(setImmediate); waiting.shift()(name); await flush(); };
+  return { mod, cx, store, kept, command, ran, execs, sent, clipboard, closed, overlays, urls, scrolled, later, live, context, flush, tick: () => { for (const fn of timers) fn(cx); } };
 }
 const ready = async (o) => { const h = world(o); await h.flush(); return h; };
 const find = (node, id) => (node?.elementId === id ? node : node?.nodes?.map((n) => find(n, id)).find(Boolean));
@@ -211,6 +237,143 @@ test('a new viewer never claims a tab that was already open, such as the one it 
   h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
   h.tick();
   assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
+});
+
+test('a viewer\'s tab is always in its own space, so a click never switches spaces', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  // Focus sits on a Better Files tab in another space while this viewer opens.
+  const h = world({ mode: 'viewer', viewer: 'v', file, sharedInit: { 'better-files.viewers': { v: { space: 's', file, tab: null, others: [], at: Date.now() } } } });
+  h.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  h.live.focused = { space: 'other', tab: 'tab9', pane: 'p9' };
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').v.tab, null, 'another space\'s tab is not its own');
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' });
+  h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
+
+  // An entry recorded wrongly before: its tab lives in another space.
+  const side = await ready({ sharedInit: { 'better-files.viewers': { bad: { space: 's', tab: 'tab9', file: { path: '/repo/b.md', root: '/repo', on: null }, preview: true } } } });
+  side.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  click(side, 'files-row-a.md');
+  assert.ok(!side.ran.some(([n, a]) => n === 'tab.select' && a.id === 'tab9'), 'never selects the other space\'s tab');
+  assert.equal(tabs(side).at(-1)[1].space, 's', 'opens a tab in this space instead');
+  side.mod.startedAt = 0;
+  side.tick();
+  assert.ok('bad' in side.store.get('better-files.viewers'), 'kept while its viewer is open, so it keeps what it shows');
+});
+
+test('a viewer holding a tab in another space keeps its file and choices, and claims its own tab, never a newer viewer\'s', async () => {
+  const a = { path: '/repo/a.md', root: '/repo', on: null };
+  const b = { path: '/repo/b.md', root: '/repo', on: null };
+  // Opened with a.md and now showing b.md in code view as the shared tab, its tab tab2,
+  // but recorded with tab9 in another space.
+  const wrong = { space: 's', tab: 'tab9', file: b, preview: true, markdown: 'code', others: ['tab1'], at: 1 };
+  const h = world({ mode: 'viewer', viewer: 'v', file: a, sharedInit: { 'better-files.viewers': { v: wrong } } });
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  h.tick();
+  assert.equal(h.mod.file.path, '/repo/b.md');
+  // A newer viewer is opening here; its tab is focused first.
+  const viewersNow = () => h.store.get('better-files.viewers');
+  h.store.set('better-files.viewers', { ...viewersNow(), n: { space: 's', tab: null, file: a, preview: false, others: ['tab1', 'tab2', 'tab9'], at: Date.now() } });
+  h.live.panes.push({ pane: 'p3', tab: 'tab3', mod: 'better-files' });
+  h.live.focused = { space: 's', tab: 'tab3', pane: 'p3' };
+  h.tick();
+  assert.equal(viewersNow().v.tab, 'tab9', 'leaves the newer viewer\'s tab to it');
+  // Its own tab is focused.
+  h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+  h.tick();
+  const v = viewersNow().v;
+  assert.deepEqual([v.tab, v.file.path, v.preview, v.markdown], ['tab2', '/repo/b.md', true, 'code']);
+  assert.equal(h.mod.file.path, '/repo/b.md');
+});
+
+test('a viewer with a wrong entry never puts its header on the other space\'s tab', async () => {
+  const file = { path: '/repo/b.md', root: '/repo', on: null };
+  const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/b.md': 'hi' }, sharedInit: { 'better-files.viewers': { v: { space: 's', tab: 'tab9', file, preview: true, others: [], at: 1 } } } });
+  h.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  h.tick();
+  assert.equal(h.store.get('pane-heads')?.p9, undefined);
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' });
+  h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+  h.tick();
+  h.tick();
+  assert.ok(h.store.get('pane-heads')?.p2, 'its own tab gets it once claimed');
+});
+
+test('a tab not listed in any space yet still counts as held, so a viewer keeps it', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const h = world({ mode: 'viewer', viewer: 'v', file, sharedInit: { 'better-files.viewers': { v: { space: 's', tab: 'tab2', file, preview: true, others: [], at: 1 } } } });
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' });
+  h.live.focused = { space: 's', tab: 'tab3', pane: 'p3' };
+  // Tabs coming back after a restart: panes know tab2 before the space lists it.
+  h.context.spaces = () => [{ id: 's', active: true, folder: '/repo', tabs: [{ id: 'tab1' }, { id: 'tab3' }] }];
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').v.tab, 'tab2');
+  const side = await ready({ sharedInit: { 'better-files.viewers': { v: { space: 's', tab: 'tab2', file, preview: true } } } });
+  side.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' });
+  side.context.spaces = () => [{ id: 's', active: true, folder: '/repo', tabs: [{ id: 'tab1' }] }];
+  click(side, 'files-row-a.md');
+  assert.ok(side.ran.some(([n, a]) => n === 'tab.select' && a.id === 'tab2'), 'a click still reuses it');
+  assert.equal(tabs(side).length, 0);
+});
+
+test('the newer of two opening viewers claims the newer tab', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const entries = () => ({
+    old: { space: 's', tab: null, file, others: ['tab1'], at: Date.now() - 100 },
+    n: { space: 's', tab: null, file, others: ['tab1', 'tab2'], at: Date.now() },
+  });
+  for (const [id, focus, claims] of [['old', 'tab3', null], ['n', 'tab3', 'tab3'], ['old', 'tab2', 'tab2'], ['n', 'tab2', null]]) {
+    const h = world({ mode: 'viewer', viewer: id, file, sharedInit: { 'better-files.viewers': entries() } });
+    h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' });
+    h.live.focused = { space: 's', tab: focus, pane: 'p' };
+    h.tick();
+    assert.equal(h.store.get('better-files.viewers')[id].tab, claims, `${id} with ${focus} focused`);
+  }
+});
+
+test('a newer viewer only holds an older one back while it is still opening in the same space', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const old = { space: 's', tab: null, file, others: ['tab1'], at: Date.now() - 100 };
+  for (const [why, entries] of [
+    ['it already has its tab', { old, n: { space: 's', tab: 'tab3', file, others: ['tab1'], at: Date.now() } }],
+    ['it opens in another space', { old, n: { space: 'other', tab: null, file, others: [], at: Date.now() } }],
+    // Both asked for long ago: the newer one's opening has run out without a tab.
+    ['its opening has run out', { old: { ...old, at: 5 }, n: { space: 's', tab: null, file, others: [], at: 10 } }],
+  ]) {
+    const h = world({ mode: 'viewer', viewer: 'old', file, sharedInit: { 'better-files.viewers': entries } });
+    h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' });
+    h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+    h.tick();
+    assert.equal(h.store.get('better-files.viewers').old.tab, 'tab2', `claims its tab when ${why}`);
+  }
+});
+
+test('a viewer finding its own tab next to a newer shared tab becomes a tab you keep', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const wrong = { space: 's', tab: 'tab9', file, preview: true, others: ['tab1'], at: 1 };
+  const shared = { space: 's', tab: 'tab3', file, preview: true, others: ['tab1', 'tab2'], at: Date.now() };
+  for (const [entries, preview] of [[{ v: wrong }, true], [{ v: wrong, n: shared }, false]]) {
+    const h = world({ mode: 'viewer', viewer: 'v', file, sharedInit: { 'better-files.viewers': entries } });
+    h.live.panes.push({ pane: 'p2', tab: 'tab2', mod: 'better-files' }, { pane: 'p3', tab: 'tab3', mod: 'better-files' }, { pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+    h.live.focused = { space: 's', tab: 'tab2', pane: 'p2' };
+    h.tick();
+    const v = h.store.get('better-files.viewers').v;
+    assert.deepEqual([v.tab, v.preview], ['tab2', preview]);
+  }
+});
+
+test('a tab held by an entry from another space can still be claimed by its own viewer', async () => {
+  const file = { path: '/repo/a.md', root: '/repo', on: null };
+  const h = world({ mode: 'viewer', viewer: 'r', file, sharedInit: { 'better-files.viewers': {
+    bad: { space: 's', tab: 'tab9', file, preview: true, others: [], at: 1 },
+    r: { space: 'other', tab: null, file, others: [], at: Date.now() },
+  } } });
+  h.live.panes.push({ pane: 'p9', tab: 'tab9', mod: 'better-files', space: 'other' });
+  h.live.focused = { space: 'other', tab: 'tab9', pane: 'p9' };
+  h.tick();
+  assert.equal(h.store.get('better-files.viewers').r.tab, 'tab9');
 });
 
 test('the viewer follows the file, and keeps the same rows until it really changes', async () => {
@@ -443,17 +606,17 @@ test('the setting can use Herdr\'s own editor instead', async () => {
 test('an image shows as a picture, with no text read and no gutter', async () => {
   const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
   const h = await ready({ mode: 'viewer', viewer: 'v', file, status: ' M shot.PNG\n', diff: '@@ -1 +1 @@\n' });
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /image:data\/better-files\/cache\/v-1\.png/);
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/);
   assert.equal(h.context.lastCode, undefined);
   const copy = h.execs.find((e) => e[1] === '-c' && e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/data/better-files/cache/v-1.png', ''], 'names go as arguments');
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/shot.PNG', '/app/mods/better-files/.cache', 'v', 'png', ''], 'names go as arguments');
   h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
   h.tick();
   await h.flush();
-  assert.match(strings(find(h.mod.render(), 'viewer-image')), /cache\/v-2\.jpg/, 'a new file, a new name');
-  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[6], '/app/data/better-files/cache/v-1.png', 'the old copy goes');
+  assert.match(strings(find(h.mod.render(), 'viewer-image')), /^image:mods\/better-files\/\.cache\/v-111-3\.jpg$/, 'a new file, a new name');
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the old copy goes');
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/data/better-files/cache/v-2.jpg']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-111-3.jpg']);
   const gone = await ready({ mode: 'viewer', viewer: 'v', file, copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /no longer available/);
   assert.equal(markBars(h).length, 0);
@@ -623,13 +786,19 @@ test('the status parser and helpers', async () => {
   assert.equal(m.languageOf('Makefile'), 'txt');
 });
 
+test('the suggested key focuses the tree through a command the sidebar handles', () => {
+  const keys = JSON.parse(fs.readFileSync(path.join(__dirname, '../keys.json'), 'utf8'));
+  assert.deepEqual(keys, { global: { 'cmd-shift-e': 'better-files.focus' } });
+  assert.match(fs.readFileSync(path.join(root, 'main.js'), 'utf8'), /command === "focus"\) this\.focusTree\(cx\)/);
+});
+
 test('every icon is used, every used icon exists, and nothing here can write a file', () => {
   const code = [...FILES, 'syntax.js'].map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
   const icons = fs.readdirSync(path.join(root, 'icons')).map((f) => f.replace('.svg', ''));
   for (const icon of icons) assert.ok(code.includes(`"${icon}"`), `unused icon ${icon}`);
   for (const [, name] of code.matchAll(/(?:icon: |Icon\()"([a-z-]+)"/g)) assert.ok(icons.includes(name), `missing icon ${name}`);
   assert.doesNotMatch(code, /writeTextFile|writeFile|readonly: false/);
-  assert.equal((code.match(/\brm\b/g) ?? []).length, 2, 'rm only ever touches the cache');
+  assert.equal((code.match(/\brm\b/g) ?? []).length, 3, 'rm only ever touches the cache: a replaced copy, a half-made one, and a closing tab\'s');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'mod.json'))).title, 'Better Files');
   assert.doesNotMatch(code, /panel-body|better-tabs|estro/i);
 });
@@ -735,14 +904,14 @@ test('a Markdown file opens in Preview; the toggle switches to Code and back, re
 test('the preview follows the file on disk, and shows its pictures through the cache', async () => {
   const h = await mdWorld();
   const copy = h.execs.find((e) => e[3] === 'copy-image');
-  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/data/better-files/cache/v-m1.png', '']);
-  assert.match(strings(h.mod.render()), /image:data\/better-files\/cache\/v-m1\.png/);
+  assert.deepEqual(JSON.parse(JSON.stringify(copy.slice(4))), ['/repo/docs/pics/shot.PNG', '/app/mods/better-files/.cache', 'v-m1', 'png', '']);
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/);
   h.live.texts['/repo/docs/guide.md'] = '# Changed';
   h.tick();
   await h.flush();
   assert.match(strings(find(h.mod.render(), 'viewer-preview')), /md:# Changed/);
   await h.mod.close();
-  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/data/better-files/cache/v-m1.png']);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-m1-111-3.png']);
   const gone = await mdWorld({ copyImage: { code: 1 } });
   assert.match(strings(gone.mod.render()), /Shot isn't available/);
   const far = await mdWorld({ file: { ...MD, on: 'box' } });
@@ -774,7 +943,7 @@ test('the preview draws code blocks, rows of badges from the web, and jumps to a
   const h = await ready({ mode: 'viewer', viewer: 'v', file, texts: { '/repo/README.md': readme } });
   const fetch = h.execs.find((e) => e[3] === 'fetch-image');
   assert.equal(fetch[4], 'https://img.shields.io/badge/Nuxt', 'the badge is downloaded');
-  assert.match(fetch[5], /^\/app\/data\/better-files\/cache\/web-[0-9a-f]+$/);
+  assert.match(fetch[5], /^\/app\/mods\/better-files\/\.cache\/web-[0-9a-f]+$/);
   const render = () => h.mod.render();
   const colorOf = (node, s) => (node?.nodes?.includes(s) ? node.colors.at(-1) : node?.nodes?.map((n) => colorOf(n, s)).find(Boolean));
 
@@ -786,15 +955,468 @@ test('the preview draws code blocks, rows of badges from the web, and jumps to a
   assert.deepEqual([...h.clipboard], ['pnpm dev # start'], 'the copy button copies the code');
 
   const badge = find(render(), 'viewer-image-2-0-0');
-  assert.match(strings(badge), /image:data\/better-files\/cache\/web-[0-9a-f]+\.svg/);
+  assert.match(strings(badge), /image:mods\/better-files\/\.cache\/web-[0-9a-f]+\.svg/);
   click(h, 'viewer-image-2-0-0');
   assert.deepEqual([...h.urls], ['https://nuxt.com'], 'a linked badge opens its link');
 
   find(render(), 'viewer-md-v-0').handlers.link('#about-the-project', h.cx);
-  assert.equal(h.context.scrolledTo, 1, 'the anchor scrolls to its heading\'s block');
+  assert.equal(h.scrolled.at(-1), 1, 'the anchor scrolls to its heading\'s block');
 
   await h.mod.close();
   assert.ok(!h.execs.some((e) => e[0] === 'rm' && e.some((a) => /web-/.test(a))), 'closing keeps the shared downloads');
+});
+
+const typeFilter = async (h, text) => { h.mod.filter.set_value(text); await h.flush(); };
+const rowIds = (h) => (find(h.mod.render(), 'files-list').nodes ?? []).map((n) => n.elementId).filter((id) => typeof id === 'string');
+
+test('the filter index lists every file once, with the folders they are in', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('./src/a.ts\0src/a.ts\0docs/guide/intro.md\0README.md\0');
+  assert.deepEqual([...index.files], ['src/a.ts', 'docs/guide/intro.md', 'README.md']);
+  assert.deepEqual([...index.dirs].sort(), ['docs', 'docs/guide', 'src']);
+  assert.equal(index.capped, false);
+  const cut = m.indexOf('one.md\0two.md\0thr');
+  assert.deepEqual([...cut.files], ['one.md', 'two.md'], 'a name cut short is dropped');
+  assert.equal(cut.capped, true);
+  const many = m.indexOf(Array.from({ length: m.MAX_INDEXED + 5 }, (_, i) => `f${i}`).join('\0') + '\0');
+  assert.equal(many.files.length, m.MAX_INDEXED);
+  assert.equal(many.capped, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.indexOf(''))), { files: [], dirs: [], capped: false });
+});
+
+test('a name holding the words matches, names that start with them first; a / matches the path', async () => {
+  const { context: m } = await ready();
+  const index = m.indexOf('src/button.tsx\0src/icons/play-button.svg\0docs/buttons.md\0ui/mybutton.md\0tests/a.spec.ts\0Makefile\0');
+  const paths = (q) => [...m.findMatches(index, q).hits.map((h) => h.path)];
+  assert.deepEqual(paths('BUTTON'), ['src/button.tsx', 'docs/buttons.md', 'ui/mybutton.md', 'src/icons/play-button.svg']);
+  assert.deepEqual(paths('icons'), ['src/icons']);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.findMatches(index, 'icons').hits[0])), { path: 'src/icons', dir: true });
+  assert.deepEqual(paths('src/b'), ['src/button.tsx']);
+  assert.deepEqual(paths('nothing here'), []);
+  assert.deepEqual(paths('   '), []);
+  const big = m.indexOf(Array.from({ length: 250 }, (_, i) => `f${i}.md`).join('\0') + '\0');
+  const found = m.findMatches(big, '.md');
+  assert.equal(found.hits.length, m.MAX_MATCHES);
+  assert.equal(found.more, true);
+});
+
+test('matches show as a tree under their folders, folders first, and a folder reveals all the way down', async () => {
+  const { context: m } = await ready();
+  const rows = m.matchRows([{ path: 'src/ui/button.tsx', dir: false }, { path: 'docs', dir: true }, { path: 'a-button.md', dir: false }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
+    { relative: 'docs', name: 'docs', dir: true, depth: 0, hit: true, open: false },
+    { relative: 'src', name: 'src', dir: true, depth: 0, hit: false, open: true },
+    { relative: 'src/ui', name: 'ui', dir: true, depth: 1, hit: false, open: true },
+    { relative: 'src/ui/button.tsx', name: 'button.tsx', dir: false, depth: 2, hit: true, open: false },
+    { relative: 'a-button.md', name: 'a-button.md', dir: false, depth: 0, hit: true, open: false },
+  ]);
+  assert.deepEqual([...m.foldersTo('a/b/c', true)], ['a', 'a/b', 'a/b/c']);
+  assert.deepEqual([...m.foldersTo('a/b/c.md', false)], ['a', 'a/b']);
+});
+
+test('the filter finds a file in a folder not opened yet, from Git\'s list, and Enter opens it', async () => {
+  const h = await ready();
+  assert.ok(find(h.mod.render(), 'files-filter-input'), 'the filter sits under the header');
+  assert.equal(find(h.mod.render(), 'files-filter-clear'), undefined, 'no clear button while empty');
+  await typeFilter(h, 'main');
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 1);
+  assert.equal(h.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 0, 'no find inside a repo');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.match(strings(find(h.mod.render(), 'files-row-src/main.go')), /main\.go M/);
+  const chevron = (id) => find(h.mod.render(), id).nodes[0].nodes[0].svgPath;
+  assert.equal(chevron('files-row-src'), 'mods/better-files/icons/chevron-down.svg', 'shut in the tree, open among the matches');
+  await typeFilter(h, 'mai');
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 1, 'typing more reads nothing again');
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).length, 1);
+  assert.equal(tabs(h)[0][1].name, 'main.go');
+  click(h, 'files-filter-clear');
+  assert.equal(h.mod.filter.value(), '');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-a.md', 'files-row-b.md']);
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined, 'the tree is as it was, src still shut');
+});
+
+test('Escape clears the filter, and a folder picked from the matches opens in the tree and scrolls to it', async () => {
+  const h = await ready();
+  await typeFilter(h, 'zz');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  let stopped = false;
+  await typeFilter(h, 'sr');
+  assert.deepEqual(rowIds(h), ['files-row-src']);
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '');
+  assert.ok(h.mod.folders.has('src'));
+  h.mod.render();
+  assert.deepEqual(h.scrolled, [0]);
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
+  await typeFilter(h, 'b.m');
+  const keys = find(h.mod.render(), 'files-filter');
+  keys.handlers.key({ key: 'escape', keystroke: 'escape' }, { stop_propagation: () => (stopped = true), notify() {} });
+  assert.equal(h.mod.filter.value(), '');
+  assert.equal(stopped, true);
+});
+
+test('Enter skips a matching folder for the first matching file, and a long list says it stops at 200', async () => {
+  const h = await ready({ everything: 'docs/doc.md\0' });
+  await typeFilter(h, 'doc');
+  assert.deepEqual(rowIds(h), ['files-row-docs', 'files-row-docs/doc.md']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h)[0][1].name, 'doc.md');
+  const many = await ready({ everything: Array.from({ length: 250 }, (_, i) => `n${i}.md`).join('\0') + '\0' });
+  await typeFilter(many, '.md');
+  assert.equal(rowIds(many).length, 200);
+  assert.equal(strings(find(many.mod.render(), 'files-list').nodes.at(-1)), 'Showing the first 200 matches.');
+});
+
+test('outside a repo the filter uses find, shallower in a home folder, and says when the list was cut', async () => {
+  const h = await ready({ top: null, found: './notes/todo.txt\0./notes/plan.txt\0./ca' });
+  await typeFilter(h, 'plan');
+  const call = h.execs.find((e) => e[0] === 'sh' && e[3] === 'index');
+  assert.deepEqual(call.slice(3), ['index', '12', '4000000']);
+  assert.match(call[2], /-name '\.git' -o -name 'node_modules'/);
+  assert.deepEqual(rowIds(h), ['files-row-notes', 'files-row-notes/plan.txt']);
+  assert.match(strings(find(h.mod.render(), 'files-list')), /only part of it was searched \(at most 40,000 files\)\.$/);
+  const home = await ready({ top: null, cwd: '/home/kim', tree: { '/home/kim': [] } });
+  await typeFilter(home, 'x');
+  assert.deepEqual(home.execs.find((e) => e[0] === 'sh' && e[3] === 'index').slice(4), ['5', '4000000']);
+});
+
+test('the list is read again when it is old, and a failed read says why', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  h.mod.index.at = 0;
+  h.tick();
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 2);
+  h.mod.index.at = Date.now() - 6000;
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.execs.filter((e) => e.includes('--cached')).length, 3);
+  const broken = await ready({ top: null });
+  broken.context.exec = async () => ({ code: 1, stdout: '', stderr: 'find: permission denied' });
+  await typeFilter(broken, 'x');
+  assert.match(strings(find(broken.mod.render(), 'files-list')), /^find: permission denied$/);
+});
+
+test('a busy folder reads the list again at most every 5 seconds, and catches up after', async () => {
+  const h = await ready();
+  await typeFilter(h, 'main');
+  const reads = () => h.execs.filter((e) => e.includes('--cached')).length;
+  assert.equal(reads(), 1);
+  for (let i = 0; i < 3; i++) {
+    h.mod.index.stale = true;
+    h.mod.refresh(h.cx);
+    await h.flush();
+  }
+  assert.equal(reads(), 1);
+  assert.equal(h.later.length, 1);
+  assert.ok(h.later[0][0] > 4000 && h.later[0][0] <= 5000, `waits ${h.later[0][0]} ms`);
+  h.mod.index.at = Date.now() - 6000;
+  h.later[0][1](h.cx);
+  await h.flush();
+  assert.equal(reads(), 2);
+  assert.equal(h.mod.index.stale, false);
+  h.mod.index.stale = true;
+  h.mod.refresh(h.cx);
+  assert.equal(h.later.length, 2, 'the next busy spell waits too');
+});
+
+test('the filter leaves out a file deleted but not staged, and reads a folder Git ignores with find', async () => {
+  const h = await ready({ deleted: 'b.md\0' });
+  await typeFilter(h, '.md');
+  assert.deepEqual(rowIds(h), ['files-row-a.md'], 'b.md is gone from disk');
+  const ignored = await ready({ everything: '', found: './index.js\0' });
+  await typeFilter(ignored, 'index');
+  assert.equal(ignored.execs.filter((e) => e[0] === 'sh' && e[3] === 'index').length, 1, 'Git listed nothing, so find did');
+  assert.deepEqual(rowIds(ignored), ['files-row-index.js']);
+});
+
+test('a change on disk while the list is being read leaves the new list stale', async () => {
+  const h = await ready();
+  const exec = h.context.exec;
+  h.context.exec = async (bin, args, options) => {
+    if (args.includes('--cached')) h.mod.changes = (h.mod.changes ?? 0) + 1;
+    return exec(bin, args, options);
+  };
+  await typeFilter(h, 'main');
+  assert.equal(h.mod.index.stale, true, 'it is read again once the wait is over');
+  h.context.exec = exec;
+  h.mod.index.at = Date.now() - 6000;
+  h.mod.refresh(h.cx);
+  await h.flush();
+  assert.equal(h.mod.index.stale, false);
+});
+
+test('a folder picked from the matches opens even while the tree is still loading', async () => {
+  const h = await ready();
+  await typeFilter(h, 'sr');
+  h.mod.loading = h.mod.key;
+  click(h, 'files-row-src');
+  await h.flush();
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder has its files');
+});
+
+test('moving to another folder drops the last one\'s filter error, marker and the folder it was to scroll to', async () => {
+  const tree = { ...TREE, '/elsewhere': [['d', 'src']], '/elsewhere/src': [] };
+  const h = await ready({ tree });
+  await typeFilter(h, 'sr');
+  click(h, 'files-row-src');
+  h.mod.indexError = 'find: permission denied';
+  h.mod.cursor = 'src';
+  h.live.panes[0].cwd = '/elsewhere';
+  h.live.focused.cwd = '/elsewhere';
+  h.tick();
+  assert.equal(h.mod.indexError, null);
+  assert.equal(h.mod.cursor, null, 'a marker from the last folder goes');
+  await h.flush();
+  h.mod.render();
+  assert.deepEqual(h.scrolled, []);
+});
+
+const keyOn = (h, id, keystroke) => {
+  let stopped = false;
+  find(h.mod.render(), id).handlers.key({ keystroke, key: keystroke, modifiers: {} }, { ...h.cx, stop_propagation: () => { stopped = true; } });
+  return stopped;
+};
+const press = (h, keystroke) => keyOn(h, 'files-list', keystroke);
+const marked = (h) => {
+  const out = [];
+  const walk = (n) => { if (n?.elementId?.startsWith?.('files-row-') && n.border === '#accent') out.push(n.elementId.slice('files-row-'.length)); (n?.nodes ?? []).forEach(walk); };
+  walk(h.mod.render());
+  return out;
+};
+
+test('clicking the tree gives it the keyboard, and the arrows, j and k move a marker through the rows', async () => {
+  const h = await ready();
+  assert.deepEqual(marked(h), [], 'no marker before the tree has the keyboard');
+  click(h, 'files-row-a.md');
+  assert.equal(h.mod.treeFocus.is_focused(), true);
+  assert.deepEqual(marked(h), ['a.md']);
+  assert.equal(press(h, 'down'), true);
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['b.md'], 'it stops at the end');
+  press(h, 'k');
+  press(h, 'k');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'j');
+  assert.deepEqual(marked(h), ['a.md']);
+  press(h, 'end');
+  assert.deepEqual(marked(h), ['b.md']);
+  press(h, 'home');
+  assert.deepEqual(marked(h), ['src']);
+  assert.deepEqual(h.scrolled.slice(-2), [2, 0], 'the marked row is scrolled into view');
+  h.mod.cursor = null;
+  press(h, 'home');
+  assert.deepEqual(marked(h), ['src'], 'Home goes to the top with no marker too');
+  h.mod.cursor = null;
+  press(h, 'end');
+  assert.deepEqual(marked(h), ['b.md'], 'and End to the bottom');
+  press(h, 'home');
+  assert.equal(press(h, 'x'), false, 'other keys go on to Herdr');
+  assert.equal(press(h, 'escape'), true);
+  assert.deepEqual(marked(h), []);
+  assert.equal(press(h, 'escape'), false, 'with no marker, Escape goes on');
+  const many = await ready({ tree: { '/repo': Array.from({ length: 25 }, (_, i) => ['f', `n${String(i).padStart(2, '0')}.txt`]) } });
+  await many.command('focus');
+  assert.deepEqual(marked(many), ['n00.txt'], 'the focus command marks the first row');
+  press(many, 'pagedown');
+  assert.deepEqual(marked(many), ['n10.txt']);
+  press(many, 'pageup');
+  assert.deepEqual(marked(many), ['n00.txt']);
+});
+
+test('right and left open and close folders and step in and out, and Enter opens a file or a folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.deepEqual(marked(h), ['src']);
+  press(h, 'right');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'));
+  assert.deepEqual(marked(h), ['src'], 'opening a folder stays on it');
+  press(h, 'l');
+  assert.deepEqual(marked(h), ['src/main.go'], 'then steps into it');
+  press(h, 'h');
+  assert.deepEqual(marked(h), ['src'], 'left goes to the folder above');
+  press(h, 'left');
+  assert.equal(h.mod.folders.has('src'), false, 'and then closes it');
+  press(h, 'enter');
+  await h.flush();
+  assert.ok(h.mod.folders.has('src'), 'Enter opens a folder');
+  press(h, 'down');
+  press(h, 'enter');
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go', 'and opens a file in the shared tab');
+});
+
+test('/ goes to the filter, the arrows there move through the matches, and Enter opens the marked one', async () => {
+  const h = await ready();
+  await h.command('focus');
+  assert.equal(press(h, '/'), true);
+  assert.equal(h.mod.filter.focused, true);
+  assert.deepEqual(marked(h), [], 'the tree has let go of the keyboard');
+  await typeFilter(h, 'mai');
+  assert.deepEqual(rowIds(h), ['files-row-src', 'files-row-src/main.go']);
+  assert.equal(keyOn(h, 'files-filter', 'down'), true);
+  assert.deepEqual(marked(h), ['src']);
+  keyOn(h, 'files-filter', 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  h.mod.filter.handlers.submit({}, h.cx);
+  assert.equal(tabs(h).at(-1)[1].name, 'main.go');
+  keyOn(h, 'files-filter', 'up');
+  h.mod.filter.handlers.submit({}, h.cx);
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '', 'Enter on a folder opens it in the tree');
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'));
+  assert.deepEqual(marked(h), ['src'], 'and the tree takes the keyboard, on that folder');
+});
+
+test('dotfiles hide and show with the eye button or ., in the tree and the matches, and stay that way after a restart', async () => {
+  const tree = { ...TREE, '/repo': [...TREE['/repo'], ['f', '.env'], ['d', '.github']] };
+  const everything = `${EVERY}.env\0.github/ci.yml\0`;
+  const h = await ready({ tree, everything });
+  assert.ok(find(h.mod.render(), 'files-row-.env'));
+  click(h, 'files-tool-dotfiles');
+  assert.equal(find(h.mod.render(), 'files-row-.env'), undefined);
+  assert.equal(find(h.mod.render(), 'files-row-.github'), undefined);
+  assert.equal(h.kept.get('better-files.dotfiles'), 'false');
+  await typeFilter(h, 'ci');
+  assert.match(strings(find(h.mod.render(), 'files-list')), /^No matches\.$/);
+  const again = await ready({ tree, everything, storage: { 'better-files.dotfiles': 'false' } });
+  assert.equal(find(again.mod.render(), 'files-row-.env'), undefined, 'remembered');
+  await again.command('focus');
+  press(again, '.');
+  assert.ok(find(again.mod.render(), 'files-row-.env'));
+  assert.equal(again.kept.get('better-files.dotfiles'), 'true');
+  await typeFilter(again, 'ci');
+  assert.deepEqual(rowIds(again), ['files-row-.github', 'files-row-.github/ci.yml']);
+});
+
+test('collapse all closes every folder, and a marker inside one moves to its top folder', async () => {
+  const h = await ready();
+  await h.command('focus');
+  press(h, 'right');
+  await h.flush();
+  press(h, 'down');
+  assert.deepEqual(marked(h), ['src/main.go']);
+  click(h, 'files-tool-collapse');
+  assert.equal(find(h.mod.render(), 'files-row-src/main.go'), undefined);
+  assert.equal(h.mod.folders.size, 0);
+  assert.deepEqual(marked(h), ['src']);
+  assert.equal(find(h.mod.render(), 'files-tool-collapse').handlers.click, undefined, 'nothing is left to close');
+});
+
+test('Right on a matching folder opens it in the tree, as Enter does', async () => {
+  const h = await ready();
+  await typeFilter(h, 'sr');
+  h.mod.cursor = 'src';
+  press(h, 'right');
+  await h.flush();
+  assert.equal(h.mod.filter.value(), '');
+  assert.ok(h.mod.folders.has('src'));
+  assert.deepEqual(marked(h), ['src']);
+  assert.ok(find(h.mod.render(), 'files-row-src/main.go'), 'the folder opened');
+});
+
+test('with a file tab focused from the start, the tree shows where the space\'s terminal is, not where the space was made', async () => {
+  const viewer = { pane: 'p2', tab: 'tab2', mod: 'better-files', cwd: null };
+  const h = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  assert.equal(h.mod.root, '/repo');
+  assert.match(strings(find(h.mod.render(), 'files-title')), /^Files\s+repo$/);
+  h.tick();
+  assert.equal(h.mod.root, '/repo', 'and it stays there');
+  const alone = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  alone.live.panes.splice(0, 1);
+  alone.mod.place = null;
+  alone.tick();
+  assert.equal(alone.mod.root, '/made-here', 'a space with no terminal falls back to its own folder');
+});
+
+test('with a file focused beside a terminal, the tree follows that terminal, not one in an earlier tab', async () => {
+  const viewer = { pane: 'p3', tab: 'tab2', mod: 'better-files', cwd: null };
+  const h = await ready({ spaceFolder: '/made-here', focusOn: viewer });
+  h.live.panes.push({ pane: 'p2', tab: 'tab2', cwd: '/repo/src' });
+  h.mod.place = null;
+  h.tick();
+  assert.equal(h.mod.root, '/repo/src');
+});
+
+test('a picture\'s copy is named for what is in it, so a changed one, or one after a restart, never shows an old copy', async () => {
+  const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
+  const shown = (h) => strings(find(h.mod.render(), 'viewer-image'));
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  assert.match(shown(h), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/);
+  h.live.pictures['/repo/shot.PNG'] = '222-4';
+  h.tick();
+  await h.flush();
+  assert.match(shown(h), /^image:mods\/better-files\/\.cache\/v-222-4\.png$/);
+  assert.equal(h.execs.filter((e) => e[3] === 'copy-image').at(-1)[8], '/app/mods/better-files/.cache/v-111-3.png', 'the old copy goes');
+  const again = await ready({ mode: 'viewer', viewer: 'v', file, pictures: { '/repo/shot.PNG': '333-5' } });
+  assert.match(shown(again), /^image:mods\/better-files\/\.cache\/v-333-5\.png$/, 'a restarted tab with another picture never reuses a name');
+  const busy = await ready({ mode: 'viewer', viewer: 'v', file });
+  busy.context.exec = async () => ({ code: 75, stdout: '' });
+  busy.tick();
+  await busy.flush();
+  assert.match(shown(busy), /^image:mods\/better-files\/\.cache\/v-111-3\.png$/, 'a picture still being written keeps the last copy');
+});
+
+test('a Markdown picture keeps its last copy on screen until the new one is there', async () => {
+  let release;
+  const h = await mdWorld();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/);
+  const exec = h.context.exec;
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = () => done({ code: 0, stdout: 'v-m1-222-4.png' }))) : exec(bin, args, o));
+  h.live.texts['/repo/docs/guide.md'] += ' ';
+  h.tick();
+  await h.flush();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-111-3\.png/, 'not a name with nothing there yet');
+  const before = h.cx.notified;
+  release();
+  await h.flush();
+  assert.ok(h.cx.notified > before, 'the new copy is drawn');
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-222-4\.png/);
+  assert.doesNotMatch(strings(h.mod.render()), /v-m1-111-3/);
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? Promise.resolve({ code: 75, stdout: '' }) : exec(bin, args, o));
+  h.live.texts['/repo/docs/guide.md'] += ' ';
+  h.tick();
+  await h.flush();
+  assert.match(strings(h.mod.render()), /image:mods\/better-files\/\.cache\/v-m1-222-4\.png/, 'a picture still being written keeps the last copy');
+});
+
+test('the copy script names a copy by its checksum, copies once, and removes the copy it replaces', async () => {
+  const { context: m } = await ready();
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-copy-'));
+  const cache = path.join(dir, '.cache');
+  const run = (args, env) => spawnSync('sh', ['-c', m.COPY_IMAGE, 'copy-image', ...args], { encoding: 'utf8', env: env ?? process.env });
+  const src = path.join(dir, 'a.png');
+  fs.writeFileSync(src, 'one');
+  const first = run([src, cache, 'v', 'png', '']);
+  assert.equal(first.status, 0);
+  assert.match(first.stdout, /^v-\d+-3\.png$/);
+  assert.equal(fs.readFileSync(path.join(cache, first.stdout), 'utf8'), 'one');
+  const kept = fs.statSync(path.join(cache, first.stdout)).ino;
+  assert.equal(run([src, cache, 'v', 'png', path.join(cache, first.stdout)]).stdout, first.stdout, 'the same picture keeps its name and its copy');
+  assert.equal(fs.statSync(path.join(cache, first.stdout)).ino, kept, 'not copied again');
+  fs.writeFileSync(src, 'two!');
+  const second = run([src, cache, 'v', 'png', path.join(cache, first.stdout)]);
+  assert.equal(second.status, 0);
+  assert.match(second.stdout, /^v-\d+-4\.png$/);
+  assert.equal(fs.readFileSync(path.join(cache, second.stdout), 'utf8'), 'two!');
+  assert.equal(fs.existsSync(path.join(cache, first.stdout)), false, 'the replaced copy goes');
+  const gone = run([path.join(dir, 'gone.png'), cache, 'v', 'png', '']);
+  assert.notEqual(gone.status, 0);
+  assert.equal(gone.stdout, '');
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'cp'), '#!/bin/sh\nprintf changed > "$3"\n', { mode: 0o755 });
+  fs.writeFileSync(src, 'three');
+  const busy = run([src, cache, 'v', 'png', path.join(cache, second.stdout)], { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+  assert.equal(busy.status, 75, 'a picture that changed while it was copied');
+  assert.deepEqual(fs.readdirSync(cache), [second.stdout], 'nothing half-copied is left, and the shown copy stays');
+  fs.rmSync(dir, { recursive: true });
 });
 
 test('env files, unknown types and each language\'s own keywords', async () => {
@@ -812,6 +1434,26 @@ test('env files, unknown types and each language\'s own keywords', async () => {
   assert.deepEqual(tokens('for i := range xs {', 'go'), [['for', 'keyword'], ['range', 'keyword']]);
   assert.deepEqual(tokens('fun main() { val x = 1 }', m.lexerLanguage('a.kt')), [['fun', 'keyword'], ['main', 'function'], ['val', 'keyword'], ['1', 'number']]);
   assert.deepEqual(tokens('FROM node:24 AS build', m.lexerLanguage('Dockerfile')), [['FROM', 'keyword'], ['24', 'number'], ['AS', 'keyword']]);
+});
+
+test('files whose names hide their language are read as it', async () => {
+  const { context: m } = await ready();
+  const cases = {
+    'tsconfig.json': 'jsonc', 'tsconfig.app.json': 'jsonc', 'a/.vscode/settings.json': 'jsonc',
+    '.devcontainer/devcontainer.json': 'jsonc', 'package.json': 'json', '.babelrc': 'jsonc', '.nuxtrc': 'env',
+    'Brewfile': 'rb', 'Containerfile': 'dockerfile', 'tsconfig-base.json': 'jsonc', 'jsconfig_build.json': 'jsonc',
+    'tsconfigs.json': 'json',
+  };
+  for (const [path, lang] of Object.entries(cases)) assert.equal(m.lexerLanguage(path), lang, path);
+  const tokens = (line, path) => JSON.parse(JSON.stringify(m.tokenizeLine(line, m.lexerLanguage(path)).runs.filter((r) => r.kind).map((r) => [r.text, r.kind])));
+  assert.deepEqual(tokens('  // the folders', 'portfolio.code-workspace'), [['// the folders', 'comment']]);
+  assert.deepEqual(tokens('model User {', 'schema.prisma'), [['model', 'keyword'], ['User', 'type']]);
+  assert.deepEqual(tokens('type Query { me: User }', 'q.gql'), [['type', 'keyword'], ['Query', 'type'], ['User', 'type']]);
+  const described = JSON.parse(JSON.stringify(m.highlightLines(['"""', 'The type of a user, for query input', '"""', 'type User'], 'graphql')
+    .map((runs) => runs.filter((r) => r.kind).map((r) => [r.text, r.kind]))));
+  assert.deepEqual(described, [[['"""', 'string']], [['The type of a user, for query input', 'string']], [['"""', 'string']], [['type', 'keyword'], ['User', 'type']]]);
+  assert.deepEqual(tokens('  "name": "x"', 'site.webmanifest'), [['"name"', 'property'], ['"x"', 'string']]);
+  assert.deepEqual(tokens('<Project Sdk="x">', 'app.csproj'), [['<Project', 'tag'], ['Sdk', 'attribute'], ['"x"', 'string']]);
 });
 
 test('a file over the whole-file limit keeps its own text and is coloured a row at a time', async () => {
@@ -857,4 +1499,70 @@ test('the row view recolours when another file has the same text', async () => {
 test('syntax.js is the same file in Better Files and Better Changes', () => {
   const read = (mod) => fs.readFileSync(path.join(__dirname, `../../${mod}/mods/${mod}/syntax.js`), 'utf8');
   assert.equal(read('better-files'), read('better-changes'));
+});
+
+test('a picture copy that finishes after its tab moved on is replaced later, and one that finishes after the tab closed goes', async () => {
+  const file = { path: '/repo/shot.PNG', root: '/repo', on: null };
+  const copies = (h) => h.execs.filter((e) => e[3] === 'copy-image');
+  const h = await ready({ mode: 'viewer', viewer: 'v', file });
+  const exec = h.context.exec;
+  let release;
+  h.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = done)) : exec(bin, args, o));
+  h.tick();
+  await h.flush();
+  h.store.set('better-files.viewers', { v: { file: { ...file, path: '/repo/other.jpg' }, tab: 'tab1' } });
+  release({ code: 0, stdout: 'v-222-4.png' });
+  await h.flush();
+  h.context.exec = exec;
+  h.tick();
+  await h.flush();
+  assert.equal(copies(h).at(-1)[4], '/repo/other.jpg');
+  assert.equal(copies(h).at(-1)[8], '/app/mods/better-files/.cache/v-222-4.png', 'the late copy is the one the next replaces');
+  const shut = await ready({ mode: 'viewer', viewer: 'v', file });
+  const shutExec = shut.context.exec;
+  shut.context.exec = (bin, args, o) => (args[2] === 'copy-image' ? new Promise((done) => (release = done)) : shutExec(bin, args, o));
+  shut.tick();
+  await shut.flush();
+  await shut.mod.close();
+  release({ code: 0, stdout: 'v-222-4.png' });
+  await shut.flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(shut.execs.at(-1))), ['rm', '-f', '--', '/app/mods/better-files/.cache/v-222-4.png']);
+});
+
+test('the copy script clears a restarted tab\'s leftovers, and a failed copy leaves nothing half-made', async () => {
+  const { context: m } = await ready();
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-sweep-'));
+  const cache = path.join(dir, '.cache');
+  const run = (args, env) => spawnSync('sh', ['-c', m.COPY_IMAGE, 'copy-image', ...args], { encoding: 'utf8', env: env ?? process.env });
+  const files = () => fs.readdirSync(cache).sort();
+  fs.mkdirSync(cache);
+  for (const name of ['v-1-1.png', 'v-1-1.jpg', 'v-2-2.png.part', 'v-m1-3-3.png', 'w-4-4.png']) fs.writeFileSync(path.join(cache, name), 'old');
+  const src = path.join(dir, 'a.png');
+  fs.writeFileSync(src, 'one');
+  const first = run([src, cache, 'v', 'png', '']);
+  assert.equal(first.status, 0);
+  assert.deepEqual(files(), [first.stdout, 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'only this start\'s copies go, not its Markdown pictures or another tab\'s');
+  fs.writeFileSync(path.join(cache, 'v-9-9.png'), 'old');
+  fs.writeFileSync(src, 'two!');
+  const second = run([src, cache, 'v', 'png', path.join(cache, first.stdout)]);
+  assert.deepEqual(files(), [second.stdout, 'v-9-9.png', 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'with a copy to replace, only that one goes');
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'cp'), '#!/bin/sh\nprintf half > "$3"\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(src, 'three');
+  const failed = run([src, cache, 'v', 'png', path.join(cache, second.stdout)], { ...process.env, PATH: `${bin}:${process.env.PATH}` });
+  assert.equal(failed.status, 1);
+  assert.deepEqual(files(), [second.stdout, 'v-9-9.png', 'v-m1-3-3.png', 'w-4-4.png'].sort(), 'no part left, and the shown copy stays');
+  fs.rmSync(dir, { recursive: true });
+});
+
+test('with no tab shown, the tree takes a terminal in the space, not a pane from elsewhere', async () => {
+  const h = await ready({ spaceFolder: '/made-here' });
+  h.live.panes.splice(0, h.live.panes.length, { pane: 'x', space: 'other', cwd: '/elsewhere' }, { pane: 'p2', tab: 'tab1', cwd: '/repo/src' });
+  h.live.focused = { space: 's', tab: 'tab1', pane: 'gone', cwd: null };
+  h.mod.place = null;
+  h.tick();
+  assert.equal(h.mod.root, '/repo/src');
 });

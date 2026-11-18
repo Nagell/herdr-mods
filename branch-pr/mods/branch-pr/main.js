@@ -15,6 +15,7 @@ import { View } from "gpui-kit";
 import { InputState, TextareaState } from "gpui-base";
 import { spaces, panes, nextCommand, layout, readTextFile, appHome } from "herdr";
 import { loadSettings, duration } from "./settings.js";
+import { followFileIcons } from "./file-icons.js";
 import { savedMethods } from "./state/saved.js";
 import { discoveryMethods } from "./github/discovery.js";
 import { readMethods } from "./github/reads.js";
@@ -95,6 +96,8 @@ class PullRequests extends View {
     this.section = "overview";
     this.fileLayout = localStorage.getItem("files-layout") === "flat" ? "flat" : "tree";
     this.closedFolders = new Set();
+    // Better Icons' pictures for the Files tab, when it's installed.
+    followFileIcons(this, cx);
     this.settings = DEFAULT_SETTINGS;
     this.settingsProblems = [];
     this.tab = DEFAULT_SETTINGS.list.default.tab;

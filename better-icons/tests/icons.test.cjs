@@ -169,7 +169,8 @@ test('every mod that shows these icons carries the same resolver', () => {
     }
   };
   walk(repo);
-  assert.ok(copies.some((f) => f.includes(`${path.sep}better-files${path.sep}`)), 'Better Files has a copy');
+  for (const [mod, title] of [['better-files', 'Better Files'], ['better-changes', 'Better Changes'], ['branch-pr', 'Branch PR']])
+    assert.ok(copies.some((f) => f.includes(`${path.sep}${mod}${path.sep}mods${path.sep}`)), `${title} has a copy`);
   for (const copy of copies) assert.equal(fs.readFileSync(copy, 'utf8'), canonical, path.relative(repo, copy));
 });
 

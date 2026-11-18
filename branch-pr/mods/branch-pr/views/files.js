@@ -4,7 +4,7 @@ import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, theme, shared, setShared, run } from "herdr";
 import { fileTree } from "../github/model.js";
-import { TEXT, codeFont, Chevron, Icon, IconButton, Message, Row } from "./ui.js";
+import { TEXT, codeFont, Chevron, FileIcon, IconButton, Message, Row } from "./ui.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
 // A row's left padding, 8 as in Row, then a step per folder above it.
@@ -73,6 +73,7 @@ export const filesMethods = {
   },
 
   folderRow(row) {
+    const t = theme();
     const closed = this.closedFolders.has(row.path);
     return Row({
       id: `pr-folder-${row.path}`,
@@ -84,6 +85,9 @@ export const filesMethods = {
     })
       .pl(indent(row.depth))
       .child(Chevron(!closed))
+      .when(Boolean(this.fileIcons), (el) =>
+        el.child(FileIcon({ icons: this.fileIcons, path: row.path, dir: true, open: !closed, t })),
+      )
       .child(div().flex_1().min_w(0).truncate().child(row.name));
   },
 
@@ -103,7 +107,7 @@ export const filesMethods = {
       .pl(indent(depth))
       .when(this.openFilePath === file.filename, (el) => el.bg(t.selected))
       .tooltip(file.filename)
-      .child(Icon("file").text_color(t.muted))
+      .child(FileIcon({ icons: this.fileIcons, path: file.filename, color: t.muted, t }))
       .child(
         div()
           .min_w(0)

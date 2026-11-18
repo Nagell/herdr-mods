@@ -6,7 +6,7 @@
 // update wiped can be put back.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, InputState, Input, Select, Popup, Checkbox } from "gpui-base";
-import { appHome, home, exec, readTextFile, writeTextFile, theme, props, closeOverlay, run } from "herdr";
+import { appHome, home, exec, readTextFile, writeTextFile, theme, props, closeOverlay, run, layout } from "herdr";
 import {
   fieldsOf,
   getPath,
@@ -18,14 +18,29 @@ import {
   lostValues,
   editManifest,
   equal,
+  modTitle,
+  modUse,
+  shippedMods,
+  installedRows,
+  filterInstalled,
 } from "./model.js";
 
 const I = (name) => `mods/better-config/icons/${name}.svg`;
 const POLL_MS = 3000;
+// The Installed page's place in the list; no mod folder can have this name.
+const INSTALLED = "*installed";
+const USE = { layout: "In this layout", key: "Opens by key" };
+const INSTALLED_TABS = { yours: "Yours", herdr: "Herdr's" };
 
 export default class BetterConfig extends View {
   init(_props, cx) {
     this.mods = [];
+    this.installed = []; // every mod folder, for the Installed page
+    this.keys = null; // keys.json, to tell which mods open by a key
+    this.installedTab = "yours";
+    // Made here, since Herdr allows making a text box only outside render.
+    this.installedSearch = InputState.new({ placeholder: "Search mods" });
+    this.installedSearch.on("change", (_e, cx) => cx.notify());
     this.loaded = false;
     this.section = null;
     this.inputs = {}; // "mod:key" → { state, focused }
@@ -58,10 +73,14 @@ export default class BetterConfig extends View {
     const listing = await exec("/bin/sh", ["-c", 'cd "$1" && ls -d */ 2>/dev/null', "sh", `${appHome()}/mods`]);
     const names = listing.stdout.split("\n").map((n) => n.replace(/\/$/, "")).filter(Boolean);
     const mods = [];
+    const entries = [];
     for (const name of names) {
       const path = `${appHome()}/mods/${name}/mod.json`;
       const raw = await readTextFile(path);
-      if (raw === null) continue;
+      if (raw === null) {
+        entries.push({ name, manifest: null, missing: true });
+        continue;
+      }
       let manifest = null;
       let error = null;
       try {
@@ -69,6 +88,7 @@ export default class BetterConfig extends View {
       } catch (e) {
         error = `mod.json isn't valid JSON, so nothing here can be changed until it's fixed: ${e.message}`;
       }
+      entries.push({ name, manifest });
       let schema = null;
       try {
         schema = JSON.parse((await readTextFile(`${appHome()}/mods/${name}/mod.schema.json`)) ?? "null");
@@ -91,16 +111,32 @@ export default class BetterConfig extends View {
       mods.push(mod);
     }
     mods.sort((a, b) => this.titleOf(a).localeCompare(this.titleOf(b)));
-    const before = JSON.stringify(this.mods.map((m) => [m.name, m.raw, m.keptRaw]));
+    const installed = installedRows(entries, shippedMods(await this.readJson(`${appHome()}/installed.json`)));
+    const keys = await this.readJson(`${appHome()}/keys.json`);
+    const shown = layout();
+    const shape = (list, rows, k, l) => JSON.stringify([list.map((m) => [m.name, m.raw, m.keptRaw]), rows, k, l]);
+    const before = shape(this.mods, this.installed, this.keys, this.layout);
     this.mods = mods;
+    this.installed = installed;
+    this.keys = keys;
+    this.layout = shown;
     this.loaded = true;
-    if (!mods.some((m) => m.name === this.section)) this.section = mods[0]?.name ?? null;
+    if (this.section !== INSTALLED && !mods.some((m) => m.name === this.section)) this.section = mods[0]?.name ?? INSTALLED;
     this.makeInputs();
-    return before !== JSON.stringify(mods.map((m) => [m.name, m.raw, m.keptRaw]));
+    return before !== shape(mods, installed, keys, shown);
+  }
+
+  // A JSON file, or null when it's missing or unreadable.
+  async readJson(path) {
+    try {
+      return JSON.parse((await readTextFile(path)) ?? "null");
+    } catch {
+      return null;
+    }
   }
 
   titleOf(mod) {
-    return mod.manifest?.title ?? mod.name;
+    return modTitle(mod.name, mod.manifest);
   }
 
   // Writes the copy of this mod's changed values, when it differs.
@@ -577,17 +613,131 @@ export default class BetterConfig extends View {
       );
   }
 
-  page(t, mod) {
-    if (!mod)
-      return v_flex()
-        .gap(6)
-        .child(div().text_size(18).font_semibold().text_color(t.foreground).child("No mod settings"))
-        .child(
+  // Every mod folder: the person's own, then Herdr's, with its version, where it's used, and
+  // a way to its settings.
+  installedPage(t) {
+    const shown = layout();
+    const group = (rows) =>
+      v_flex()
+        .pt(6)
+        .children(
+          rows.map((row) => {
+            const use = modUse(row.name, shown, this.keys);
+            const settings = this.mods.some((m) => m.name === row.name);
+            return h_flex()
+              .id(`bc-installed-${row.name}`)
+              .w_full()
+              .gap(16)
+              .py(10)
+              .items_center()
+              .border_b(1)
+              .border_color(t.border)
+              .child(
+                v_flex()
+                  .flex_1()
+                  .min_w(0)
+                  .gap(2)
+                  .child(div().text_size(14).text_color(t.foreground).truncate().child(row.title))
+                  .child(
+                    div()
+                      .text_size(11.5)
+                      .text_color(t.dim)
+                      .font_family("JetBrains Mono")
+                      .child(row.missing ? `${row.name} · no mod.json` : row.name),
+                  ),
+              )
+              .child(div().flex_none().w(60).text_size(12.5).text_color(t.dim).child(row.version ?? ""))
+              .child(
+                div()
+                  .flex_none()
+                  .w(110)
+                  .text_size(12.5)
+                  .text_color(use ? t.muted : t.dim)
+                  .child(USE[use] ?? "Not used here"),
+              )
+              .child(
+                div()
+                  .flex_none()
+                  .w(80)
+                  .flex()
+                  .justify_end()
+                  .when(settings, (el) =>
+                    el.child(
+                      this.button(t, `bc-installed-settings-${row.name}`, "Settings", (cx) => {
+                        this.section = row.name;
+                        this.handle.focus();
+                        cx.notify();
+                      }),
+                    ),
+                  ),
+              );
+          }),
+        );
+    const rows = filterInstalled(this.installed, this.installedTab, this.installedSearch.value());
+    const count = (tab) => this.installed.filter((r) => r.herdr === (tab === "herdr")).length;
+    const tabs = Object.fromEntries(Object.entries(INSTALLED_TABS).map(([id, label]) => [id, `${label} ${count(id)}`]));
+    return v_flex()
+      .child(
+        h_flex()
+          .h(30)
+          .gap(10)
+          .items_center()
+          .child(div().text_size(18).font_semibold().text_color(t.foreground).child("Installed mods"))
+          .child(div().text_size(12.5).text_color(t.dim).child(String(this.installed.length))),
+      )
+      .child(
+        div()
+          .pt(4)
+          .text_size(12.5)
+          .text_color(t.dim)
+          .child(
+            this.installedTab === "herdr"
+              ? "Herdr's own mods, which it replaces on every start. Where each is used is for the layout on screen now."
+              : "Every mod you added to mods/. Where each is used is for the layout on screen now.",
+          ),
+      )
+      .child(
+        h_flex()
+          .pt(14)
+          .pb(4)
+          .gap(12)
+          .items_center()
+          .child(
+            this.segments(t, "bc-installed-tab", tabs, this.installedTab, (tab, cx) => {
+              this.installedTab = tab;
+              cx.notify();
+            }),
+          )
+          .child(div().flex_1())
+          .child(
+            div()
+              .w(220)
+              .h(28)
+              .px(8)
+              .flex()
+              .items_center()
+              .rounded(7)
+              .border_1()
+              .border_color(t.border)
+              .bg(t.background)
+              .text_size(13)
+              .child(Input.new(this.installedSearch).h(26).w_full().text_color(t.foreground)),
+          ),
+      )
+      .when(rows.length > 0, (el) => el.child(group(rows)))
+      .when(!rows.length, (el) =>
+        el.child(
           div()
+            .py(14)
             .text_size(13)
             .text_color(t.dim)
-            .child("None of your installed mods has a settings block in its mod.json yet."),
-        );
+            .child(this.installedSearch.value().trim() ? "No mods match your search." : "No mods here."),
+        ),
+      );
+  }
+
+  page(t, mod) {
+    if (this.section === INSTALLED) return this.installedPage(t);
     const fields = mod.manifest ? mod.fields : [];
     const changed = fields.filter((f) => isChanged(f, getPath(mod.manifest.settings, f.key)));
     // Grouped by the first part of the key; one-part keys go first, with no heading.
@@ -649,6 +799,8 @@ export default class BetterConfig extends View {
       .border_r(1)
       .border_color(t.border)
       .child(div().px(10).pt(6).pb(12).text_size(16).font_semibold().text_color(t.foreground).child("Mod settings"))
+      .child(this.navItem(t, INSTALLED, "Installed mods", false))
+      .child(div().mx(10).my(6).h(1).bg(t.border))
       .child(
         div()
           .id("bc-nav")
@@ -659,35 +811,9 @@ export default class BetterConfig extends View {
             v_flex()
               .gap(2)
               .children(
-                this.mods.map((mod) => {
-                  const on = mod.name === this.section;
-                  const attention = mod.error || Object.keys(mod.lost).length > 0;
-                  return h_flex()
-                    .id(`bc-s-${mod.name}`)
-                    .gap(10)
-                    .px(10)
-                    .py(7)
-                    .items_center()
-                    .rounded(7)
-                    .cursor_pointer()
-                    .bg(on ? t.raised : "#00000000")
-                    .hover((s) => s.bg(t.raised))
-                    .on_click((_e, cx) => {
-                      this.section = mod.name;
-                      this.handle.focus();
-                      cx.notify();
-                    })
-                    .child(
-                      div()
-                        .flex_1()
-                        .min_w(0)
-                        .truncate()
-                        .text_size(13.5)
-                        .text_color(on ? t.foreground : t.muted)
-                        .child(this.titleOf(mod)),
-                    )
-                    .when(Boolean(attention), (el) => el.child(div().w(7).h(7).rounded(4).bg(t.ansi1)));
-                }),
+                this.mods.map((mod) =>
+                  this.navItem(t, mod.name, this.titleOf(mod), mod.error || Object.keys(mod.lost).length > 0),
+                ),
               ),
           ),
       )
@@ -695,6 +821,28 @@ export default class BetterConfig extends View {
         this.close();
         run("app.settings");
       }));
+  }
+
+  // One entry in the list on the left: a mod's settings, or the Installed page.
+  navItem(t, section, label, attention) {
+    const on = section === this.section;
+    return h_flex()
+      .id(section === INSTALLED ? "bc-s-installed" : `bc-s-${section}`)
+      .gap(10)
+      .px(10)
+      .py(7)
+      .items_center()
+      .rounded(7)
+      .cursor_pointer()
+      .bg(on ? t.raised : "#00000000")
+      .hover((s) => s.bg(t.raised))
+      .on_click((_e, cx) => {
+        this.section = section;
+        this.handle.focus();
+        cx.notify();
+      })
+      .child(div().flex_1().min_w(0).truncate().text_size(13.5).text_color(on ? t.foreground : t.muted).child(label))
+      .when(Boolean(attention), (el) => el.child(div().w(7).h(7).rounded(4).bg(t.ansi1)));
   }
 
   render(cx) {

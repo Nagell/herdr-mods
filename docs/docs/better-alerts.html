@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Better Alerts · Herdr Mods Docs</title>
+<meta name="description" content="System notifications on Linux when an agent needs you or finishes while you're looking elsewhere. Click one to open that agent.">
+<meta name="theme-color" content="#0e0f11">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..800&amp;display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="wrap">
+  <nav class="site-nav">
+    <a class="brand" href="../">Herdr Mods</a>
+    <div class="links">
+      <a href="../#why">Why</a>
+      <a href="../#mods">Mods</a>
+      <a href="../#estro">Layout</a>
+      <a href="../#build">Build your own</a>
+      <a href="better-changes.html" class="on">Docs</a>
+    </div>
+    <a class="pill" href="https://github.com/munza/herdr-mods">GitHub</a>
+  </nav>
+
+  <div class="docs">
+      <nav class="side" aria-label="Mods">
+        <h4>The Better mods</h4>
+        <a href="better-changes.html">Better Changes</a>
+        <a href="better-files.html">Better Files</a>
+        <a href="better-sidebar.html">Better Sidebar</a>
+        <a href="better-tabs.html">Better Tabs</a>
+        <a href="better-config.html">Better Config</a>
+        <a href="better-icons.html">Better Icons</a>
+        <a href="better-alerts.html" class="on" aria-current="page">Better Alerts</a>
+        <h4>Branch panels</h4>
+        <a href="branch-pr.html">Branch PR</a>
+        <a href="branch-issue.html">Branch Issue</a>
+        <h4>Layout</h4>
+        <a href="estro.html">Estro</a>
+      </nav>
+    <main>
+<article class="doc" id="better-alerts">
+  <h2>Better Alerts</h2>
+  <p class="lead">System notifications on Linux: when an agent needs you, or finishes while you're looking elsewhere, your desktop says so, even with Herdr behind another window. Click the notification to open that agent.</p>
+  <p class="meta-line"><span>Version 1.0.0</span><span>Needs: Linux, <code>notify-send</code></span><a href="https://github.com/munza/herdr-mods/tree/main/better-alerts">Source on GitHub</a></p>
+  <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-alerts/preview.png" alt="Better Alerts in Herdr" width="1440" height="810"></figure>
+
+  <h3 id="better-alerts-start">Quick start</h3>
+  <ol>
+    <li>Install with the prompt below.</li>
+    <li>Give an agent a task, then switch to another app. When it asks for permission or finishes, a notification comes up; click Open to go straight to it.</li>
+  </ol>
+
+  <h3 id="better-alerts-install">Install</h3>
+  <div class="prompt"><code>Read ~/.config/herdr-app/AGENTS.md, then add this mod: https://github.com/munza/herdr-mods/tree/main/better-alerts</code></div>
+  <p>The agent follows RECIPE.md. Better Alerts draws nothing, so it runs as an empty floating block in a layout you own:</p>
+  <pre>"floating": [
+  { "id": "better-alerts", "content": { "mod": "better-alerts" },
+    "edge": "bottom", "align": "end" }
+]</pre>
+  <p>It needs <code>notify-send</code>, from libnotify, and a notification daemon such as mako, dunst or GNOME's. It runs <code>notify-send</code>, and on a click <code>herdr-app do agent.focus</code> and, on Hyprland, <code>hyprctl</code> to bring Herdr forward. It reaches no network and reads only its own folder. On macOS and Windows it does nothing.</p>
+  <details>
+  <summary>Install by hand</summary>
+  <p>From a clone of the repository, <code>sync.sh</code> copies <code>mods/better-alerts/</code> into Herdr's mods folder. Then add the floating block above to your layout.</p>
+  <pre>./better-alerts/sync.sh</pre>
+  </details>
+
+  <h3 id="better-alerts-use">Use</h3>
+  <ul>
+    <li><b>Needs you:</b> an agent asks for input or permission.</li>
+    <li><b>Finished:</b> an agent that was working is done, and you weren't looking at it: Herdr was in the background, or another tab was shown.</li>
+    <li><b>Click</b> a notification's Open action, and Herdr shows that agent and comes to the front.</li>
+    <li>The title names the agent, like <code>Claude Code needs you</code>, and the body says where it is, like <code>lantern-app / Fix the login form</code>.</li>
+    <li>Sub-agents stay quiet; their parent speaks for them. Agents already waiting when Herdr starts don't post. Herdr's own in-app toasts are unchanged.</li>
+  </ul>
+  <p>Limits: Linux only. Only Hyprland gets the window brought forward on a click; elsewhere Herdr shows the agent but may stay behind other windows. It checks twice a second.</p>
+
+  <h3 id="better-alerts-settings">Settings</h3>
+  <p><a href="better-config.html">Better Config</a> shows these with what each one does. By hand, add a <code>settings</code> block to the installed <code>mods/better-alerts/mod.json</code> with only what you change.</p>
+  <table class="keys"><thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead><tbody>
+    <tr><td><code>alerts.blocked</code></td><td><code>true</code></td><td>A notification when an agent needs you.</td></tr>
+    <tr><td><code>alerts.done</code></td><td><code>true</code></td><td>A notification when an agent finishes while you aren't looking at it.</td></tr>
+  </tbody></table>
+
+  <h3 id="better-alerts-update">Update</h3>
+  <p>Copy <code>mods/better-alerts/</code> into Herdr again; Herdr reloads it. Your settings in the installed <code>mod.json</code> are replaced, and Better Config offers to restore them.</p>
+
+  <h3 id="better-alerts-developers">For developers</h3>
+  <p>Every 500ms it compares each agent's status with the last look and posts through a detached shell, so <code>exec</code> answers at once and a click still works later. <a href="https://github.com/munza/herdr-mods/blob/main/better-alerts/RECIPE.md">RECIPE.md</a> has the details.</p>
+  <pre>node --test better-alerts/tests/*.test.cjs
+./better-alerts/sync.sh
+herdr-app check "$HOME/.config/herdr-app/mods/better-alerts"</pre>
+</article>
+      <nav class="pager" aria-label="More docs"><a href="better-icons.html"><span>Previous</span>Better Icons</a><a class="next" href="branch-pr.html"><span>Next</span>Branch PR</a></nav>
+    </main>
+    <nav class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <a href="#better-alerts-start">Quick start</a>
+      <a href="#better-alerts-install">Install</a>
+      <a href="#better-alerts-use">Use</a>
+      <a href="#better-alerts-settings">Settings</a>
+      <a href="#better-alerts-update">Update</a>
+      <a href="#better-alerts-developers">For developers</a>
+    </nav>
+  </div>
+
+  <footer class="site-foot">
+    <span>Herdr Mods · <a href="https://github.com/munza/herdr-mods/blob/main/LICENSE">Apache-2.0</a></span>
+    <span><a href="https://github.com/munza/herdr-mods/tree/main/">This mod on GitHub</a> · <a href="https://herdr.dev/">herdr.dev</a></span>
+  </footer>
+</div>
+<script>
+  // Highlight the section being read in "On this page".
+  const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.hash.slice(1), a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      for (const a of links.values()) a.classList.remove("on");
+      links.get(e.target.id)?.classList.add("on");
+    }
+  }, { rootMargin: "0px 0px -75% 0px" });
+  document.querySelectorAll("main h3[id]").forEach((el) => io.observe(el));
+  // A Copy button on each install prompt.
+  for (const box of document.querySelectorAll(".prompt")) {
+    const b = Object.assign(document.createElement("button"), { className: "copy", type: "button", textContent: "Copy" });
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(box.querySelector("code").textContent); b.textContent = "Copied"; }
+      catch { b.textContent = "Select and copy"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+    box.append(b);
+  }
+</script>
+</body>
+</html>

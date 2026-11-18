@@ -34,6 +34,7 @@
         <a href="better-tabs.html">Better Tabs</a>
         <a href="better-config.html">Better Config</a>
         <a href="better-icons.html">Better Icons</a>
+        <a href="better-alerts.html">Better Alerts</a>
         <h4>Branch panels</h4>
         <a href="branch-pr.html">Branch PR</a>
         <a href="branch-issue.html">Branch Issue</a>
@@ -44,7 +45,7 @@
 <article class="doc" id="better-files">
   <h2>Better Files</h2>
   <p class="lead">A read-only file browser for Herdr Desktop that opens files in the centre pane, beside your agents. For people directing agents: see where an agent has been, read what it wrote, and hand a file to one.</p>
-  <p class="meta-line"><span>Version 1.5.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 1.6.0</span><span>Needs: <code>sh</code>, Git</span><a href="https://github.com/munza/herdr-mods/tree/main/better-files">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="../gifs/better-files.gif" alt="Better Files in Herdr" width="1440" height="802"></figure>
 
   <h3 id="better-files-start">Quick start</h3>
@@ -68,12 +69,15 @@
   <h3 id="better-files-use">Use</h3>
   <ul>
     <li><b>Tree:</b> shows the focused pane's folder, named in the panel's title. Changed files are coloured and lettered (green new, yellow edited, red gone or in conflict), and folders holding changes are yellow with a dot. It refreshes as files change. Focusing a file or diff tab leaves the tree where it was.</li>
+    <li><b>Filter:</b> type in the box under the title to find files and folders anywhere in the folder, including ones you haven't opened. A name holding the words matches, and words with a <code>/</code> match the path. Click a file to open it, or a folder to open it in the tree. <b>Enter</b> opens the first matching file, and <b>Escape</b> or <b>×</b> clears the box. In a Git repository, files Git ignores are left out.</li>
+    <li><b>Tools</b> beside the filter: the eye shows or hides dotfiles, in the tree and in the matches, and this computer remembers it. <b>Collapse all</b> closes every folder.</li>
+    <li><b>Keys:</b> click the tree, or press a key bound to <code>better-files.focus</code>, and the tree takes the keyboard, with a marker on a row. The included <code>keys.json</code> suggests <b>Cmd+Shift+E</b>, as in VS Code's Explorer; merge it into <code>~/.config/herdr-app/keys.json</code>, or bind any key you like. <b>Up</b>/<b>Down</b> or <b>j</b>/<b>k</b> move, <b>PgUp</b>/<b>PgDn</b> move 10, and <b>Home</b>/<b>End</b> go to the ends. <b>Right</b> or <b>l</b> opens a folder, then steps into it; <b>Left</b> or <b>h</b> closes it, then steps out. <b>Enter</b> opens the row, <b>/</b> goes to the filter, <b>.</b> shows or hides dotfiles, and <b>Escape</b> clears the marker. In the filter box, <b>Up</b>/<b>Down</b> move through the matches and <b>Enter</b> opens the marked one.</li>
     <li><b>Click</b> a file to show it in one shared centre tab, so browsing doesn't pile up tabs.</li>
     <li><b>Double-click</b>, or <b>Keep tab</b>, to keep that tab. The next click starts a new shared tab.</li>
     <li><b>File view:</b> read-only, at your terminal's font size, and follows the file as it changes on disk. Binary and unreadable files say so, and very long files are cut at 400,000 characters.</li>
     <li><b>Changed lines:</b> lines that differ from the last commit are tinted with a bar at their edge: green added, yellow changed, and a thin red line where lines were removed. Click a yellow line or the red line to show the old lines in place; click again to close. <b>Expand all</b>, beside Open in, opens or closes them all. Text can't be selected and there's no folding in this view; use <b>Open in</b>, or turn <code>gutter</code> off.</li>
     <li><b>Syntax colours:</b> the file view's code shows keywords, strings, comments, numbers, constants, function calls, types, Vue/HTML/JSX tags and attributes, and JSON/YAML keys in colour. A block comment or template string stays coloured on the lines after it. It's a small lexer, not a grammar, the same one Better Changes uses for diffs.</li>
-    <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>data/better-files/cache/</code>, removed when its tab closes.</li>
+    <li><b>Images:</b> PNG, JPEG, GIF, WebP, BMP and SVG files show as pictures fitted to the pane, and update when the file changes. Each is shown through a copy in <code>mods/better-files/.cache/</code>, removed when its tab closes.</li>
     <li><b>Markdown:</b> a <code>.md</code> or <code>.markdown</code> file opens rendered in Herdr's own Markdown view, with text you can select. <b>Preview</b> and <b>Code</b>, beside Open in, switch between that and the file view with its changed lines; each tab remembers its choice. A web link opens in your browser, and a link to another file here opens it in the viewer. Code blocks are drawn by Better Files: the code font at your terminal's size, syntax colours, the language at the top left and a copy button at the top right. A line of pictures shows them: Markdown images (also by reference, and in a list, like a README's badges) and HTML <code>&lt;img&gt;</code>, from this computer or the web. Pictures from the web are downloaded with <code>curl</code> into the mod's cache and kept for a day, so previewing a README fetches its badges from the internet. A linked picture opens its link, and a table-of-contents link (<code>#heading</code>) scrolls to that heading. A picture inside a paragraph, or under a list item, is left to Herdr's view. The preview follows the file as it changes.</li>
     <li><b>Icons:</b> with <a href="https://github.com/munza/herdr-mods/tree/main/better-icons">Better Icons</a> installed, every file and folder gets its colour icon from VS Code's Material Icon Theme, in the tree and in the tab's title row. Without it, they keep the plain file and folder icons.</li>
     <li><b>Open in</b> your editor, from the tab or the menu. Zed, VS Code, Cursor, Windsurf, Sublime Text and Nova are offered when installed, and you can add more with <code>editors</code>. The folder icon beside refresh opens the whole folder in an editor or Finder.</li>
@@ -82,7 +86,7 @@
     <li><b>One title:</b> the tab's title row shows the file, its folder, and Preview while it's the shared tab.</li>
     <li><b>Remote spaces:</b> a space on another machine has no editor, default app or Finder items, and can't show images.</li>
   </ul>
-  <p>Editing, creating, renaming and deleting files are left out on purpose. Limits: a folder lists its first 500 entries and the tree shows 5,000 rows. A file view can't report a selection or jump to a line, so editors open at the top. Listing a folder needs <code>sh</code>, so a Windows machine shows an error.</p>
+  <p>Editing, creating, renaming and deleting files are left out on purpose. Limits: a folder lists its first 500 entries and the tree shows 5,000 rows. The filter shows 200 matches and searches up to 40,000 files, 12 folders deep outside a Git repository. A file view can't report a selection or jump to a line, so editors open at the top. Listing a folder needs <code>sh</code>, so a Windows machine shows an error.</p>
 
   <h3 id="better-files-settings">Settings</h3>
   <p>Change them in <a href="better-config.html">Better Config</a> or in <code>~/.config/herdr-app/mods/better-files/mod.json</code> under <code>"settings"</code>, with only what you change. Saving applies at once.</p>

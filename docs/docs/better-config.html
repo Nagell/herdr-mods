@@ -34,6 +34,7 @@
         <a href="better-tabs.html">Better Tabs</a>
         <a href="better-config.html" class="on" aria-current="page">Better Config</a>
         <a href="better-icons.html">Better Icons</a>
+        <a href="better-alerts.html">Better Alerts</a>
         <h4>Branch panels</h4>
         <a href="branch-pr.html">Branch PR</a>
         <a href="branch-issue.html">Branch Issue</a>
@@ -44,7 +45,7 @@
 <article class="doc" id="better-config">
   <h2>Better Config</h2>
   <p class="lead">Every installed mod's settings in one dialog, drawn like Herdr's own Settings. For anyone who would rather not hand-edit each mod's <code>mod.json</code> or read its README to learn what a key does.</p>
-  <p class="meta-line"><span>Version 0.1.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-config">Source on GitHub</a></p>
+  <p class="meta-line"><span>Version 0.2.0</span><span>Needs: Nothing extra</span><a href="https://github.com/munza/herdr-mods/tree/main/better-config">Source on GitHub</a></p>
   <figure class="doc-shot"><img src="https://raw.githubusercontent.com/munza/herdr-mods/main/better-config/preview.png" alt="Better Config in Herdr" width="1440" height="810"></figure>
 
   <h3 id="better-config-start">Quick start</h3>
@@ -77,6 +78,7 @@
     <li><b>See what you changed:</b> a dot marks every setting that differs from its default. <b>Reset</b> puts one back, and <b>Reset all</b> puts a whole mod back.</li>
     <li><b>Survives updates:</b> when an update puts defaults back over your values, a box at the top lists each one, yours beside the current value, ticked to start. One button restores the ticked ones and keeps the rest.</li>
     <li><b>Works with any mod:</b> a mod that ships a schema of its settings gets names, descriptions and checks. Any other mod with a <code>settings</code> block still shows, with its types guessed.</li>
+    <li><b>See what's installed:</b> <b>Installed mods</b>, at the top of the list, shows every mod folder under Yours or Herdr's tabs, with a search box. Each row has the mod's title, folder and version, whether the layout on screen uses it or a key opens it, and a <b>Settings</b> button when it has settings.</li>
     <li><b>Herdr settings:</b> at the bottom of the list, opens Herdr's own Settings.</li>
   </ul>
   <p>Where values live: in the <code>settings</code> block of each mod's installed <code>mod.json</code>, holding only what you changed; a change back to the default removes the key. Better Config also keeps a copy of what you changed in <code>~/.config/herdr-mods/better-config/&lt;mod&gt;.json</code>. A value you changed by hand is taken as yours, and the copy follows it. A write only goes through if the file hasn't changed since it was read.</p>
