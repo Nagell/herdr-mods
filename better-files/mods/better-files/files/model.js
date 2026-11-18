@@ -66,11 +66,13 @@ const HEADING = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 const LIST_ITEM = /^([*+-]|\d{1,9}[.)])\s+/;
 
 // The `#anchor` GitHub gives a heading: lower case, punctuation dropped, spaces as dashes.
+// An underscore inside a word stays (`snake_case`); one marking emphasis (`_word_`) goes.
 export function headingAnchor(title) {
   return String(title)
     .replace(/<[^>]*>/g, "")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[`*_~]/g, "")
+    .replace(/[`*~]/g, "")
+    .replace(/(^|[^\p{L}\p{N}_])_+|_+(?![\p{L}\p{N}_])/gu, "$1")
     .trim()
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s_-]/gu, "")
@@ -143,8 +145,10 @@ export function imageLine(line, refs, folder) {
     } else if (name === "a") href = tag[0].startsWith("</") ? null : (attribute(tag[0], "href") ?? null);
     else if (!["p", "div", "span", "center", "picture", "source", "br"].includes(name)) return null;
   }
-  const shown = items.filter((item) => item.path || item.url);
-  return shown.length ? { bullet, items: shown } : null;
+  // One that can't be drawn (a PDF, a missing reference, a `data:` source) leaves the whole
+  // line to TextView, so nothing on it is lost.
+  if (!items.length || items.some((item) => !item.path && !item.url)) return null;
+  return { bullet, items };
 }
 
 // Markdown as blocks for the preview. Herdr's TextView draws the text, split at each heading so

@@ -859,6 +859,12 @@ test('Markdown splits at headings, gives code its own blocks, and pulls out line
 
   for (const stays of ['    ![x](a.png)', '- item\n  ![x](a.png)', 'see ![x](a.png) inline', '![doc](a.pdf)', '> ![x](a.png)', '<div align="center">'])
     assert.ok(blocks(stays).every((b) => b.type === 'text'), `stays text: ${stays}`);
+  // A line with anything that can't be drawn as a picture is left whole, so nothing on it is lost.
+  for (const whole of ['![a](a.png) ![d](doc.pdf)', '* [![Gone][missing]][u]', '<img src="data:image/png;base64,AAAA"> <img src="a.png">'])
+    assert.ok(blocks(whole).every((b) => b.type === 'text'), `stays text: ${whole}`);
+  assert.equal(m.headingAnchor('snake_case option'), 'snake_case-option', 'an underscore in a name stays, as on GitHub');
+  assert.equal(m.headingAnchor('The _emphasis_ and __init__'), 'the-emphasis-and-init', 'emphasis underscores go');
+  assert.equal(blocks('# snake_case option')[0].anchor, 'snake_case-option');
   assert.deepEqual(blocks(''), []);
   assert.deepEqual(blocks('\n\n  \n'), []);
 });
